@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { videosAPI, cuttingAPI, pointsAPI } from '../services/api';
 import { autoFillNextPoint, getRotationOrder } from '../utils/volleyball';
+import ScoreDisplay from '../components/ScoreDisplay';
+
 
 const ROTATION_ORDER = getRotationOrder();
 
@@ -525,9 +527,11 @@ function VideoDashboard({ user, onLogout }) {
               </div>
             </div>
             <div className="info-right">
+              <ScoreDisplay points={points} team1={team1} team2={team2} />
               {currentPoint && (
                 <div className="right-card">
                   <h4>🏆 Vainqueur</h4>
+
                   <div className="btn-group-horizontal" style={{ marginTop: 8 }}>
                     <button className={`btn-choice ${currentPoint.winner === 'team1' ? 'active team1' : ''}`} onClick={() => handleWinnerChange(currentPointIndex, 'team1')}>{team1}</button>
                     <button className={`btn-choice ${currentPoint.winner === 'team2' ? 'active team2' : ''}`} onClick={() => handleWinnerChange(currentPointIndex, 'team2')}>{team2}</button>
@@ -626,9 +630,11 @@ function VideoDashboard({ user, onLogout }) {
 
             {/* ==== FILTRES + MENU DÉROULANT (petit, à droite) ==== */}
             <div className={`info-right ${isVideoExpanded ? 'hidden' : ''}`}>
+              <ScoreDisplay points={points} team1={team1} team2={team2} />
               {/* FILTRES */}
               <div className="right-card">
                 <h4>Filtres</h4>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>🏐 Au service</label>

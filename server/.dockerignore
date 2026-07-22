@@ -1,0 +1,8 @@
+node_modules
+uploads/**
+!uploads/.gitkeep
+*.db
+*.db-shm
+*.db-wal
+npm-debug.log
+.git

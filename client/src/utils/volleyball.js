@@ -83,3 +83,56 @@ export function autoFillNextPoint(previousPoint, winner) {
 export function getRotationOrder() {
   return ROTATION_ORDER;
 }
+
+/**
+ * Compute set-based scores from points.
+ * A set is won when a team reaches 25 points with at least a 2-point lead.
+ * If the score reaches 24-24, play continues until one team leads by 2.
+ * The score resets to 0 for the next set once a set is won.
+ *
+ * @param {Array} points - Array of point objects with a 'winner' field ('team1' or 'team2')
+ * @returns {Object} { currentSet, team1Score, team2Score, sets }
+ *   - currentSet: the current set number (1-based)
+ *   - team1Score: current set score for team1
+ *   - team2Score: current set score for team2
+ *   - sets: array of completed sets, each { team1, team2, winner, setNumber }
+ */
+export function computeSetScores(points) {
+  const sets = [];
+  let team1Score = 0;
+  let team2Score = 0;
+  let currentSet = 1;
+
+  for (const point of points) {
+    if (!point.winner) continue;
+
+    if (point.winner === 'team1') {
+      team1Score++;
+    } else if (point.winner === 'team2') {
+      team2Score++;
+    }
+
+    // A set is won when a team reaches 25+ points AND leads by 2+
+    if (team1Score >= 25 && team1Score - team2Score >= 2) {
+      sets.push({ team1: team1Score, team2: team2Score, winner: 'team1', setNumber: currentSet });
+      team1Score = 0;
+      team2Score = 0;
+      currentSet++;
+    } else if (team2Score >= 25 && team2Score - team1Score >= 2) {
+      sets.push({ team1: team1Score, team2: team2Score, winner: 'team2', setNumber: currentSet });
+      team1Score = 0;
+      team2Score = 0;
+      currentSet++;
+    }
+  }
+
+  return {
+    currentSet,
+    team1Score,
+    team2Score,
+    sets,
+  };
+}
+
+
+
