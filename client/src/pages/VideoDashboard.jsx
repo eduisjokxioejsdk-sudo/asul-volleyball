@@ -448,7 +448,7 @@ function VideoDashboard({ user, onLogout }) {
       <nav className="navbar">
         <div className="navbar-brand">
           <button className="back-btn" onClick={() => navigate('/dashboard')}>← Retour</button>
-          ASUL <span>• {video.original_name}</span>
+          <span className="brand-icon">⚡</span>ASUL <span>• {video.original_name}</span>
         </div>
         <div className="navbar-user">
           <span className="user-info"><span className="user-name">{user.name}</span></span>
@@ -488,11 +488,11 @@ function VideoDashboard({ user, onLogout }) {
               {segments.length > 0 && (
                 <div className="right-card">
                   <h4>Points ({segments.length})</h4>
-                  <div style={{ maxHeight: 300, overflowY: 'auto', marginTop: 8 }}>
+                  <div className="segments-list">
                     {segments.map((seg, index) => (
-                      <div key={index} className="segment-item" style={{ marginBottom: 4 }}>
+                      <div key={index} className="segment-item">
                         <span className="segment-number">Point {index + 1}</span>
-                        <span style={{ fontSize: 12 }}>{formatTime(seg.start_time)} → {formatTime(seg.end_time)}</span>
+                        <span className="segment-info">{formatTime(seg.start_time)} → {formatTime(seg.end_time)}</span>
                         <button className="btn btn-danger btn-sm" onClick={() => handleRemoveSegment(index)} style={{ padding: '2px 6px', fontSize: 11 }}>✕</button>
                       </div>
                     ))}
@@ -521,7 +521,7 @@ function VideoDashboard({ user, onLogout }) {
                 <button className="btn btn-secondary btn-sm" onClick={goToPrevPoint} disabled={currentPointIndex === 0}>⬅️ Précédent</button>
                 <span className="point-nav-time">
                   {currentPoint ? `${formatTime(currentPoint.start_time)} - ${formatTime(currentPoint.end_time)}` : ''}
-                  <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--gray-400)' }}>flèches ← →</span>
+                  <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>flèches ← →</span>
                 </span>
                 <button className="btn btn-secondary btn-sm" onClick={goToNextPoint} disabled={currentPointIndex >= points.length - 1}>Suivant ➡️</button>
               </div>

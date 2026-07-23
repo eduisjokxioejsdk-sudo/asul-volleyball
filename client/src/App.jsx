@@ -35,7 +35,7 @@ function App() {
     return (
       <div className="app-loading">
         <div className="spinner"></div>
-        <p>Chargement...</p>
+        <p className="loading-text">Démarrage du système</p>
       </div>
     );
   }

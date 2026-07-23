@@ -237,7 +237,7 @@ function Dashboard({ user, onLogout }) {
     <div className="dashboard">
       <nav className="navbar">
         <div className="navbar-brand">
-          ASUL <span>• Analyse Volleyball</span>
+          <span className="brand-icon">⚡</span>ASUL <span>• Analyse Volleyball</span>
         </div>
         <div className="navbar-user">
           <span className="user-info">
@@ -270,33 +270,23 @@ function Dashboard({ user, onLogout }) {
         </div>
 
         {/* Breadcrumb navigation */}
-        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="breadcrumb">
           <button
+            className={`breadcrumb-item ${!currentFolder ? 'active' : ''}`}
             onClick={() => navigateToFolder(-1)}
-            style={{ 
-              padding: '6px 12px', 
-              border: '1px solid var(--gray-300)', 
-              borderRadius: 6, 
-              background: 'white', 
-              cursor: 'pointer',
-              fontSize: 13
-            }}
           >
             📂 Racine
           </button>
           {folderPath.map((folder, index) => (
             <div key={folder.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: 'var(--gray-500)' }}>›</span>
+              <span className="breadcrumb-separator">›</span>
               <button
+                className={`breadcrumb-item ${index === folderPath.length - 1 ? 'active' : ''}`}
                 onClick={() => navigateToFolder(index)}
-                style={{ 
-                  padding: '6px 12px', 
-                  border: `1px solid ${folder.color}`, 
-                  borderRadius: 6, 
-                  background: index === folderPath.length - 1 ? folder.color : 'white',
-                  color: index === folderPath.length - 1 ? 'white' : folder.color,
-                  cursor: 'pointer',
-                  fontSize: 13,
+                style={{
+                  borderLeftColor: folder.color,
+                  background: index === folderPath.length - 1 ? folder.color : undefined,
+                  color: index === folderPath.length - 1 ? 'var(--bg-primary)' : folder.color,
                   fontWeight: index === folderPath.length - 1 ? 600 : 400
                 }}
               >
