@@ -2141,6 +2141,31 @@ body::after {
   box-shadow: var(--neon-red-glow);
 }
 
+/* === Custom Select (fix white dropdown on Windows) === */
+select, select option {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 8px 12px;
+}
+
+select:focus option:hover,
+select option:hover,
+select option:checked,
+select option:focus {
+  background: rgba(255, 26, 94, 0.15);
+  color: var(--neon-red);
+}
+
+select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* === Disabled state for button choices === */
 .btn-choice:disabled {
   opacity: 0.6;

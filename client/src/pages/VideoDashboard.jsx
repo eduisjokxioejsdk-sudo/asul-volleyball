@@ -504,8 +504,7 @@ function VideoDashboard({ user, onLogout }) {
               }}
               disabled={
                 (tab.key === 'annotate' && segments.length === 0 && points.length === 0) ||
-                (tab.key === 'view' && points.length === 0) ||
-                (tab.key === 'points' && points.length === 0)
+                (tab.key === 'view' && points.length === 0)
               }
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
