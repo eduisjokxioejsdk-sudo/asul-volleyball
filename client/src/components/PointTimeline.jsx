@@ -1,21 +1,7 @@
+import { useRef } from 'react';
 import { motion } from 'framer-motion';
 import { computeSetTimeline } from '../utils/volleyball';
 
-/**
- * PointTimeline — Frise chronologique horizontale des points du match avec sets.
- *
- * Affiche une frise de gauche à droite :
- * - Haut (bleu) : points gagnés par l'équipe 1
- * - Bas (rouge) : points gagnés par l'équipe 2
- * - Séparateurs entre les sets
- * - Score des sets en haut de la frise
- *
- * @param {Array}  points - Tous les points annotés (avec `winner`)
- * @param {string} team1  - Nom de l'équipe 1
- * @param {string} team2  - Nom de l'équipe 2
- * @param {Object} initialScore - Score de départ { team1, team2 }
- * @param {function} onScoreEdit - Callback quand le score de départ est modifié
- */
 function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2: 0 }, onScoreEdit }) {
   const { 
     timeline, 
@@ -28,6 +14,8 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
     matchWinner,
   } = computeSetTimeline(points, initialScore);
 
+  const scrollRefs = useRef({});
+
   if (points.length === 0) {
     return (
       <div className="timeline-empty">
@@ -38,9 +26,25 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
     );
   }
 
+  const timelineBySet = {};
+  timeline.forEach(pt => {
+    const s = pt.setNumber;
+    if (!timelineBySet[s]) timelineBySet[s] = [];
+    timelineBySet[s].push(pt);
+  });
+
+  const setNumbers = Object.keys(timelineBySet).map(Number).sort((a,b) => a-b);
+
+  const scrollRow = (setNum, direction) => {
+    const el = scrollRefs.current[setNum];
+    if (el) {
+      el.scrollBy({ left: direction * 200, behavior: 'smooth' });
+    }
+  };
+
   return (
-    <div className="timeline-container">
-      {/* Score Header — sets won badges + editable initial score */}
+    <div className="timeline-container" style={{ gap: 16 }}>
+      {/* Header */}
       <div className="timeline-header">
         <div className="timeline-score-display">
           <div className="timeline-score-team timeline-score-team1">
@@ -53,7 +57,6 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
             <span className="timeline-team-name">{team2}</span>
           </div>
         </div>
-        {/* Sets indicators */}
         <div className="timeline-sets-indicator">
           <span className="score-display-badge team1 active">{team1SetsWon}</span>
           <span style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 6px' }}>−</span>
@@ -83,124 +86,130 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
         </div>
       </div>
 
-      {/* Completed sets summary */}
-      {sets.length > 0 && (
-        <div className="timeline-sets-summary">
-          {sets.map(set => (
-            <div
-              key={set.setNumber}
-              className={`tube-set-badge ${set.winner === 'team1' ? 'tube-set-team1' : 'tube-set-team2'}`}
-            >
-              <span className="tube-set-label">S{set.setNumber}</span>
-              <span className="tube-set-score">{set.team1}−{set.team2}</span>
-              <span className="tube-set-winner">🏐</span>
-            </div>
-          ))}
-          {!matchOver && (
-            <div className="tube-set-badge tube-set-current">
-              <span className="tube-set-label">S{currentSet}</span>
-              <span className="tube-set-score">{currentSetScore.team1}−{currentSetScore.team2}</span>
-              <span className="tube-set-winner" style={{ fontSize: 10 }}>en cours</span>
-            </div>
-          )}
-          {matchOver && (
-            <div className="tube-set-badge tube-set-over">
-              <span className="tube-set-label">🏆</span>
-              <span className="tube-set-score">
-                {matchWinner === 'team1' ? team1 : team2}
-              </span>
-              <span className="tube-set-winner" style={{ fontSize: 10 }}>gagne</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Timeline scrollable */}
-      <div className="timeline-scroll">
-        <div className="timeline-track">
-          {/* Team 1 points (top - blue) */}
-          <div className="timeline-row timeline-row-top">
-            {timeline.map((pt, idx) => {
-              const isSetStart = idx === 0 || pt.setNumber !== timeline[idx - 1]?.setNumber;
-              return (
-                <motion.div
-                  key={idx}
-                  className={`timeline-point ${pt.winner === 'team1' ? 'timeline-point-won' : 'timeline-point-lost'}`}
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: idx * 0.02 }}
-                  title={`Point ${idx + 1} | Set ${pt.setNumber}: ${pt.winner === 'team1' ? team1 : team2} gagne (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
-                  style={isSetStart ? { marginLeft: 8, borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: 8 } : {}}
-                >
-                  <div className="timeline-point-dot" />
-                  <span className="timeline-point-label">{pt.scoreAfter.team1}</span>
-                </motion.div>
-              );
-            })}
+      {/* Completed sets badges (compact) */}
+      <div className="timeline-sets-summary">
+        {sets.map(set => (
+          <div
+            key={set.setNumber}
+            className={`tube-set-badge ${set.winner === 'team1' ? 'tube-set-team1' : 'tube-set-team2'}`}
+          >
+            <span className="tube-set-label">Set {set.setNumber}</span>
+            <span className="tube-set-score">{set.team1}−{set.team2}</span>
           </div>
-
-          {/* Center line */}
-          <div className="timeline-center-line">
-            <div className="timeline-center-line-inner" />
+        ))}
+        {!matchOver && (
+          <div className="tube-set-badge tube-set-current">
+            <span className="tube-set-label">Set {currentSet}</span>
+            <span className="tube-set-score">{currentSetScore.team1}−{currentSetScore.team2}</span>
           </div>
-
-          {/* Point numbers */}
-          <div className="timeline-numbers">
-            {timeline.map((pt, idx) => (
-              <motion.span
-                key={idx}
-                className="timeline-number"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.2, delay: idx * 0.02 }}
-              >
-                {idx + 1}
-              </motion.span>
-            ))}
+        )}
+        {matchOver && (
+          <div className="tube-set-badge tube-set-over">
+            <span className="tube-set-label">🏆</span>
+            <span className="tube-set-score">
+              {matchWinner === 'team1' ? team1 : team2}
+            </span>
           </div>
-
-          {/* Center line (bottom) */}
-          <div className="timeline-center-line">
-            <div className="timeline-center-line-inner" />
-          </div>
-
-          {/* Team 2 points (bottom - red) */}
-          <div className="timeline-row timeline-row-bottom">
-            {timeline.map((pt, idx) => {
-              const isSetStart = idx === 0 || pt.setNumber !== timeline[idx - 1]?.setNumber;
-              return (
-                <motion.div
-                  key={idx}
-                  className={`timeline-point ${pt.winner === 'team2' ? 'timeline-point-won' : 'timeline-point-lost'}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: idx * 0.02 }}
-                  title={`Point ${idx + 1} | Set ${pt.setNumber}: ${pt.winner === 'team2' ? team2 : team1} gagne (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
-                  style={isSetStart ? { marginLeft: 8, borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: 8 } : {}}
-                >
-                  <div className="timeline-point-dot" />
-                  <span className="timeline-point-label">{pt.scoreAfter.team2}</span>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Legend */}
-      <div className="timeline-legend">
-        <div className="timeline-legend-item">
-          <span className="timeline-legend-dot timeline-legend-dot-won" />
-          <span>Point gagné</span>
-        </div>
-        <div className="timeline-legend-item">
-          <span className="timeline-legend-dot timeline-legend-dot-lost" />
-          <span>Point perdu</span>
-        </div>
-        <div className="timeline-legend-item">
-          <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>│</span>
-          <span>Début de set</span>
-        </div>
+      {/* Set rows — 2 sets visible, scroll for more */}
+      <div className="timeline-scroll" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        {setNumbers.map((setNum) => {
+          const pts = timelineBySet[setNum];
+          const isCurrent = setNum === currentSet && !sets.find(s => s.setNumber === setNum);
+          const setInfo = sets.find(s => s.setNumber === setNum);
+          const setResult = setInfo
+            ? `${setInfo.team1}−${setInfo.team2}`
+            : `${currentSetScore.team1}−${currentSetScore.team2}`;
+
+          return (
+            <div key={setNum} className="set-timeline-row">
+              {/* SET label */}
+              <div className="set-timeline-label">
+                <span className="set-timeline-label-num">SET {setNum}</span>
+                <span className={`set-timeline-label-score ${setInfo?.winner === 'team1' ? 'set-score-team1' : setInfo?.winner === 'team2' ? 'set-score-team2' : ''}`}>
+                  {setResult}
+                </span>
+                {setInfo && <span className="set-timeline-label-check">✓</span>}
+                {isCurrent && <span className="set-timeline-label-dot" />}
+              </div>
+
+              {/* Scroll arrows + timeline */}
+              <div className="set-timeline-scroll-wrapper">
+                <motion.button
+                  className="scroll-arrow scroll-arrow-left"
+                  onClick={() => scrollRow(setNum, -1)}
+                  whileHover={{ scale: 1.1, background: 'rgba(232,72,72,0.15)' }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  ◀
+                </motion.button>
+                
+                <div
+                  className="set-timeline-scroll"
+                  ref={el => { scrollRefs.current[setNum] = el; }}
+                >
+                  <div className="timeline-track" style={{ padding: '0 12px' }}>
+                    {/* Top row: team1 scores */}
+                    <div className="timeline-row timeline-row-top">
+                      {pts.map((pt, idx) => (
+                        <motion.span
+                          key={idx}
+                          className={`timeline-number-bold ${
+                            pts.length <= 25 
+                              ? 'timeline-number-large' 
+                              : ''
+                          } ${pt.winner === 'team1' ? 'timeline-bold-won timeline-bold-blue' : 'timeline-bold-lost'}`}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ duration: 0.15, delay: idx * 0.01 }}
+                          title={`${pt.winner === 'team1' ? team1 : team2} gagne (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
+                        >
+                          {pt.scoreAfter.team1}
+                        </motion.span>
+                      ))}
+                    </div>
+
+                    {/* Center line */}
+                    <div className="timeline-center-line">
+                      <div className="timeline-center-line-inner" />
+                    </div>
+
+                    {/* Bottom row: team2 scores */}
+                    <div className="timeline-row timeline-row-bottom">
+                      {pts.map((pt, idx) => (
+                        <motion.span
+                          key={idx}
+                          className={`timeline-number-bold ${
+                            pts.length <= 25 
+                              ? 'timeline-number-large' 
+                              : ''
+                          } ${pt.winner === 'team2' ? 'timeline-bold-won timeline-bold-red' : 'timeline-bold-lost'}`}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ duration: 0.15, delay: idx * 0.01 }}
+                          title={`${pt.winner === 'team2' ? team2 : team1} gagne (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
+                        >
+                          {pt.scoreAfter.team2}
+                        </motion.span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <motion.button
+                  className="scroll-arrow scroll-arrow-right"
+                  onClick={() => scrollRow(setNum, 1)}
+                  whileHover={{ scale: 1.1, background: 'rgba(232,72,72,0.15)' }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  ▶
+                </motion.button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

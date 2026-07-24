@@ -319,7 +319,7 @@ function Dashboard({ user, onLogout }) {
                         animate="visible"
                         whileHover="hover"
                         className="video-card folder-card"
-                        onDoubleClick={() => openFolder(folder)}
+                        onClick={() => openFolder(folder)}
                         style={{ borderTop: `3px solid ${folder.color}` }}
                       >
                         <div className="video-card-thumbnail" style={{
