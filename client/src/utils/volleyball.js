@@ -134,5 +134,39 @@ export function computeSetScores(points) {
   };
 }
 
+/**
+ * Compute the cumulative match score point by point.
+ * Each point gets its score context (score before the point, score after).
+ *
+ * @param {Array} points - Array of point objects with a 'winner' field ('team1' or 'team2')
+ * @param {Object} initialScore - { team1: 0, team2: 0 } optional starting score
+ * @returns {Array} Each point enriched with { scoreBefore: { team1, team2 }, scoreAfter: { team1, team2 } }
+ */
+export function computeMatchTimeline(points, initialScore = { team1: 0, team2: 0 }) {
+  const timeline = [];
+  let t1 = initialScore.team1 || 0;
+  let t2 = initialScore.team2 || 0;
+
+  for (const point of points) {
+    const scoreBefore = { team1: t1, team2: t2 };
+
+    if (point.winner === 'team1') {
+      t1++;
+    } else if (point.winner === 'team2') {
+      t2++;
+    }
+
+    const scoreAfter = { team1: t1, team2: t2 };
+
+    timeline.push({
+      ...point,
+      scoreBefore,
+      scoreAfter,
+    });
+  }
+
+  return timeline;
+}
+
 
 

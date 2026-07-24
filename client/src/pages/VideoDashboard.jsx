@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { videosAPI, cuttingAPI, pointsAPI } from '../services/api';
-import { autoFillNextPoint, getRotationOrder } from '../utils/volleyball';
+import { autoFillNextPoint, getRotationOrder, computeMatchTimeline } from '../utils/volleyball';
 import ScoreDisplay from '../components/ScoreDisplay';
+import PointTimeline from '../components/PointTimeline';
 
 const ROTATION_ORDER = getRotationOrder();
 
@@ -52,6 +53,10 @@ function VideoDashboard({ user, onLogout }) {
   const [filterReceptionTeam, setFilterReceptionTeam] = useState('all');
   const [viewCurrentIndex, setViewCurrentIndex] = useState(0);
   const [isVideoExpanded, setIsVideoExpanded] = useState(false);
+
+  // Tab D: Points (timeline)
+  const [initialScore, setInitialScore] = useState({ team1: 0, team2: 0 });
+  const [activePointsTab, setActivePointsTab] = useState('view');
 
   const team1 = video?.team1_name || 'Équipe 1';
   const team2 = video?.team2_name || 'Équipe 2';
@@ -482,6 +487,7 @@ function VideoDashboard({ user, onLogout }) {
             { key: 'cut', icon: '✂️', label: 'Découper' },
             { key: 'annotate', icon: '🏷️', label: 'Annoter', badge: '← →' },
             { key: 'view', icon: '👁️', label: 'Consulter', badge: '← →' },
+            { key: 'points', icon: '📊', label: 'Points' },
           ].map(tab => (
             <motion.button
               key={tab.key}
@@ -498,7 +504,8 @@ function VideoDashboard({ user, onLogout }) {
               }}
               disabled={
                 (tab.key === 'annotate' && segments.length === 0 && points.length === 0) ||
-                (tab.key === 'view' && points.length === 0)
+                (tab.key === 'view' && points.length === 0) ||
+                (tab.key === 'points' && points.length === 0)
               }
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
@@ -508,7 +515,6 @@ function VideoDashboard({ user, onLogout }) {
               {tab.badge && <span className="tab-badge">{tab.badge}</span>}
             </motion.button>
           ))}
-          <button className="video-tab" disabled title="Fonctionnalité à venir">📊 Stats</button>
         </div>
 
         <AnimatePresence mode="wait">
@@ -957,11 +963,15 @@ function VideoDashboard({ user, onLogout }) {
                     {filteredPoints.length === 0 ? (
                       <option value="">Aucun point</option>
                     ) : (
-                      filteredPoints.map((pt, idx) => (
-                        <option key={pt.point_number} value={idx}>
-                          Point {pt.point_number} — Gagnant: {getTeamLabel(pt.winner) || '?'} — Service: {getTeamLabel(pt.serving_team) || '?'} ({formatTime(pt.start_time)} → {formatTime(pt.end_time)})
-                        </option>
-                      ))
+                      (() => {
+                        const timeline = computeMatchTimeline(points, initialScore);
+                        const filteredTimeline = timeline.filter(pt => filteredPoints.some(fp => fp.point_number === pt.point_number));
+                        return filteredTimeline.map((pt, idx) => (
+                          <option key={pt.point_number} value={idx}>
+                            {pt.scoreBefore.team1}-{pt.scoreBefore.team2} • Point {pt.point_number} — {getTeamLabel(pt.winner) || '?'} ({formatTime(pt.start_time)} → {formatTime(pt.end_time)})
+                          </option>
+                        ));
+                      })()
                     )}
                   </select>
 
@@ -1000,6 +1010,28 @@ function VideoDashboard({ user, onLogout }) {
                     </AnimatePresence>
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* TAB D: POINTS (Timeline) */}
+          {activeTab === 'points' && (
+            <motion.div
+              key="points"
+              className="tab-layout tab-layout-full"
+              variants={tabContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <div className="timeline-full">
+                <PointTimeline
+                  points={points}
+                  team1={team1}
+                  team2={team2}
+                  initialScore={initialScore}
+                  onScoreEdit={(newScore) => setInitialScore(newScore)}
+                />
               </div>
             </motion.div>
           )}

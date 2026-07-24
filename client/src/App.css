@@ -2096,3 +2096,312 @@ body::after {
   color: inherit;
   text-decoration: none;
 }
+
+/* ============================================================
+   POINT TIMELINE — Frise chronologique
+   ============================================================ */
+
+.timeline-full {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+  height: 100%;
+}
+
+.timeline-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.timeline-empty-icon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.timeline-empty-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Header */
+.timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--bg-glass-border);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+}
+
+.timeline-score-display {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.timeline-score-team {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.timeline-score-team1 .timeline-score-number {
+  color: var(--neon-blue);
+}
+
+.timeline-score-team2 .timeline-score-number {
+  color: var(--neon-red);
+}
+
+.timeline-team-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.timeline-score-number {
+  font-size: 28px;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 0 10px currentColor;
+}
+
+.timeline-score-separator {
+  font-size: 24px;
+  font-weight: 300;
+  color: var(--text-muted);
+}
+
+.timeline-initial-score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.timeline-initial-label {
+  color: var(--text-muted);
+}
+
+.timeline-initial-value {
+  color: var(--text-blue);
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-blue);
+  background: rgba(14, 165, 233, 0.08);
+  transition: all 0.2s;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.timeline-initial-value:hover {
+  background: rgba(14, 165, 233, 0.15);
+  box-shadow: var(--neon-blue-glow);
+}
+
+/* Scrollable track */
+.timeline-scroll {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 20px 0;
+  min-height: 200px;
+}
+
+.timeline-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.timeline-scroll::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.timeline-scroll::-webkit-scrollbar-thumb {
+  background: var(--neon-red);
+  border-radius: 3px;
+  box-shadow: var(--neon-red-glow);
+}
+
+.timeline-track {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: max-content;
+  padding: 0 40px;
+  gap: 0;
+}
+
+/* Rows */
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+}
+
+.timeline-row-top {
+  align-items: flex-end;
+}
+
+.timeline-row-bottom {
+  align-items: flex-start;
+}
+
+/* Center line */
+.timeline-center-line {
+  display: flex;
+  align-items: center;
+  height: 4px;
+  width: 100%;
+  padding: 0 4px;
+}
+
+.timeline-center-line-inner {
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--neon-blue), var(--neon-red), transparent);
+  opacity: 0.4;
+  border-radius: 1px;
+}
+
+/* Point numbers */
+.timeline-numbers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+}
+
+.timeline-number {
+  width: 28px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Points */
+.timeline-point {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 28px;
+  cursor: default;
+}
+
+.timeline-point-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+
+.timeline-point-won .timeline-point-dot {
+  background: var(--neon-blue);
+  box-shadow: 0 0 8px rgba(14, 165, 233, 0.6), 0 0 16px rgba(14, 165, 233, 0.3);
+}
+
+.timeline-row-bottom .timeline-point-won .timeline-point-dot {
+  background: var(--neon-red);
+  box-shadow: 0 0 8px rgba(255, 26, 94, 0.6), 0 0 16px rgba(255, 26, 94, 0.3);
+}
+
+.timeline-point-lost .timeline-point-dot {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+.timeline-point:hover .timeline-point-dot {
+  transform: scale(1.3);
+}
+
+.timeline-point-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  opacity: 0.7;
+}
+
+.timeline-point-won .timeline-point-label {
+  opacity: 1;
+}
+
+.timeline-row-top .timeline-point-won .timeline-point-label {
+  color: var(--neon-blue);
+}
+
+.timeline-row-bottom .timeline-point-won .timeline-point-label {
+  color: var(--neon-red);
+}
+
+/* Legend */
+.timeline-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--bg-glass-border);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.timeline-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.timeline-legend-dot-won {
+  background: var(--neon-blue);
+  box-shadow: 0 0 6px rgba(14, 165, 233, 0.5);
+}
+
+.timeline-legend-dot-lost {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Tab layout full (for Points tab) */
+.tab-layout-full {
+  display: flex !important;
+  flex-direction: column;
+  height: calc(100vh - 180px);
+  min-height: 400px;
+}
+
+.tab-layout-full .timeline-full {
+  flex: 1;
+  min-height: 0;
+}
