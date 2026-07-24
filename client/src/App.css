@@ -1005,20 +1005,82 @@ body::after {
   font-weight: 500;
 }
 
-.upload-progress {
+.upload-progress-container {
   margin-top: 16px;
-  height: 4px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius);
+}
+
+.upload-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.upload-progress-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+.upload-progress-percent {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--neon-red);
+  font-family: var(--font-mono);
+  text-shadow: var(--neon-red-glow);
+  animation: neonPulse 1.5s ease-in-out infinite;
+}
+
+.upload-progress {
+  height: 6px;
   background: rgba(255, 255, 255, 0.06);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
+  position: relative;
 }
 
 .upload-progress-bar {
   height: 100%;
   background: var(--gradient-red);
-  transition: width 0.3s ease;
+  border-radius: 3px;
   box-shadow: var(--neon-red-glow);
   position: relative;
+  z-index: 1;
+}
+
+.upload-progress-glow {
+  position: absolute;
+  top: 0;
+  width: 20px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.3);
+  filter: blur(4px);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.upload-progress-size {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.upload-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
 }
 
 /* ============================================================

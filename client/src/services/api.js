@@ -46,9 +46,15 @@ export const authAPI = {
 export const videosAPI = {
   getAll: () => api.get('/videos'),
   getOne: (id) => api.get(`/videos/${id}`),
-  upload: (formData) =>
+  upload: (formData, onProgress) =>
     api.post('/videos/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
     }),
   update: (id, data) => api.patch(`/videos/${id}`, data),
   delete: (id) => api.delete(`/videos/${id}`),

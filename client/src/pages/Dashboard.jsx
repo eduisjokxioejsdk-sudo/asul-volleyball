@@ -104,7 +104,9 @@ function Dashboard({ user, onLogout }) {
       formData.append('team1_name', team1Name || uploadFile.name.replace(/\.[^/.]+$/, '').split('vs')[0]?.trim() || 'Équipe 1');
       formData.append('team2_name', team2Name || 'Équipe 2');
 
-      await videosAPI.upload(formData);
+      await videosAPI.upload(formData, (percent) => {
+        setUploadProgress(percent);
+      });
       setShowUpload(false);
       setUploadFile(null);
       setTeam1Name('');
@@ -557,31 +559,60 @@ function Dashboard({ user, onLogout }) {
                   </div>
 
                   {uploading && (
-                    <div className="upload-progress">
-                      <motion.div
-                        className="upload-progress-bar"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${uploadProgress}%` }}
-                        transition={{ duration: 0.3 }}
-                      />
+                    <div className="upload-progress-container">
+                      <div className="upload-progress-info">
+                        <span className="upload-progress-label">
+                          {uploadProgress < 100 ? 'Transfert en cours...' : 'Finalisation...'}
+                        </span>
+                        <span className="upload-progress-percent">{uploadProgress}%</span>
+                      </div>
+                      <div className="upload-progress">
+                        <motion.div
+                          className="upload-progress-bar"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${uploadProgress}%` }}
+                          transition={{ duration: 0.3, ease: 'easeOut' }}
+                        />
+                        <motion.div
+                          className="upload-progress-glow"
+                          initial={{ left: '-10%' }}
+                          animate={{ left: `${uploadProgress}%` }}
+                          transition={{ duration: 0.3, ease: 'easeOut' }}
+                        />
+                      </div>
+                      <div className="upload-progress-size">
+                        <span>
+                          {(uploadFile.size * uploadProgress / 100 / (1024 * 1024)).toFixed(1)} MB / {(uploadFile.size / (1024 * 1024)).toFixed(1)} MB
+                        </span>
+                      </div>
                     </div>
                   )}
 
                   <div style={{ display: 'flex', gap: 12 }}>
-                    <button
+                    <motion.button
                       className="btn btn-primary"
                       onClick={handleUpload}
                       disabled={uploading}
+                      whileHover={!uploading ? { scale: 1.02 } : {}}
+                      whileTap={!uploading ? { scale: 0.98 } : {}}
+                      style={{ flex: 1 }}
                     >
-                      {uploading ? 'Upload en cours...' : "Confirmer l'upload"}
-                    </button>
-                    <button
+                      {uploading ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="upload-spinner" />
+                          {uploadProgress < 100 ? 'Upload...' : 'Sauvegarde...'}
+                        </span>
+                      ) : "Confirmer l'upload"}
+                    </motion.button>
+                    <motion.button
                       className="btn btn-secondary"
                       onClick={() => setUploadFile(null)}
                       disabled={uploading}
+                      whileHover={!uploading ? { scale: 1.02 } : {}}
+                      whileTap={!uploading ? { scale: 0.98 } : {}}
                     >
                       Annuler
-                    </button>
+                    </motion.button>
                   </div>
                 </motion.div>
               )}
