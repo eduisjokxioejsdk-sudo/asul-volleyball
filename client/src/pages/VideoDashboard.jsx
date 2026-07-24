@@ -764,7 +764,7 @@ function VideoDashboard({ user, onLogout }) {
             </motion.div>
           )}
 
-          {/* TAB C: VIEW */}
+          {/* TAB C: VIEW — full width video, compact sidebar */}
           {activeTab === 'view' && (
             <motion.div
               key="view"
@@ -773,8 +773,9 @@ function VideoDashboard({ user, onLogout }) {
               initial="hidden"
               animate="visible"
               exit="exit"
+              style={{ gap: 0 }}
             >
-              <div className={`video-left ${isVideoExpanded ? 'expanded' : ''}`}>
+              <div className={`video-left ${isVideoExpanded ? 'expanded' : ''}`} style={{ maxWidth: isVideoExpanded ? '100%' : 'calc(100% - 260px)', paddingRight: isVideoExpanded ? 0 : 16 }}>
                 <div className="video-player-wrapper">
                   <video
                     ref={viewVideoRef}
@@ -795,7 +796,7 @@ function VideoDashboard({ user, onLogout }) {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                   >
-                    ⬅️ Point précédent
+                    ⬅️ Précédent
                   </motion.button>
                   <motion.button
                     className="btn btn-primary btn-sm"
@@ -804,7 +805,7 @@ function VideoDashboard({ user, onLogout }) {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                   >
-                    {viewIsPlaying ? '⏸️ Pause' : '▶️ Lecture'}
+                    {viewIsPlaying ? '⏸️' : '▶️'}
                   </motion.button>
                   <motion.button
                     className="btn btn-secondary btn-sm"
@@ -813,117 +814,145 @@ function VideoDashboard({ user, onLogout }) {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                   >
-                    Point suivant ➡️
+                    Suivant ➡️
                   </motion.button>
-                </div>
-                <div style={{ textAlign: 'center', marginTop: 6, fontSize: 13, color: 'var(--text-muted)' }}>
-                  {filteredPoints.length > 0 && filteredPoints[viewCurrentIndex] ? (
-                    <>
-                      Point {viewCurrentIndex + 1}/{filteredPoints.length}
-                      {' • '}P{filteredPoints[viewCurrentIndex].point_number}
-                      {' • '}{formatTime(filteredPoints[viewCurrentIndex].start_time)} → {formatTime(filteredPoints[viewCurrentIndex].end_time)}
-                      <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>flèches ← →</span>
-                    </>
-                  ) : 'Aucun point à lire'}
+                  <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>
+                    {filteredPoints.length > 0 && filteredPoints[viewCurrentIndex] ? (
+                      <>P{filteredPoints[viewCurrentIndex].point_number} • {formatTime(filteredPoints[viewCurrentIndex].start_time)} → {formatTime(filteredPoints[viewCurrentIndex].end_time)}</>
+                    ) : ''}
+                  </span>
                 </div>
               </div>
 
-              <div className={`info-right ${isVideoExpanded ? 'hidden' : ''}`}>
+              <div className={`info-right ${isVideoExpanded ? 'hidden' : ''}`} style={{ width: 260, minWidth: 260 }}>
                 <ScoreDisplay points={points} team1={team1} team2={team2} />
                 
-                {/* Compact filters row */}
-                <div className="right-card" style={{ padding: '12px 14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: 4 }}>Filtres</span>
-                    <select value={filterServiceTeam} onChange={(e) => {
-                      const v = e.target.value;
-                      setFilterServiceTeam(v);
-                      setFilterReceptionTeam(v === 'all' ? 'all' : (v === 'team1' ? 'team2' : 'team1'));
-                    }} style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)', width: 80 }}>
-                      <option value="all">Service: Tous</option>
-                      <option value="team1">Service: {team1}</option>
-                      <option value="team2">Service: {team2}</option>
+                {/* Filters — nice dropdowns */}
+                <div className="right-card" style={{ padding: '12px' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: 11, letterSpacing: '0.5px' }}>🔍 Filtres</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <select
+                      value={filterServiceTeam}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setFilterServiceTeam(v);
+                        setFilterReceptionTeam(v === 'all' ? 'all' : (v === 'team1' ? 'team2' : 'team1'));
+                      }}
+                      className="filter-select"
+                    >
+                      <option value="all">🏐 Service : Toutes</option>
+                      <option value="team1">🏐 Service : {team1}</option>
+                      <option value="team2">🏐 Service : {team2}</option>
                     </select>
-                    <select value={filterWinner} onChange={(e) => setFilterWinner(e.target.value)} style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)', width: 80 }}>
-                      <option value="all">Gagnant: Tous</option>
-                      <option value="team1">Gagnant: {team1}</option>
-                      <option value="team2">Gagnant: {team2}</option>
+                    <select
+                      value={filterWinner}
+                      onChange={(e) => setFilterWinner(e.target.value)}
+                      className="filter-select"
+                    >
+                      <option value="all">🏆 Gagnant : Tous</option>
+                      <option value="team1">🏆 Gagnant : {team1}</option>
+                      <option value="team2">🏆 Gagnant : {team2}</option>
                     </select>
-                    <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)', width: 80 }}>
-                      <option value="all">Position: Toutes</option>
-                      {ROTATION_ORDER.map(pos => <option key={pos} value={pos}>Pos: {pos}</option>)}
-                    </select>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                      <select
+                        value={filterPosition}
+                        onChange={(e) => setFilterPosition(e.target.value)}
+                        className="filter-select"
+                        style={{ fontSize: 11 }}
+                      >
+                        <option value="all">{team1}: Toutes</option>
+                        {ROTATION_ORDER.map(pos => (
+                          <option key={`t1-${pos}`} value={pos}>{team1}: {pos}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={filterPosition}
+                        onChange={(e) => setFilterPosition(e.target.value)}
+                        className="filter-select"
+                        style={{ fontSize: 11 }}
+                      >
+                        <option value="all">{team2}: Toutes</option>
+                        {ROTATION_ORDER.map(pos => (
+                          <option key={`t2-${pos}`} value={pos}>{team2}: {pos}</option>
+                        ))}
+                      </select>
+                    </div>
                     <motion.button
                       className="btn btn-secondary"
                       onClick={() => { setFilterWinner('all'); setFilterPosition('all'); setFilterServiceTeam('all'); setFilterReceptionTeam('all'); }}
-                      style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, minWidth: 'auto' }}
-                      whileHover={{ scale: 1.05 }}
+                      style={{ fontSize: 11, padding: '4px 10px', width: '100%' }}
+                      whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.95 }}
                     >
-                      ♻️
+                      ♻️ Réinitialiser
                     </motion.button>
                   </div>
                 </div>
 
-                {/* Points dropdown with score + compact list */}
-                <div className="right-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '12px 14px' }}>
+                {/* Points list — big score + colored positions */}
+                <div className="right-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '12px', overflow: 'hidden' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <h4 style={{ margin: 0, fontSize: 12 }}>Points ({filteredPoints.length})</h4>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                    <h4 style={{ margin: 0, fontSize: 11, letterSpacing: '0.5px' }}>📋 Points ({filteredPoints.length})</h4>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)', cursor: 'pointer' }}>
                       <input type="checkbox" checked={viewAutoplay} onChange={(e) => setViewAutoplay(e.target.checked)} style={{ margin: 0 }} />
                       Auto
                     </label>
                   </div>
-                  <select
-                    value={filteredPoints.length > 0 ? viewCurrentIndex : ''}
-                    onChange={(e) => goToViewPoint(Number(e.target.value))}
-                    disabled={filteredPoints.length === 0}
-                    style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', fontSize: 12, marginBottom: 8, background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)' }}
-                  >
-                    {filteredPoints.length === 0 ? (
-                      <option value="">Aucun point</option>
-                    ) : (
-                      (() => {
-                        const timeline = computeMatchTimeline(points, initialScore);
-                        const filteredTimeline = timeline.filter(pt => filteredPoints.some(fp => fp.point_number === pt.point_number));
-                        return filteredTimeline.map((pt, idx) => (
-                          <option key={pt.point_number} value={idx}>
-                            {pt.scoreBefore.team1}-{pt.scoreBefore.team2} • P{pt.point_number} — {getTeamLabel(pt.winner) || '?'}
-                          </option>
-                        ));
-                      })()
-                    )}
-                  </select>
-
-                  <div style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 420px)', minHeight: 120 }}>
+                  <div style={{ flex: 1, overflowY: 'auto', minHeight: 100 }}>
                     <AnimatePresence>
                       {filteredPoints.length === 0 ? (
-                        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 16, fontSize: 12 }}>Aucun point ne correspond aux filtres.</p>
+                        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 16, fontSize: 11 }}>Aucun point</p>
                       ) : (
                         filteredPoints.map((pt, idx) => {
                           const timeline = computeMatchTimeline(points, initialScore);
                           const tlPt = timeline.find(t => t.point_number === pt.point_number);
-                          const scoreStr = tlPt ? `${tlPt.scoreBefore.team1}-${tlPt.scoreBefore.team2}` : '';
+                          const scoreStr = tlPt ? `${tlPt.scoreBefore.team1} - ${tlPt.scoreBefore.team2}` : '';
+                          const isActive = viewCurrentIndex === idx;
                           return (
                             <motion.div
                               key={pt.point_number}
-                              className={`point-queue-item ${viewCurrentIndex === idx ? 'active' : ''}`}
                               onClick={() => goToViewPoint(idx)}
                               initial={{ opacity: 0, x: -10 }}
                               animate={{ opacity: 1, x: 0 }}
-                              transition={{ duration: 0.15, delay: idx * 0.01 }}
-                              whileHover={{ x: 4 }}
-                              style={{ padding: '6px 10px', marginBottom: 3 }}
+                              transition={{ duration: 0.12, delay: idx * 0.008 }}
+                              whileHover={{ x: 3 }}
+                              style={{
+                                padding: '8px 10px',
+                                marginBottom: 4,
+                                borderRadius: 8,
+                                cursor: 'pointer',
+                                background: isActive ? 'rgba(255,26,94,0.08)' : 'rgba(255,255,255,0.02)',
+                                border: isActive ? '1px solid rgba(255,26,94,0.2)' : '1px solid rgba(255,255,255,0.04)',
+                                transition: 'all 0.2s'
+                              }}
                             >
-                              <div className="point-queue-header" style={{ marginBottom: 2 }}>
-                                <span className="point-queue-number" style={{ fontSize: 11, minWidth: 18 }}>P{pt.point_number}</span>
-                                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', marginRight: 6 }}>{scoreStr}</span>
-                                <span className={`point-queue-badge ${pt.winner === 'team1' ? 'team1' : 'team2'}`} style={{ fontSize: 10, padding: '1px 6px' }}>{getTeamLabel(pt.winner)}</span>
-                                <span className="point-queue-service" style={{ fontSize: 10 }}>S:{getTeamLabel(pt.serving_team)}</span>
+                              {/* Big score */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--neon-blue)', textShadow: '0 0 8px rgba(14,165,233,0.3)' }}>
+                                  {tlPt ? tlPt.scoreBefore.team1 : '?'}
+                                </span>
+                                <span style={{ fontSize: 14, fontWeight: 300, color: 'var(--text-muted)' }}>-</span>
+                                <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--neon-red)', textShadow: '0 0 8px rgba(255,26,94,0.3)' }}>
+                                  {tlPt ? tlPt.scoreBefore.team2 : '?'}
+                                </span>
                               </div>
-                              <div className="point-queue-positions" style={{ fontSize: 10, paddingLeft: 18 }}>
-                                <span>{team1}: {pt.team1_position || '?'}</span>
-                                <span>{team2}: {pt.team2_position || '?'}</span>
+                              {/* Positions colored */}
+                              <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 13, fontWeight: 700 }}>
+                                <span style={{ color: 'var(--neon-blue)' }}>
+                                  {pt.team1_position || '?'}
+                                </span>
+                                <span style={{ color: 'var(--text-muted)', fontWeight: 300 }}>|</span>
+                                <span style={{ color: 'var(--neon-red)' }}>
+                                  {pt.team2_position || '?'}
+                                </span>
+                              </div>
+                              {/* Small meta */}
+                              <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+                                <span>P{pt.point_number}</span>
+                                <span>•</span>
+                                <span style={{ color: pt.winner === 'team1' ? 'var(--neon-blue)' : 'var(--neon-red)' }}>
+                                  {getTeamLabel(pt.winner)}
+                                </span>
                               </div>
                             </motion.div>
                           );
