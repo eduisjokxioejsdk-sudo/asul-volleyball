@@ -66,13 +66,7 @@ function VideoDashboard({ user, onLogout }) {
     loadPoints();
   }, [id]);
 
-  // Auto-switch to 'view' tab only when points are first loaded from the server
-  // (not when they change during annotation)
-  useEffect(() => {
-    if (points.length > 0 && !loading && activeTab === 'cut') {
-      setActiveTab('view');
-    }
-  }, [loading]);
+  // No auto-switching between tabs — user controls navigation manually
 
   const loadVideo = async () => {
     try {
