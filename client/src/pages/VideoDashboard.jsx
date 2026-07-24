@@ -30,7 +30,6 @@ function VideoDashboard({ user, onLogout }) {
   const [video, setVideo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('cut');
-  const [shouldAutoOpenView, setShouldAutoOpenView] = useState(false);
 
   // Tab A: Cutting
   const [segments, setSegments] = useState([]);
@@ -67,18 +66,13 @@ function VideoDashboard({ user, onLogout }) {
     loadPoints();
   }, [id]);
 
+  // Auto-switch to 'view' tab only when points are first loaded from the server
+  // (not when they change during annotation)
   useEffect(() => {
-    if (points.length > 0 && !loading) {
-      setShouldAutoOpenView(true);
-    }
-  }, [points, loading]);
-
-  useEffect(() => {
-    if (shouldAutoOpenView && points.length > 0) {
+    if (points.length > 0 && !loading && activeTab === 'cut') {
       setActiveTab('view');
-      setShouldAutoOpenView(false);
     }
-  }, [shouldAutoOpenView, points.length]);
+  }, [loading]);
 
   const loadVideo = async () => {
     try {
