@@ -2524,3 +2524,110 @@ select:disabled {
   flex: 1;
   min-height: 0;
 }
+
+/* ============================================================
+   SET BADGES — timeline & view sidebar
+   ============================================================ */
+
+/* Sets indicator in timeline header */
+.timeline-sets-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Sets summary bar (timeline top) */
+.timeline-sets-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--bg-glass-border);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.tube-set-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid;
+  transition: all var(--transition);
+}
+
+.tube-set-badge:hover {
+  transform: translateY(-1px);
+}
+
+.tube-set-team1 {
+  background: rgba(40, 104, 184, 0.1);
+  border-color: rgba(40, 104, 184, 0.25);
+  color: var(--neon-blue);
+}
+
+.tube-set-team2 {
+  background: rgba(232, 72, 72, 0.1);
+  border-color: rgba(232, 72, 72, 0.25);
+  color: var(--neon-red);
+}
+
+.tube-set-current {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  animation: pulseGlow 2s infinite;
+}
+
+.tube-set-over {
+  background: rgba(232, 72, 72, 0.08);
+  border-color: rgba(232, 72, 72, 0.3);
+  color: var(--neon-red);
+  animation: pulseGlow 2s infinite;
+}
+
+.tube-set-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.7;
+}
+
+.tube-set-score {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.tube-set-winner {
+  font-size: 12px;
+}
+
+/* View sidebar set separator */
+.view-set-separator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 4px 0;
+}
+
+.view-set-separator::before,
+.view-set-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(232, 72, 72, 0.2);
+}
+
+.view-set-separator span {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--neon-red);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}

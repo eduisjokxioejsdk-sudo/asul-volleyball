@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { videosAPI, cuttingAPI, pointsAPI } from '../services/api';
-import { autoFillNextPoint, getRotationOrder, computeMatchTimeline } from '../utils/volleyball';
+import { autoFillNextPoint, getRotationOrder, computeMatchTimeline, computeSetTimeline } from '../utils/volleyball';
 import ScoreDisplay from '../components/ScoreDisplay';
 import PointTimeline from '../components/PointTimeline';
 
@@ -904,60 +904,77 @@ function VideoDashboard({ user, onLogout }) {
                       {filteredPoints.length === 0 ? (
                         <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 16, fontSize: 11 }}>Aucun point</p>
                       ) : (
-                        filteredPoints.map((pt, idx) => {
-                          const timeline = computeMatchTimeline(points, initialScore);
-                          const tlPt = timeline.find(t => t.point_number === pt.point_number);
-                          const scoreStr = tlPt ? `${tlPt.scoreBefore.team1} - ${tlPt.scoreBefore.team2}` : '';
-                          const isActive = viewCurrentIndex === idx;
-                          return (
-                            <motion.div
-                              key={pt.point_number}
-                              onClick={() => goToViewPoint(idx)}
-                              initial={{ opacity: 0, x: -10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ duration: 0.12, delay: idx * 0.008 }}
-                              whileHover={{ x: 3 }}
-                              style={{
-                                padding: '8px 10px',
-                                marginBottom: 4,
-                                borderRadius: 8,
-                                cursor: 'pointer',
-                                background: isActive ? 'rgba(255,26,94,0.08)' : 'rgba(255,255,255,0.02)',
-                                border: isActive ? '1px solid rgba(255,26,94,0.2)' : '1px solid rgba(255,255,255,0.04)',
-                                transition: 'all 0.2s'
-                              }}
-                            >
-                              {/* Big score */}
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6 }}>
-                                <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--neon-blue)', textShadow: '0 0 8px rgba(14,165,233,0.3)' }}>
-                                  {tlPt ? tlPt.scoreBefore.team1 : '?'}
-                                </span>
-                                <span style={{ fontSize: 14, fontWeight: 300, color: 'var(--text-muted)' }}>-</span>
-                                <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--neon-red)', textShadow: '0 0 8px rgba(255,26,94,0.3)' }}>
-                                  {tlPt ? tlPt.scoreBefore.team2 : '?'}
-                                </span>
-                              </div>
-                              {/* Positions colored */}
-                              <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 13, fontWeight: 700 }}>
-                                <span style={{ color: 'var(--neon-blue)' }}>
-                                  {pt.team1_position || '?'}
-                                </span>
-                                <span style={{ color: 'var(--text-muted)', fontWeight: 300 }}>|</span>
-                                <span style={{ color: 'var(--neon-red)' }}>
-                                  {pt.team2_position || '?'}
-                                </span>
-                              </div>
-                              {/* Small meta */}
-                              <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-                                <span>P{pt.point_number}</span>
-                                <span>•</span>
-                                <span style={{ color: pt.winner === 'team1' ? 'var(--neon-blue)' : 'var(--neon-red)' }}>
-                                  {getTeamLabel(pt.winner)}
-                                </span>
-                              </div>
-                            </motion.div>
-                          );
-                        })
+                        (() => {
+                          const { timeline: setTimeline } = computeSetTimeline(points, initialScore);
+                          const tlMap = {};
+                          setTimeline.forEach(pt => { tlMap[pt.point_number] = pt; });
+
+                          return filteredPoints.map((pt, idx) => {
+                            const tlPt = tlMap[pt.point_number];
+                            const isActive = viewCurrentIndex === idx;
+                            const isNewSet = tlPt && idx > 0 && tlPt.setNumber !== (tlMap[filteredPoints[idx-1]?.point_number]?.setNumber || tlPt.setNumber);
+                            return (
+                              <motion.div
+                                key={pt.point_number}
+                                onClick={() => goToViewPoint(idx)}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ duration: 0.12, delay: idx * 0.008 }}
+                                whileHover={{ x: 3 }}
+                                style={{
+                                  padding: '8px 10px',
+                                  marginBottom: isNewSet ? 8 : 4,
+                                  marginTop: isNewSet ? 4 : 0,
+                                  borderRadius: 8,
+                                  cursor: 'pointer',
+                                  background: isActive ? 'rgba(255,26,94,0.08)' : 'rgba(255,255,255,0.02)',
+                                  border: isNewSet
+                                    ? '1px solid rgba(232,72,72,0.25)'
+                                    : isActive ? '1px solid rgba(255,26,94,0.2)' : '1px solid rgba(255,255,255,0.04)',
+                                  borderTop: isNewSet ? '2px solid var(--neon-red)' : undefined,
+                                  transition: 'all 0.2s'
+                                }}
+                              >
+                                {/* Set label */}
+                                {isNewSet && (
+                                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--neon-red)', textAlign: 'center', marginBottom: 4, letterSpacing: 1 }}>
+                                    ── SET {tlPt.setNumber} ──
+                                  </div>
+                                )}
+                                {/* Big score */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6 }}>
+                                  <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--neon-blue)', textShadow: '0 0 8px rgba(40,104,184,0.3)' }}>
+                                    {tlPt ? tlPt.scoreBefore.team1 : '?'}
+                                  </span>
+                                  <span style={{ fontSize: 14, fontWeight: 300, color: 'var(--text-muted)' }}>-</span>
+                                  <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--neon-red)', textShadow: '0 0 8px rgba(232,72,72,0.3)' }}>
+                                    {tlPt ? tlPt.scoreBefore.team2 : '?'}
+                                  </span>
+                                </div>
+                                {/* Positions colored */}
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 13, fontWeight: 700 }}>
+                                  <span style={{ color: 'var(--neon-blue)' }}>
+                                    {pt.team1_position || '?'}
+                                  </span>
+                                  <span style={{ color: 'var(--text-muted)', fontWeight: 300 }}>|</span>
+                                  <span style={{ color: 'var(--neon-red)' }}>
+                                    {pt.team2_position || '?'}
+                                  </span>
+                                </div>
+                                {/* Small meta */}
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+                                  <span>P{pt.point_number}</span>
+                                  <span>•</span>
+                                  <span>S{tlPt?.setNumber || '?'}</span>
+                                  <span>•</span>
+                                  <span style={{ color: pt.winner === 'team1' ? 'var(--neon-blue)' : 'var(--neon-red)' }}>
+                                    {getTeamLabel(pt.winner)}
+                                  </span>
+                                </div>
+                              </motion.div>
+                            );
+                          });
+                        })()
                       )}
                     </AnimatePresence>
                   </div>
