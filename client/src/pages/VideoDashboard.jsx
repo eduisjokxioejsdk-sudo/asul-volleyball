@@ -454,7 +454,8 @@ function VideoDashboard({ user, onLogout }) {
           >
             ← Retour
           </motion.button>
-          <span className="brand-icon">⚡</span>ASUL <span>• {video.original_name}</span>
+          <img src="/logo.png" alt="ASUL" style={{ height: 28, marginRight: 4 }} />
+          ASUL <span>• {video.original_name}</span>
         </div>
         <div className="navbar-user">
           <span className="user-info"><span className="user-name">{user.name}</span></span>

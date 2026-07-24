@@ -232,7 +232,8 @@ function Dashboard({ user, onLogout }) {
     <div className="dashboard">
       <nav className="navbar">
         <div className="navbar-brand">
-          <span className="brand-icon">⚡</span>ASUL <span>• Analyse Volleyball</span>
+          <img src="/logo.png" alt="ASUL" style={{ height: 28, marginRight: 4 }} />
+          ASUL <span>• Analyse Volleyball</span>
         </div>
         <div className="navbar-user">
           <span className="user-info">
