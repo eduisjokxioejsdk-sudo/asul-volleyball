@@ -830,122 +830,55 @@ function VideoDashboard({ user, onLogout }) {
 
               <div className={`info-right ${isVideoExpanded ? 'hidden' : ''}`}>
                 <ScoreDisplay points={points} team1={team1} team2={team2} />
-                <div className="right-card">
-                  <h4>Filtres</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>🏐 Au service</label>
-                      <div className="btn-group-horizontal">
-                        {[
-                          { value: 'all', label: 'Tous' },
-                          { value: 'team1', label: team1 },
-                          { value: 'team2', label: team2 },
-                        ].map(opt => (
-                          <motion.button
-                            key={`svc-${opt.value}`}
-                            className={`btn-choice ${filterServiceTeam === opt.value ? (opt.value !== 'all' ? `active ${opt.value}` : 'active') : ''}`}
-                            onClick={() => {
-                              if (opt.value === 'all') {
-                                setFilterServiceTeam('all');
-                                setFilterReceptionTeam('all');
-                              } else {
-                                setFilterServiceTeam(opt.value);
-                                setFilterReceptionTeam(opt.value === 'team1' ? 'team2' : 'team1');
-                              }
-                            }}
-                            style={{ fontSize: 12, padding: '6px 10px' }}
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            {opt.label}
-                          </motion.button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>🙌 En réception</label>
-                      <div className="btn-group-horizontal">
-                        {[
-                          { value: 'all', label: 'Tous' },
-                          { value: 'team1', label: team1 },
-                          { value: 'team2', label: team2 },
-                        ].map(opt => (
-                          <motion.button
-                            key={`rcv-${opt.value}`}
-                            className={`btn-choice ${filterReceptionTeam === opt.value ? (opt.value !== 'all' ? `active ${opt.value}` : 'active') : ''}`}
-                            onClick={() => {
-                              if (opt.value === 'all') {
-                                setFilterReceptionTeam('all');
-                                setFilterServiceTeam('all');
-                              } else {
-                                setFilterReceptionTeam(opt.value);
-                                setFilterServiceTeam(opt.value === 'team1' ? 'team2' : 'team1');
-                              }
-                            }}
-                            style={{ fontSize: 12, padding: '6px 10px' }}
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            {opt.label}
-                          </motion.button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>🏆 Vainqueur</label>
-                      <div className="btn-group-horizontal">
-                        {[
-                          { value: 'all', label: 'Tous' },
-                          { value: 'team1', label: team1 },
-                          { value: 'team2', label: team2 },
-                        ].map(opt => (
-                          <motion.button
-                            key={`win-${opt.value}`}
-                            className={`btn-choice ${filterWinner === opt.value ? (opt.value !== 'all' ? `active ${opt.value}` : 'active') : ''}`}
-                            onClick={() => setFilterWinner(opt.value)}
-                            style={{ fontSize: 12, padding: '6px 10px' }}
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            {opt.label}
-                          </motion.button>
-                        ))}
-                      </div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <div>
-                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>📍 {team1}</label>
-                        <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', fontSize: 12, background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)' }}>
-                          <option value="all">Toutes</option>
-                          {ROTATION_ORDER.map(pos => <option key={pos} value={pos}>{pos}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>📍 {team2}</label>
-                        <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', fontSize: 12, background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)' }}>
-                          <option value="all">Toutes</option>
-                          {ROTATION_ORDER.map(pos => <option key={pos} value={pos}>{pos}</option>)}
-                        </select>
-                      </div>
-                    </div>
+                
+                {/* Compact filters row */}
+                <div className="right-card" style={{ padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: 4 }}>Filtres</span>
+                    <select value={filterServiceTeam} onChange={(e) => {
+                      const v = e.target.value;
+                      setFilterServiceTeam(v);
+                      setFilterReceptionTeam(v === 'all' ? 'all' : (v === 'team1' ? 'team2' : 'team1'));
+                    }} style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)', width: 80 }}>
+                      <option value="all">Service: Tous</option>
+                      <option value="team1">Service: {team1}</option>
+                      <option value="team2">Service: {team2}</option>
+                    </select>
+                    <select value={filterWinner} onChange={(e) => setFilterWinner(e.target.value)} style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)', width: 80 }}>
+                      <option value="all">Gagnant: Tous</option>
+                      <option value="team1">Gagnant: {team1}</option>
+                      <option value="team2">Gagnant: {team2}</option>
+                    </select>
+                    <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)', width: 80 }}>
+                      <option value="all">Position: Toutes</option>
+                      {ROTATION_ORDER.map(pos => <option key={pos} value={pos}>Pos: {pos}</option>)}
+                    </select>
                     <motion.button
-                      className="btn btn-secondary btn-sm"
+                      className="btn btn-secondary"
                       onClick={() => { setFilterWinner('all'); setFilterPosition('all'); setFilterServiceTeam('all'); setFilterReceptionTeam('all'); }}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
+                      style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, minWidth: 'auto' }}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                     >
-                      ♻️ Réinitialiser les filtres
+                      ♻️
                     </motion.button>
                   </div>
                 </div>
 
-                <div className="right-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                  <h4 style={{ marginBottom: 8 }}>Points ({filteredPoints.length})</h4>
+                {/* Points dropdown with score + compact list */}
+                <div className="right-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <h4 style={{ margin: 0, fontSize: 12 }}>Points ({filteredPoints.length})</h4>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={viewAutoplay} onChange={(e) => setViewAutoplay(e.target.checked)} style={{ margin: 0 }} />
+                      Auto
+                    </label>
+                  </div>
                   <select
                     value={filteredPoints.length > 0 ? viewCurrentIndex : ''}
                     onChange={(e) => goToViewPoint(Number(e.target.value))}
                     disabled={filteredPoints.length === 0}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', fontSize: 13, marginBottom: 10, background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)' }}
+                    style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', fontSize: 12, marginBottom: 8, background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)' }}
                   >
                     {filteredPoints.length === 0 ? (
                       <option value="">Aucun point</option>
@@ -955,44 +888,46 @@ function VideoDashboard({ user, onLogout }) {
                         const filteredTimeline = timeline.filter(pt => filteredPoints.some(fp => fp.point_number === pt.point_number));
                         return filteredTimeline.map((pt, idx) => (
                           <option key={pt.point_number} value={idx}>
-                            {pt.scoreBefore.team1}-{pt.scoreBefore.team2} • Point {pt.point_number} — {getTeamLabel(pt.winner) || '?'} ({formatTime(pt.start_time)} → {formatTime(pt.end_time)})
+                            {pt.scoreBefore.team1}-{pt.scoreBefore.team2} • P{pt.point_number} — {getTeamLabel(pt.winner) || '?'}
                           </option>
                         ));
                       })()
                     )}
                   </select>
 
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-muted)', marginBottom: 10, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={viewAutoplay} onChange={(e) => setViewAutoplay(e.target.checked)} />
-                    Lecture automatique (enchaîner les points en sautant le milieu)
-                  </label>
-
-                  <div style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 460px)', minHeight: 160 }}>
+                  <div style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 420px)', minHeight: 120 }}>
                     <AnimatePresence>
                       {filteredPoints.length === 0 ? (
-                        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>Aucun point ne correspond aux filtres.</p>
+                        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 16, fontSize: 12 }}>Aucun point ne correspond aux filtres.</p>
                       ) : (
-                        filteredPoints.map((pt, idx) => (
-                          <motion.div
-                            key={pt.point_number}
-                            className={`point-queue-item ${viewCurrentIndex === idx ? 'active' : ''}`}
-                            onClick={() => goToViewPoint(idx)}
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.2, delay: idx * 0.02 }}
-                            whileHover={{ x: 4 }}
-                          >
-                            <div className="point-queue-header">
-                              <span className="point-queue-number">P{pt.point_number}</span>
-                              <span className={`point-queue-badge ${pt.winner === 'team1' ? 'team1' : 'team2'}`}>{getTeamLabel(pt.winner)}</span>
-                              <span className="point-queue-service">Service: {getTeamLabel(pt.serving_team)}</span>
-                            </div>
-                            <div className="point-queue-positions">
-                              <span>{team1}: {pt.team1_position || '?'}</span>
-                              <span>{team2}: {pt.team2_position || '?'}</span>
-                            </div>
-                          </motion.div>
-                        ))
+                        filteredPoints.map((pt, idx) => {
+                          const timeline = computeMatchTimeline(points, initialScore);
+                          const tlPt = timeline.find(t => t.point_number === pt.point_number);
+                          const scoreStr = tlPt ? `${tlPt.scoreBefore.team1}-${tlPt.scoreBefore.team2}` : '';
+                          return (
+                            <motion.div
+                              key={pt.point_number}
+                              className={`point-queue-item ${viewCurrentIndex === idx ? 'active' : ''}`}
+                              onClick={() => goToViewPoint(idx)}
+                              initial={{ opacity: 0, x: -10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ duration: 0.15, delay: idx * 0.01 }}
+                              whileHover={{ x: 4 }}
+                              style={{ padding: '6px 10px', marginBottom: 3 }}
+                            >
+                              <div className="point-queue-header" style={{ marginBottom: 2 }}>
+                                <span className="point-queue-number" style={{ fontSize: 11, minWidth: 18 }}>P{pt.point_number}</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', marginRight: 6 }}>{scoreStr}</span>
+                                <span className={`point-queue-badge ${pt.winner === 'team1' ? 'team1' : 'team2'}`} style={{ fontSize: 10, padding: '1px 6px' }}>{getTeamLabel(pt.winner)}</span>
+                                <span className="point-queue-service" style={{ fontSize: 10 }}>S:{getTeamLabel(pt.serving_team)}</span>
+                              </div>
+                              <div className="point-queue-positions" style={{ fontSize: 10, paddingLeft: 18 }}>
+                                <span>{team1}: {pt.team1_position || '?'}</span>
+                                <span>{team2}: {pt.team2_position || '?'}</span>
+                              </div>
+                            </motion.div>
+                          );
+                        })
                       )}
                     </AnimatePresence>
                   </div>
