@@ -1,17 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useTheme } from '../contexts/ThemeContext';
+import { motion, AnimatePresence } from 'framer-motion';
 import { videosAPI, cuttingAPI, pointsAPI } from '../services/api';
 import { autoFillNextPoint, getRotationOrder } from '../utils/volleyball';
 import ScoreDisplay from '../components/ScoreDisplay';
 
-
 const ROTATION_ORDER = getRotationOrder();
+
+const tabContentVariants = {
+  hidden: { opacity: 0, x: 20 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } },
+  exit: { opacity: 0, x: -20, transition: { duration: 0.2, ease: [0.4, 0, 0.2, 1] } }
+};
 
 function VideoDashboard({ user, onLogout }) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useTheme();
   const videoRef = useRef(null);
   const trimmedVideoRef = useRef(null);
   const viewVideoRef = useRef(null);
@@ -58,7 +62,6 @@ function VideoDashboard({ user, onLogout }) {
     loadPoints();
   }, [id]);
 
-  // Auto-open view tab if video has points
   useEffect(() => {
     if (points.length > 0 && !loading) {
       setShouldAutoOpenView(true);
@@ -112,8 +115,6 @@ function VideoDashboard({ user, onLogout }) {
   const handleRemoveSegment = async (index) => {
     const newSegments = segments.filter((_, i) => i !== index);
     setSegments(newSegments);
-    
-    // Auto-save after removal
     if (newSegments.length > 0) {
       try {
         await cuttingAPI.saveSegments(id, newSegments);
@@ -123,7 +124,6 @@ function VideoDashboard({ user, onLogout }) {
     }
   };
 
-  // Auto-save segments whenever they change
   useEffect(() => {
     if (segments.length > 0) {
       const timeoutId = setTimeout(async () => {
@@ -132,8 +132,7 @@ function VideoDashboard({ user, onLogout }) {
         } catch (err) {
           console.error('Auto-save failed:', err);
         }
-      }, 1000); // Save 1 second after last change
-      
+      }, 1000);
       return () => clearTimeout(timeoutId);
     }
   }, [segments, id]);
@@ -275,14 +274,11 @@ function VideoDashboard({ user, onLogout }) {
   const filteredPointsRef = useRef(filteredPoints);
   filteredPointsRef.current = filteredPoints;
 
-  // View tab: continuous autoplay ("skip the middle") state
   const [viewAutoplay, setViewAutoplay] = useState(true);
   const [viewIsPlaying, setViewIsPlaying] = useState(false);
   viewCurrentIndexRef.current = viewCurrentIndex;
   viewAutoplayRef.current = viewAutoplay;
 
-  // Play a filtered point directly on the ORIGINAL video using its saved timecodes.
-  // The gaps between points ("the middle") are automatically skipped.
   const goToViewPoint = useCallback((index, autoPlay = true) => {
     const fp = filteredPointsRef.current;
     if (!fp[index]) return;
@@ -300,8 +296,6 @@ function VideoDashboard({ user, onLogout }) {
     }
   }, [playbackRate]);
 
-  // On each frame, stop at the point's end_time. If autoplay is on, jump straight
-  // to the next filtered point (skipping everything in between).
   const handleViewTimeUpdate = useCallback(() => {
     const player = viewVideoRef.current;
     const fp = filteredPointsRef.current;
@@ -322,7 +316,6 @@ function VideoDashboard({ user, onLogout }) {
     const fp = filteredPointsRef.current;
     if (!player || fp.length === 0) return;
     if (player.paused) {
-      // Resume from the current point if we are outside its bounds
       const idx = viewCurrentIndexRef.current;
       const pt = fp[idx];
       if (pt && (player.currentTime < pt.start_time || player.currentTime >= pt.end_time - 0.1)) {
@@ -348,14 +341,12 @@ function VideoDashboard({ user, onLogout }) {
     if (idx > 0) goToViewPoint(idx - 1, true);
   }, [goToViewPoint]);
 
-  // Reset to first point whenever filters change while viewing
   useEffect(() => {
     if (activeTab === 'view') {
       setViewCurrentIndex(0);
       viewCurrentIndexRef.current = 0;
     }
   }, [filterWinner, filterPosition, filterPhase, activeTab]);
-
 
   const getTeamLabel = (team) => {
     if (team === 'team1') return team1;
@@ -366,19 +357,29 @@ function VideoDashboard({ user, onLogout }) {
   const SpeedControls = () => (
     <div className="video-controls" style={{ marginTop: -8, marginBottom: 12 }}>
       <div className="speed-controls">
-        <span style={{ fontSize: 13, color: 'var(--gray-600)' }}>Vitesse :</span>
+        <span>Vitesse :</span>
         {[1, 2, 3, 4, 6].map(speed => (
-          <button key={speed} className={`speed-btn ${playbackRate === speed ? 'active' : ''}`} onClick={() => handleSpeedChange(speed)}>x{speed}</button>
+          <motion.button
+            key={speed}
+            className={`speed-btn ${playbackRate === speed ? 'active' : ''}`}
+            onClick={() => handleSpeedChange(speed)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            x{speed}
+          </motion.button>
         ))}
       </div>
       {activeTab === 'view' && (
-        <button 
-          className="btn btn-secondary btn-sm" 
+        <motion.button
+          className="btn btn-secondary btn-sm"
           onClick={() => setIsVideoExpanded(!isVideoExpanded)}
           style={{ marginLeft: 'auto' }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
           {isVideoExpanded ? '◀ Réduire' : 'Agrandir ▶'}
-        </button>
+        </motion.button>
       )}
     </div>
   );
@@ -422,7 +423,7 @@ function VideoDashboard({ user, onLogout }) {
     return (
       <div className="app-loading">
         <div className="spinner"></div>
-        <p>Chargement de la vidéo...</p>
+        <p className="loading-text">Chargement de la vidéo</p>
       </div>
     );
   }
@@ -444,297 +445,567 @@ function VideoDashboard({ user, onLogout }) {
   const currentPoint = points[currentPointIndex] || null;
 
   return (
-    <div className="video-dashboard">
+    <motion.div
+      className="video-dashboard"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
       <nav className="navbar">
         <div className="navbar-brand">
-          <button className="back-btn" onClick={() => navigate('/dashboard')}>← Retour</button>
+          <motion.button
+            className="back-btn"
+            onClick={() => navigate('/dashboard')}
+            whileHover={{ x: -3 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            ← Retour
+          </motion.button>
           <span className="brand-icon">⚡</span>ASUL <span>• {video.original_name}</span>
         </div>
         <div className="navbar-user">
           <span className="user-info"><span className="user-name">{user.name}</span></span>
-          <button 
-            className="theme-toggle" 
-            onClick={toggleTheme}
-            title={theme === 'light' ? 'Passer en mode sombre' : 'Passer en mode clair'}
+          <motion.button
+            className="btn btn-secondary btn-sm"
+            onClick={onLogout}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
           >
-            {theme === 'light' ? '🌙' : '☀️'}
-          </button>
-          <button className="btn btn-secondary btn-sm" onClick={onLogout}>Déconnexion</button>
+            Déconnexion
+          </motion.button>
         </div>
       </nav>
 
       <div className="dashboard-content">
         <div className="video-tabs">
-          <button className={`video-tab ${activeTab === 'cut' ? 'active' : ''}`} onClick={() => setActiveTab('cut')}>✂️ Découper</button>
-          <button className={`video-tab ${activeTab === 'annotate' ? 'active' : ''}`} onClick={() => { if (points.length === 0) initializePointsFromSegments(); setCurrentPointIndex(0); setActiveTab('annotate'); }} disabled={segments.length === 0 && points.length === 0}>🏷️ Annoter <span className="tab-badge">← →</span></button>
-          <button className={`video-tab ${activeTab === 'view' ? 'active' : ''}`} onClick={() => { setViewCurrentIndex(0); setActiveTab('view'); }} disabled={points.length === 0}>👁️ Consulter <span className="tab-badge">← →</span></button>
+          {[
+            { key: 'cut', icon: '✂️', label: 'Découper' },
+            { key: 'annotate', icon: '🏷️', label: 'Annoter', badge: '← →' },
+            { key: 'view', icon: '👁️', label: 'Consulter', badge: '← →' },
+          ].map(tab => (
+            <motion.button
+              key={tab.key}
+              className={`video-tab ${activeTab === tab.key ? 'active' : ''}`}
+              onClick={() => {
+                if (tab.key === 'annotate') {
+                  if (points.length === 0) initializePointsFromSegments();
+                  setCurrentPointIndex(0);
+                }
+                if (tab.key === 'view') {
+                  setViewCurrentIndex(0);
+                }
+                setActiveTab(tab.key);
+              }}
+              disabled={
+                (tab.key === 'annotate' && segments.length === 0 && points.length === 0) ||
+                (tab.key === 'view' && points.length === 0)
+              }
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              layout
+            >
+              {tab.icon} {tab.label}
+              {tab.badge && <span className="tab-badge">{tab.badge}</span>}
+            </motion.button>
+          ))}
           <button className="video-tab" disabled title="Fonctionnalité à venir">📊 Stats</button>
         </div>
 
-        {/* TAB A: CUTTING */}
-        {activeTab === 'cut' && (
-          <div className="tab-layout">
-            <div className="video-left">
-              <div className="video-player-wrapper">
-                <video ref={videoRef} src={videoUrl} controls playbackRate={playbackRate} />
-              </div>
-              <SpeedControls />
-              <div className="cut-instructions">
-                {isCutting ? '🔴 Appuyez sur M pour marquer la FIN du point' : '▶️ Appuyez sur M pour marquer le DÉBUT d\'un point'}
-              </div>
-            </div>
-            <div className="info-right">
-              {cutMessage && <div className="success-message">{cutMessage}</div>}
-              {segments.length > 0 && (
-                <div className="right-card">
-                  <h4>Points ({segments.length})</h4>
-                  <div className="segments-list">
-                    {segments.map((seg, index) => (
-                      <div key={index} className="segment-item">
-                        <span className="segment-number">Point {index + 1}</span>
-                        <span className="segment-info">{formatTime(seg.start_time)} → {formatTime(seg.end_time)}</span>
-                        <button className="btn btn-danger btn-sm" onClick={() => handleRemoveSegment(index)} style={{ padding: '2px 6px', fontSize: 11 }}>✕</button>
-                      </div>
-                    ))}
-                  </div>
+        <AnimatePresence mode="wait">
+          {/* TAB A: CUTTING */}
+          {activeTab === 'cut' && (
+            <motion.div
+              key="cut"
+              className="tab-layout"
+              variants={tabContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <div className="video-left">
+                <div className="video-player-wrapper">
+                  <video ref={videoRef} src={videoUrl} controls playbackRate={playbackRate} />
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB B: ANNOTATION */}
-        {activeTab === 'annotate' && (
-          <div className="tab-layout">
-            <div className="video-left">
-              <div className="annotation-progress">
-                <span className="annotation-progress-text">Point {currentPointIndex + 1}/{points.length}</span>
-                <div className="annotation-progress-bar">
-                  <div className="annotation-progress-fill" style={{ width: `${((currentPointIndex + 1) / points.length) * 100}%` }} />
-                </div>
-              </div>
-              <div className="video-player-wrapper">
-                <video ref={videoRef} key={`annotate-${currentPointIndex}`} src={hasTrimmedVideo && trimmedVideoUrl ? trimmedVideoUrl : videoUrl} controls className="trimmed-player" playbackRate={playbackRate} />
-              </div>
-              <SpeedControls />
-              <div className="point-navigation">
-                <button className="btn btn-secondary btn-sm" onClick={goToPrevPoint} disabled={currentPointIndex === 0}>⬅️ Précédent</button>
-                <span className="point-nav-time">
-                  {currentPoint ? `${formatTime(currentPoint.start_time)} - ${formatTime(currentPoint.end_time)}` : ''}
-                  <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>flèches ← →</span>
-                </span>
-                <button className="btn btn-secondary btn-sm" onClick={goToNextPoint} disabled={currentPointIndex >= points.length - 1}>Suivant ➡️</button>
-              </div>
-            </div>
-            <div className="info-right">
-              <ScoreDisplay points={points} team1={team1} team2={team2} />
-              {currentPoint && (
-                <div className="right-card">
-                  <h4>🏆 Vainqueur</h4>
-
-                  <div className="btn-group-horizontal" style={{ marginTop: 8 }}>
-                    <button className={`btn-choice ${currentPoint.winner === 'team1' ? 'active team1' : ''}`} onClick={() => handleWinnerChange(currentPointIndex, 'team1')}>{team1}</button>
-                    <button className={`btn-choice ${currentPoint.winner === 'team2' ? 'active team2' : ''}`} onClick={() => handleWinnerChange(currentPointIndex, 'team2')}>{team2}</button>
-                  </div>
-                </div>
-              )}
-              {currentPoint && (
-                <div className="right-card">
-                  <h4>🏐 Au service</h4>
-                  <div className="btn-group-horizontal" style={{ marginTop: 8 }}>
-                    <button className={`btn-choice ${currentPoint.serving_team === 'team1' ? 'active team1' : ''}`} onClick={() => handleServingTeamChange(currentPointIndex, 'team1')}>{team1}</button>
-                    <button className={`btn-choice ${currentPoint.serving_team === 'team2' ? 'active team2' : ''}`} onClick={() => handleServingTeamChange(currentPointIndex, 'team2')}>{team2}</button>
-                  </div>
-                </div>
-              )}
-              {currentPoint && (
-                <div className="right-card">
-                  <h4>🙌 En réception</h4>
-                  <div className="btn-group-horizontal" style={{ marginTop: 8 }}>
-                    <button className={`btn-choice ${currentPoint.receiving_team === 'team1' ? 'active team1' : ''}`} disabled style={{ opacity: currentPoint.receiving_team === 'team1' ? 1 : 0.4, cursor: 'default' }}>{team1}</button>
-                    <button className={`btn-choice ${currentPoint.receiving_team === 'team2' ? 'active team2' : ''}`} disabled style={{ opacity: currentPoint.receiving_team === 'team2' ? 1 : 0.4, cursor: 'default' }}>{team2}</button>
-                  </div>
-                </div>
-              )}
-              {currentPoint && (
-                <div className="right-card">
-                  <h4>📍 Positions</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
-                    <div>
-                      <strong style={{ fontSize: 13 }}>{team1}</strong>
-                      <div className="position-btn-group" style={{ marginTop: 6 }}>
-                        {ROTATION_ORDER.map(pos => (
-                          <button key={`t1-${pos}`} className={`btn-pos ${currentPoint.team1_position === pos ? 'active' : ''}`} onClick={() => handlePositionChange(currentPointIndex, 'team1', pos)}>{pos}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <strong style={{ fontSize: 13 }}>{team2}</strong>
-                      <div className="position-btn-group" style={{ marginTop: 6 }}>
-                        {ROTATION_ORDER.map(pos => (
-                          <button key={`t2-${pos}`} className={`btn-pos ${currentPoint.team2_position === pos ? 'active' : ''}`} onClick={() => handlePositionChange(currentPointIndex, 'team2', pos)}>{pos}</button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div className="save-points-bar" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none', flexDirection: 'column', gap: 8 }}>
-                <button className="btn btn-primary btn-block" onClick={handleSavePoints} disabled={saving}>
-                  {saving ? 'Sauvegarde...' : '💾 Sauvegarder toutes les annotations'}
-                </button>
-                <button className="btn btn-secondary btn-block" onClick={() => { if (window.confirm('Réinitialiser ?')) initializePointsFromSegments(); }}>Réinitialiser</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB C: VIEW - Vidéo à gauche (grande) + filtres & menu déroulant à droite */}
-        {activeTab === 'view' && (
-          <div className="tab-layout">
-            {/* ==== VIDÉO (grande, à gauche) ==== */}
-            <div className={`video-left ${isVideoExpanded ? 'expanded' : ''}`}>
-              <div className="video-player-wrapper">
-                <video
-                  ref={viewVideoRef}
-                  src={videoUrl}
-                  controls
-                  playbackRate={playbackRate}
-                  onTimeUpdate={handleViewTimeUpdate}
-                  onPlay={() => setViewIsPlaying(true)}
-                  onPause={() => setViewIsPlaying(false)}
-                />
-              </div>
-
-              <SpeedControls />
-
-              {/* Barre de lecture point par point */}
-              <div className="point-navigation">
-                <button className="btn btn-secondary btn-sm" onClick={() => viewPrevRef.current && viewPrevRef.current()} disabled={filteredPoints.length === 0 || viewCurrentIndex === 0}>⬅️ Point précédent</button>
-                <button className="btn btn-primary btn-sm" onClick={handleViewPlayPause} disabled={filteredPoints.length === 0}>
-                  {viewIsPlaying ? '⏸️ Pause' : '▶️ Lecture'}
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => viewNextRef.current && viewNextRef.current()} disabled={filteredPoints.length === 0 || viewCurrentIndex >= filteredPoints.length - 1}>Point suivant ➡️</button>
-              </div>
-              <div style={{ textAlign: 'center', marginTop: 6, fontSize: 13, color: 'var(--gray-600)' }}>
-                {filteredPoints.length > 0 && filteredPoints[viewCurrentIndex] ? (
-                  <>
-                    Point {viewCurrentIndex + 1}/{filteredPoints.length}
-                    {' • '}P{filteredPoints[viewCurrentIndex].point_number}
-                    {' • '}{formatTime(filteredPoints[viewCurrentIndex].start_time)} → {formatTime(filteredPoints[viewCurrentIndex].end_time)}
-                    <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--gray-400)' }}>flèches ← →</span>
-                  </>
-                ) : 'Aucun point à lire'}
-              </div>
-            </div>
-
-            {/* ==== FILTRES + MENU DÉROULANT (petit, à droite) ==== */}
-            <div className={`info-right ${isVideoExpanded ? 'hidden' : ''}`}>
-              <ScoreDisplay points={points} team1={team1} team2={team2} />
-              {/* FILTRES */}
-              <div className="right-card">
-                <h4>Filtres</h4>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>🏐 Au service</label>
-                    <div className="btn-group-horizontal">
-                      <button className={`btn-choice ${filterServiceTeam === 'all' ? 'active' : ''}`} onClick={() => { setFilterServiceTeam('all'); setFilterReceptionTeam('all'); }} style={{ fontSize: 12, padding: '6px 10px' }}>Tous</button>
-                      <button className={`btn-choice ${filterServiceTeam === 'team1' ? 'active team1' : ''}`} onClick={() => { setFilterServiceTeam('team1'); setFilterReceptionTeam('team2'); }} style={{ fontSize: 12, padding: '6px 10px' }}>{team1}</button>
-                      <button className={`btn-choice ${filterServiceTeam === 'team2' ? 'active team2' : ''}`} onClick={() => { setFilterServiceTeam('team2'); setFilterReceptionTeam('team1'); }} style={{ fontSize: 12, padding: '6px 10px' }}>{team2}</button>
-                    </div>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>🙌 En réception</label>
-                    <div className="btn-group-horizontal">
-                      <button className={`btn-choice ${filterReceptionTeam === 'all' ? 'active' : ''}`} onClick={() => { setFilterReceptionTeam('all'); setFilterServiceTeam('all'); }} style={{ fontSize: 12, padding: '6px 10px' }}>Tous</button>
-                      <button className={`btn-choice ${filterReceptionTeam === 'team1' ? 'active team1' : ''}`} onClick={() => { setFilterReceptionTeam('team1'); setFilterServiceTeam('team2'); }} style={{ fontSize: 12, padding: '6px 10px' }}>{team1}</button>
-                      <button className={`btn-choice ${filterReceptionTeam === 'team2' ? 'active team2' : ''}`} onClick={() => { setFilterReceptionTeam('team2'); setFilterServiceTeam('team1'); }} style={{ fontSize: 12, padding: '6px 10px' }}>{team2}</button>
-                    </div>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>🏆 Vainqueur</label>
-                    <div className="btn-group-horizontal">
-                      <button className={`btn-choice ${filterWinner === 'all' ? 'active' : ''}`} onClick={() => setFilterWinner('all')} style={{ fontSize: 12, padding: '6px 10px' }}>Tous</button>
-                      <button className={`btn-choice ${filterWinner === 'team1' ? 'active team1' : ''}`} onClick={() => setFilterWinner('team1')} style={{ fontSize: 12, padding: '6px 10px' }}>{team1}</button>
-                      <button className={`btn-choice ${filterWinner === 'team2' ? 'active team2' : ''}`} onClick={() => setFilterWinner('team2')} style={{ fontSize: 12, padding: '6px 10px' }}>{team2}</button>
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>📍 {team1}</label>
-                      <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--gray-300)', fontSize: 12 }}>
-                        <option value="all">Toutes</option>
-                        {ROTATION_ORDER.map(pos => <option key={pos} value={pos}>{pos}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>📍 {team2}</label>
-                      <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--gray-300)', fontSize: 12 }}>
-                        <option value="all">Toutes</option>
-                        {ROTATION_ORDER.map(pos => <option key={pos} value={pos}>{pos}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <button className="btn btn-secondary btn-sm" onClick={() => { setFilterWinner('all'); setFilterPosition('all'); setFilterServiceTeam('all'); setFilterReceptionTeam('all'); }}>♻️ Réinitialiser les filtres</button>
-                </div>
-              </div>
-
-              {/* MENU DÉROULANT DES POINTS + LECTURE AUTO */}
-              <div className="right-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                <h4 style={{ marginBottom: 8 }}>Points ({filteredPoints.length})</h4>
-
-                {/* Menu déroulant listant tous les points filtrés */}
-                <select
-                  value={filteredPoints.length > 0 ? viewCurrentIndex : ''}
-                  onChange={(e) => goToViewPoint(Number(e.target.value))}
-                  disabled={filteredPoints.length === 0}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--gray-300)', fontSize: 13, marginBottom: 10 }}
+                <SpeedControls />
+                <motion.div
+                  className="cut-instructions"
+                  animate={{ borderColor: isCutting ? 'rgba(255,26,94,0.4)' : 'rgba(14,165,233,0.1)' }}
                 >
-                  {filteredPoints.length === 0 ? (
-                    <option value="">Aucun point</option>
-                  ) : (
-                    filteredPoints.map((pt, idx) => (
-                      <option key={pt.point_number} value={idx}>
-                        Point {pt.point_number} — Gagnant: {getTeamLabel(pt.winner) || '?'} — Service: {getTeamLabel(pt.serving_team) || '?'} ({formatTime(pt.start_time)} → {formatTime(pt.end_time)})
-                      </option>
-                    ))
+                  {isCutting ? '🔴 Appuyez sur M pour marquer la FIN du point' : '▶️ Appuyez sur M pour marquer le DÉBUT d\'un point'}
+                </motion.div>
+              </div>
+              <div className="info-right">
+                <AnimatePresence>
+                  {cutMessage && (
+                    <motion.div
+                      className="success-message"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                    >
+                      {cutMessage}
+                    </motion.div>
                   )}
-                </select>
+                </AnimatePresence>
+                {segments.length > 0 && (
+                  <div className="right-card">
+                    <h4>Points ({segments.length})</h4>
+                    <div className="segments-list">
+                      <AnimatePresence>
+                        {segments.map((seg, index) => (
+                          <motion.div
+                            key={index}
+                            className="segment-item"
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            transition={{ duration: 0.2 }}
+                            layout
+                          >
+                            <span className="segment-number">Point {index + 1}</span>
+                            <span className="segment-info">{formatTime(seg.start_time)} → {formatTime(seg.end_time)}</span>
+                            <motion.button
+                              className="btn btn-danger btn-sm"
+                              onClick={() => handleRemoveSegment(index)}
+                              style={{ padding: '2px 6px', fontSize: 11 }}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              ✕
+                            </motion.button>
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
 
-                {/* Option lecture automatique enchaînée */}
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--gray-700)', marginBottom: 10, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={viewAutoplay} onChange={(e) => setViewAutoplay(e.target.checked)} />
-                  Lecture automatique (enchaîner les points en sautant le milieu)
-                </label>
-
-                {/* Liste cliquable des points */}
-                <div style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 460px)', minHeight: 160 }}>
-                  {filteredPoints.length === 0 ? (
-                    <p style={{ color: 'var(--gray-500)', textAlign: 'center', padding: 20 }}>Aucun point ne correspond aux filtres.</p>
-                  ) : (
-                    filteredPoints.map((pt, idx) => (
-                      <div key={pt.point_number} className={`point-queue-item ${viewCurrentIndex === idx ? 'active' : ''}`} onClick={() => goToViewPoint(idx)}>
-                        <div className="point-queue-header">
-                          <span className="point-queue-number">P{pt.point_number}</span>
-                          <span className={`point-queue-badge ${pt.winner === 'team1' ? 'team1' : 'team2'}`}>{getTeamLabel(pt.winner)}</span>
-                          <span className="point-queue-service">Service: {getTeamLabel(pt.serving_team)}</span>
-                        </div>
-                        <div className="point-queue-positions">
-                          <span>{team1}: {pt.team1_position || '?'}</span>
-                          <span>{team2}: {pt.team2_position || '?'}</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
+          {/* TAB B: ANNOTATION */}
+          {activeTab === 'annotate' && (
+            <motion.div
+              key="annotate"
+              className="tab-layout"
+              variants={tabContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <div className="video-left">
+                <div className="annotation-progress">
+                  <span className="annotation-progress-text">Point {currentPointIndex + 1}/{points.length}</span>
+                  <div className="annotation-progress-bar">
+                    <motion.div
+                      className="annotation-progress-fill"
+                      initial={false}
+                      animate={{ width: `${((currentPointIndex + 1) / points.length) * 100}%` }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </div>
+                </div>
+                <div className="video-player-wrapper">
+                  <video ref={videoRef} key={`annotate-${currentPointIndex}`} src={hasTrimmedVideo && trimmedVideoUrl ? trimmedVideoUrl : videoUrl} controls className="trimmed-player" playbackRate={playbackRate} />
+                </div>
+                <SpeedControls />
+                <div className="point-navigation">
+                  <motion.button
+                    className="btn btn-secondary btn-sm"
+                    onClick={goToPrevPoint}
+                    disabled={currentPointIndex === 0}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    ⬅️ Précédent
+                  </motion.button>
+                  <span className="point-nav-time">
+                    {currentPoint ? `${formatTime(currentPoint.start_time)} - ${formatTime(currentPoint.end_time)}` : ''}
+                    <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>flèches ← →</span>
+                  </span>
+                  <motion.button
+                    className="btn btn-secondary btn-sm"
+                    onClick={goToNextPoint}
+                    disabled={currentPointIndex >= points.length - 1}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Suivant ➡️
+                  </motion.button>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+              <div className="info-right">
+                <ScoreDisplay points={points} team1={team1} team2={team2} />
+                {currentPoint && (
+                  <motion.div
+                    className="right-card"
+                    key={currentPointIndex}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <h4>🏆 Vainqueur</h4>
+                    <div className="btn-group-horizontal" style={{ marginTop: 8 }}>
+                      <motion.button
+                        className={`btn-choice ${currentPoint.winner === 'team1' ? 'active team1' : ''}`}
+                        onClick={() => handleWinnerChange(currentPointIndex, 'team1')}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        {team1}
+                      </motion.button>
+                      <motion.button
+                        className={`btn-choice ${currentPoint.winner === 'team2' ? 'active team2' : ''}`}
+                        onClick={() => handleWinnerChange(currentPointIndex, 'team2')}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        {team2}
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                )}
+                {currentPoint && (
+                  <motion.div
+                    className="right-card"
+                    key={`service-${currentPointIndex}`}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.2, delay: 0.05 }}
+                  >
+                    <h4>🏐 Au service</h4>
+                    <div className="btn-group-horizontal" style={{ marginTop: 8 }}>
+                      <motion.button
+                        className={`btn-choice ${currentPoint.serving_team === 'team1' ? 'active team1' : ''}`}
+                        onClick={() => handleServingTeamChange(currentPointIndex, 'team1')}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        {team1}
+                      </motion.button>
+                      <motion.button
+                        className={`btn-choice ${currentPoint.serving_team === 'team2' ? 'active team2' : ''}`}
+                        onClick={() => handleServingTeamChange(currentPointIndex, 'team2')}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        {team2}
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                )}
+                {currentPoint && (
+                  <div className="right-card">
+                    <h4>🙌 En réception</h4>
+                    <div className="btn-group-horizontal" style={{ marginTop: 8 }}>
+                      <button className={`btn-choice ${currentPoint.receiving_team === 'team1' ? 'active team1' : ''}`} disabled style={{ opacity: currentPoint.receiving_team === 'team1' ? 1 : 0.4, cursor: 'default' }}>{team1}</button>
+                      <button className={`btn-choice ${currentPoint.receiving_team === 'team2' ? 'active team2' : ''}`} disabled style={{ opacity: currentPoint.receiving_team === 'team2' ? 1 : 0.4, cursor: 'default' }}>{team2}</button>
+                    </div>
+                  </div>
+                )}
+                {currentPoint && (
+                  <motion.div
+                    className="right-card"
+                    key={`pos-${currentPointIndex}`}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.2, delay: 0.1 }}
+                  >
+                    <h4>📍 Positions</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+                      <div>
+                        <strong style={{ fontSize: 13 }}>{team1}</strong>
+                        <div className="position-btn-group" style={{ marginTop: 6 }}>
+                          {ROTATION_ORDER.map(pos => (
+                            <motion.button
+                              key={`t1-${pos}`}
+                              className={`btn-pos ${currentPoint.team1_position === pos ? 'active' : ''}`}
+                              onClick={() => handlePositionChange(currentPointIndex, 'team1', pos)}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.95 }}
+                            >
+                              {pos}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <strong style={{ fontSize: 13 }}>{team2}</strong>
+                        <div className="position-btn-group" style={{ marginTop: 6 }}>
+                          {ROTATION_ORDER.map(pos => (
+                            <motion.button
+                              key={`t2-${pos}`}
+                              className={`btn-pos ${currentPoint.team2_position === pos ? 'active' : ''}`}
+                              onClick={() => handlePositionChange(currentPointIndex, 'team2', pos)}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.95 }}
+                            >
+                              {pos}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+                <div className="save-points-bar" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none', flexDirection: 'column', gap: 8 }}>
+                  <motion.button
+                    className="btn btn-primary btn-block"
+                    onClick={handleSavePoints}
+                    disabled={saving}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {saving ? 'Sauvegarde...' : '💾 Sauvegarder toutes les annotations'}
+                  </motion.button>
+                  <motion.button
+                    className="btn btn-secondary btn-block"
+                    onClick={() => { if (window.confirm('Réinitialiser ?')) initializePointsFromSegments(); }}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Réinitialiser
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
+          {/* TAB C: VIEW */}
+          {activeTab === 'view' && (
+            <motion.div
+              key="view"
+              className="tab-layout"
+              variants={tabContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <div className={`video-left ${isVideoExpanded ? 'expanded' : ''}`}>
+                <div className="video-player-wrapper">
+                  <video
+                    ref={viewVideoRef}
+                    src={videoUrl}
+                    controls
+                    playbackRate={playbackRate}
+                    onTimeUpdate={handleViewTimeUpdate}
+                    onPlay={() => setViewIsPlaying(true)}
+                    onPause={() => setViewIsPlaying(false)}
+                  />
+                </div>
+                <SpeedControls />
+                <div className="point-navigation">
+                  <motion.button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => viewPrevRef.current && viewPrevRef.current()}
+                    disabled={filteredPoints.length === 0 || viewCurrentIndex === 0}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    ⬅️ Point précédent
+                  </motion.button>
+                  <motion.button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleViewPlayPause}
+                    disabled={filteredPoints.length === 0}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {viewIsPlaying ? '⏸️ Pause' : '▶️ Lecture'}
+                  </motion.button>
+                  <motion.button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => viewNextRef.current && viewNextRef.current()}
+                    disabled={filteredPoints.length === 0 || viewCurrentIndex >= filteredPoints.length - 1}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Point suivant ➡️
+                  </motion.button>
+                </div>
+                <div style={{ textAlign: 'center', marginTop: 6, fontSize: 13, color: 'var(--text-muted)' }}>
+                  {filteredPoints.length > 0 && filteredPoints[viewCurrentIndex] ? (
+                    <>
+                      Point {viewCurrentIndex + 1}/{filteredPoints.length}
+                      {' • '}P{filteredPoints[viewCurrentIndex].point_number}
+                      {' • '}{formatTime(filteredPoints[viewCurrentIndex].start_time)} → {formatTime(filteredPoints[viewCurrentIndex].end_time)}
+                      <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>flèches ← →</span>
+                    </>
+                  ) : 'Aucun point à lire'}
+                </div>
+              </div>
+
+              <div className={`info-right ${isVideoExpanded ? 'hidden' : ''}`}>
+                <ScoreDisplay points={points} team1={team1} team2={team2} />
+                <div className="right-card">
+                  <h4>Filtres</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>🏐 Au service</label>
+                      <div className="btn-group-horizontal">
+                        {[
+                          { value: 'all', label: 'Tous' },
+                          { value: 'team1', label: team1 },
+                          { value: 'team2', label: team2 },
+                        ].map(opt => (
+                          <motion.button
+                            key={`svc-${opt.value}`}
+                            className={`btn-choice ${filterServiceTeam === opt.value ? (opt.value !== 'all' ? `active ${opt.value}` : 'active') : ''}`}
+                            onClick={() => {
+                              if (opt.value === 'all') {
+                                setFilterServiceTeam('all');
+                                setFilterReceptionTeam('all');
+                              } else {
+                                setFilterServiceTeam(opt.value);
+                                setFilterReceptionTeam(opt.value === 'team1' ? 'team2' : 'team1');
+                              }
+                            }}
+                            style={{ fontSize: 12, padding: '6px 10px' }}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                          >
+                            {opt.label}
+                          </motion.button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>🙌 En réception</label>
+                      <div className="btn-group-horizontal">
+                        {[
+                          { value: 'all', label: 'Tous' },
+                          { value: 'team1', label: team1 },
+                          { value: 'team2', label: team2 },
+                        ].map(opt => (
+                          <motion.button
+                            key={`rcv-${opt.value}`}
+                            className={`btn-choice ${filterReceptionTeam === opt.value ? (opt.value !== 'all' ? `active ${opt.value}` : 'active') : ''}`}
+                            onClick={() => {
+                              if (opt.value === 'all') {
+                                setFilterReceptionTeam('all');
+                                setFilterServiceTeam('all');
+                              } else {
+                                setFilterReceptionTeam(opt.value);
+                                setFilterServiceTeam(opt.value === 'team1' ? 'team2' : 'team1');
+                              }
+                            }}
+                            style={{ fontSize: 12, padding: '6px 10px' }}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                          >
+                            {opt.label}
+                          </motion.button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>🏆 Vainqueur</label>
+                      <div className="btn-group-horizontal">
+                        {[
+                          { value: 'all', label: 'Tous' },
+                          { value: 'team1', label: team1 },
+                          { value: 'team2', label: team2 },
+                        ].map(opt => (
+                          <motion.button
+                            key={`win-${opt.value}`}
+                            className={`btn-choice ${filterWinner === opt.value ? (opt.value !== 'all' ? `active ${opt.value}` : 'active') : ''}`}
+                            onClick={() => setFilterWinner(opt.value)}
+                            style={{ fontSize: 12, padding: '6px 10px' }}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                          >
+                            {opt.label}
+                          </motion.button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>📍 {team1}</label>
+                        <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', fontSize: 12, background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)' }}>
+                          <option value="all">Toutes</option>
+                          {ROTATION_ORDER.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>📍 {team2}</label>
+                        <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', fontSize: 12, background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)' }}>
+                          <option value="all">Toutes</option>
+                          {ROTATION_ORDER.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <motion.button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => { setFilterWinner('all'); setFilterPosition('all'); setFilterServiceTeam('all'); setFilterReceptionTeam('all'); }}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      ♻️ Réinitialiser les filtres
+                    </motion.button>
+                  </div>
+                </div>
+
+                <div className="right-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  <h4 style={{ marginBottom: 8 }}>Points ({filteredPoints.length})</h4>
+                  <select
+                    value={filteredPoints.length > 0 ? viewCurrentIndex : ''}
+                    onChange={(e) => goToViewPoint(Number(e.target.value))}
+                    disabled={filteredPoints.length === 0}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', fontSize: 13, marginBottom: 10, background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)' }}
+                  >
+                    {filteredPoints.length === 0 ? (
+                      <option value="">Aucun point</option>
+                    ) : (
+                      filteredPoints.map((pt, idx) => (
+                        <option key={pt.point_number} value={idx}>
+                          Point {pt.point_number} — Gagnant: {getTeamLabel(pt.winner) || '?'} — Service: {getTeamLabel(pt.serving_team) || '?'} ({formatTime(pt.start_time)} → {formatTime(pt.end_time)})
+                        </option>
+                      ))
+                    )}
+                  </select>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-muted)', marginBottom: 10, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={viewAutoplay} onChange={(e) => setViewAutoplay(e.target.checked)} />
+                    Lecture automatique (enchaîner les points en sautant le milieu)
+                  </label>
+
+                  <div style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 460px)', minHeight: 160 }}>
+                    <AnimatePresence>
+                      {filteredPoints.length === 0 ? (
+                        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>Aucun point ne correspond aux filtres.</p>
+                      ) : (
+                        filteredPoints.map((pt, idx) => (
+                          <motion.div
+                            key={pt.point_number}
+                            className={`point-queue-item ${viewCurrentIndex === idx ? 'active' : ''}`}
+                            onClick={() => goToViewPoint(idx)}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.2, delay: idx * 0.02 }}
+                            whileHover={{ x: 4 }}
+                          >
+                            <div className="point-queue-header">
+                              <span className="point-queue-number">P{pt.point_number}</span>
+                              <span className={`point-queue-badge ${pt.winner === 'team1' ? 'team1' : 'team2'}`}>{getTeamLabel(pt.winner)}</span>
+                              <span className="point-queue-service">Service: {getTeamLabel(pt.serving_team)}</span>
+                            </div>
+                            <div className="point-queue-positions">
+                              <span>{team1}: {pt.team1_position || '?'}</span>
+                              <span>{team2}: {pt.team2_position || '?'}</span>
+                            </div>
+                          </motion.div>
+                        ))
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

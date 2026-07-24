@@ -1,10 +1,22 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useTheme } from '../contexts/ThemeContext';
+import { motion } from 'framer-motion';
 import { authAPI } from '../services/api';
 
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08, delayChildren: 0.1 }
+  }
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] } }
+};
+
 function Register({ onLogin }) {
-  const { theme, toggleTheme } = useTheme();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,7 +44,7 @@ function Register({ onLogin }) {
       const response = await authAPI.register(email, password, name);
       onLogin(response.data.user, response.data.token);
     } catch (err) {
-      setError(err.response?.data?.error || 'Erreur d\'inscription');
+      setError(err.response?.data?.error || "Erreur d'inscription");
     } finally {
       setLoading(false);
     }
@@ -40,21 +52,28 @@ function Register({ onLogin }) {
 
   return (
     <div className="auth-page">
-      <button 
-        className="theme-toggle" 
-        onClick={toggleTheme}
-        title={theme === 'light' ? 'Passer en mode sombre' : 'Passer en mode clair'}
-        style={{ position: 'absolute', top: 20, right: 20 }}
+      <motion.div
+        className="auth-container"
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
       >
-        {theme === 'light' ? '🌙' : '☀️'}
-      </button>
-      <div className="auth-container">
-        <h1>ASUL</h1>
-        <p className="subtitle">Créer un compte</p>
+        <motion.h1 variants={itemVariants}>ASUL</motion.h1>
+        <motion.p className="subtitle" variants={itemVariants}>
+          Créer un compte
+        </motion.p>
 
-        {error && <div className="error-message">{error}</div>}
+        {error && (
+          <motion.div
+            className="error-message"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            {error}
+          </motion.div>
+        )}
 
-        <form onSubmit={handleSubmit}>
+        <motion.form variants={itemVariants} onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Nom</label>
             <input
@@ -100,15 +119,21 @@ function Register({ onLogin }) {
             />
           </div>
 
-          <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
-            {loading ? 'Inscription...' : 'S\'inscrire'}
-          </button>
-        </form>
+          <motion.button
+            type="submit"
+            className="btn btn-primary btn-block"
+            disabled={loading}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            {loading ? "Inscription..." : "S'inscrire"}
+          </motion.button>
+        </motion.form>
 
-        <div className="auth-link">
+        <motion.div className="auth-link" variants={itemVariants}>
           Déjà un compte ? <Link to="/login">Se connecter</Link>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </div>
   );
 }
