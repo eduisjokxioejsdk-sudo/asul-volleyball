@@ -31,9 +31,9 @@
   --neon-blue-dark: #0284c7;
   --neon-blue-glow: 0 0 7px rgba(14, 165, 233, 0.3), 0 0 14px rgba(14, 165, 233, 0.15);
 
-  --text-primary: #f0f4ff;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #ffffff;
+  --text-secondary: #c8d0e0;
+  --text-muted: #94a3b8;
   --text-red: #ff1a5e;
   --text-blue: #0ea5e9;
 
@@ -74,6 +74,7 @@ html {
 
 body {
   font-family: var(--font-body);
+  font-weight: 400;
   background: var(--bg-deep);
   color: var(--text-primary);
   line-height: 1.6;
@@ -380,13 +381,13 @@ body::after {
 
 .auth-container .subtitle {
   text-align: center;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin-top: 16px;
   margin-bottom: 32px;
-  font-size: 13px;
+  font-size: 14px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  font-weight: 300;
+  font-weight: 500;
 }
 
 /* === Form Elements === */
@@ -397,7 +398,7 @@ body::after {
 .form-group label {
   display: block;
   margin-bottom: 8px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-secondary);
   font-size: 12px;
   letter-spacing: 1.5px;
@@ -588,7 +589,7 @@ body::after {
 .auth-link a {
   color: var(--neon-blue);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 600;
   position: relative;
   transition: color var(--transition);
 }
@@ -644,9 +645,9 @@ body::after {
 }
 
 .navbar-brand span {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-family: var(--font-body);
-  font-weight: 300;
+  font-weight: 500;
   font-size: 13px;
   letter-spacing: 1px;
   text-transform: lowercase;
@@ -664,7 +665,7 @@ body::after {
 }
 
 .navbar-user .user-name {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
@@ -725,7 +726,7 @@ body::after {
   font-size: 24px;
   color: var(--text-primary);
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 1px;
   text-transform: uppercase;
   position: relative;
@@ -816,10 +817,10 @@ body::after {
 }
 
 .video-card-body h3 {
-  font-size: 15px;
+  font-size: 16px;
   margin-bottom: 6px;
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -963,7 +964,7 @@ body::after {
   font-size: 20px;
   color: var(--text-primary);
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
@@ -1045,8 +1046,8 @@ body::after {
   border: none;
   background: transparent;
   font-size: 14px;
-  font-weight: 500;
-  color: var(--text-muted);
+  font-weight: 600;
+  color: var(--text-secondary);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all var(--transition);
@@ -1066,6 +1067,7 @@ body::after {
   color: var(--neon-red);
   border-bottom-color: var(--neon-red);
   background: transparent;
+  font-weight: 700;
 }
 
 .video-tab:disabled {
@@ -1190,6 +1192,7 @@ body::after {
   font-family: var(--font-display);
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  font-weight: 700;
 }
 
 .segment-item {
@@ -1551,7 +1554,7 @@ body::after {
 
 .right-card h4 {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 10px;
   font-family: var(--font-display);
@@ -1597,7 +1600,7 @@ body::after {
   justify-content: space-between;
   margin-bottom: 10px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   font-family: var(--font-display);
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -1608,6 +1611,7 @@ body::after {
   text-align: center;
   color: var(--text-primary);
   font-size: 12px;
+  font-weight: 600;
 }
 
 .score-display-badge {
@@ -1693,7 +1697,7 @@ body::after {
 
 .score-set-score {
   display: block;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
   color: var(--text-primary);
   font-family: var(--font-display);
@@ -1707,9 +1711,9 @@ body::after {
 
 .score-current-label {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   margin-bottom: 8px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -1773,7 +1777,7 @@ body::after {
   display: block;
   margin-bottom: 6px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1811,7 +1815,7 @@ body::after {
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.03);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all var(--transition);
   text-align: center;
@@ -1909,6 +1913,7 @@ body::after {
   font-family: var(--font-display);
   text-transform: uppercase;
   letter-spacing: 1px;
+  font-weight: 700;
 }
 
 /* ============================================================
@@ -1981,6 +1986,7 @@ body::after {
   font-size: 18px;
   color: var(--text-primary);
   font-family: var(--font-display);
+  font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   position: relative;
@@ -2003,6 +2009,7 @@ body::after {
   font-size: 16px;
   color: var(--text-primary);
   font-family: var(--font-display);
+  font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
