@@ -455,7 +455,7 @@ function VideoDashboard({ user, onLogout }) {
             ← Retour
           </motion.button>
           <img src="/logo.png" alt="ASUL" style={{ height: 28, marginRight: 4 }} />
-          ASUL <span>• {video.original_name}</span>
+          ASUL <span>• {video.display_name || video.original_name}</span>
         </div>
         <div className="navbar-user">
           <span className="user-info"><span className="user-name">{user.name}</span></span>
@@ -472,37 +472,66 @@ function VideoDashboard({ user, onLogout }) {
 
       <div className="dashboard-content">
         <div className="video-tabs">
-          {[
-            { key: 'cut', icon: '✂️', label: 'Découper' },
-            { key: 'annotate', icon: '🏷️', label: 'Annoter', badge: '← →' },
-            { key: 'view', icon: '👁️', label: 'Consulter', badge: '← →' },
-            { key: 'points', icon: '📊', label: 'Points' },
-          ].map(tab => (
-            <motion.button
-              key={tab.key}
-              className={`video-tab ${activeTab === tab.key ? 'active' : ''}`}
-              onClick={() => {
-                if (tab.key === 'annotate') {
-                  if (points.length === 0) initializePointsFromSegments();
-                  setCurrentPointIndex(0);
+          {/* Left group: Découper, Annoter Match */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[
+              { key: 'cut', icon: '✂️', label: 'Découper' },
+              { key: 'annotate', icon: '🏷️', label: 'Annoter Match' },
+            ].map(tab => (
+              <motion.button
+                key={tab.key}
+                className={`video-tab ${activeTab === tab.key ? 'active' : ''}`}
+                onClick={() => {
+                  if (tab.key === 'annotate') {
+                    if (points.length === 0) initializePointsFromSegments();
+                    setCurrentPointIndex(0);
+                  }
+                  setActiveTab(tab.key);
+                }}
+                disabled={
+                  (tab.key === 'annotate' && segments.length === 0 && points.length === 0)
                 }
-                if (tab.key === 'view') {
-                  setViewCurrentIndex(0);
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                layout
+              >
+                {tab.icon} {tab.label}
+                {tab.badge && <span className="tab-badge">{tab.badge}</span>}
+              </motion.button>
+            ))}
+          </div>
+          {/* Right group: Annoter Points, Consulter Vidéo, Chronologie Points */}
+          <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+            {[
+              { key: 'annotatePoints', icon: '📝', label: 'Annoter Points' },
+              { key: 'view', icon: '👁️', label: 'Consulter Vidéo' },
+              { key: 'points', icon: '📊', label: 'Chronologie Points' },
+            ].map(tab => (
+              <motion.button
+                key={tab.key}
+                className={`video-tab ${activeTab === tab.key ? 'active' : ''}`}
+                onClick={() => {
+                  if (tab.key === 'view') {
+                    setViewCurrentIndex(0);
+                  }
+                  if (tab.key === 'annotatePoints') {
+                    // TODO: à implémenter ensemble
+                    return;
+                  }
+                  setActiveTab(tab.key);
+                }}
+                disabled={
+                  (tab.key === 'view' && points.length === 0)
                 }
-                setActiveTab(tab.key);
-              }}
-              disabled={
-                (tab.key === 'annotate' && segments.length === 0 && points.length === 0) ||
-                (tab.key === 'view' && points.length === 0)
-              }
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              layout
-            >
-              {tab.icon} {tab.label}
-              {tab.badge && <span className="tab-badge">{tab.badge}</span>}
-            </motion.button>
-          ))}
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                layout
+              >
+                {tab.icon} {tab.label}
+                {tab.badge && <span className="tab-badge">{tab.badge}</span>}
+              </motion.button>
+            ))}
+          </div>
         </div>
 
         <AnimatePresence mode="wait">
@@ -825,7 +854,7 @@ function VideoDashboard({ user, onLogout }) {
                 </div>
               </div>
 
-              <div className={`info-right ${isVideoExpanded ? 'hidden' : ''}`} style={{ width: 260, minWidth: 260 }}>
+              <div className={`info-right ${isVideoExpanded ? 'hidden' : ''}`} style={{ width: 300, minWidth: 300 }}>
                 <ScoreDisplay points={points} team1={team1} team2={team2} />
                 
                 {/* Filters — nice dropdowns */}
@@ -962,10 +991,8 @@ function VideoDashboard({ user, onLogout }) {
                                   </span>
                                 </div>
                                 {/* Small meta */}
-                                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-                                  <span>P{pt.point_number}</span>
-                                  <span>•</span>
-                                  <span>S{tlPt?.setNumber || '?'}</span>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 2, fontSize: 10, color: 'var(--text-muted)' }}>
+                                  <span>Set {tlPt?.setNumber || '?'}</span>
                                   <span>•</span>
                                   <span style={{ color: pt.winner === 'team1' ? 'var(--neon-blue)' : 'var(--neon-red)' }}>
                                     {getTeamLabel(pt.winner)}
