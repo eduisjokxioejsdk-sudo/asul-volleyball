@@ -46,7 +46,7 @@ function Login({ onLogin }) {
         animate="visible"
       >
         <motion.div variants={itemVariants} style={{ textAlign: 'center', marginBottom: 8 }}>
-          <img src="/logo.png" alt="ASUL" style={{ height: 80, marginBottom: 8 }} />
+          <img src="/logo.png" alt="ASUL" style={{ height: 72, marginBottom: 12 }} />
           <motion.h1 variants={itemVariants}>ASUL</motion.h1>
         </motion.div>
         <motion.p className="subtitle" variants={itemVariants}>

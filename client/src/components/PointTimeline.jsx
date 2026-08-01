@@ -140,7 +140,7 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                 <motion.button
                   className="scroll-arrow scroll-arrow-left"
                   onClick={() => scrollRow(setNum, -1)}
-                  whileHover={{ scale: 1.1, background: 'rgba(232,72,72,0.15)' }}
+                  whileHover={{ scale: 1.1, background: 'rgba(200,150,92,0.1)' }}
                   whileTap={{ scale: 0.95 }}
                 >
                   ◀
@@ -151,24 +151,30 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                   ref={el => { scrollRefs.current[setNum] = el; }}
                 >
                   <div className="timeline-track" style={{ padding: '0 12px' }}>
-                    {/* Top row: team1 scores */}
+                    {/* Top row: team1 scores + type letters */}
                     <div className="timeline-row timeline-row-top">
-                      {pts.map((pt, idx) => (
-                        <motion.span
-                          key={idx}
-                          className={`timeline-number-bold ${
-                            pts.length <= 25 
-                              ? 'timeline-number-large' 
-                              : ''
-                          } ${pt.winner === 'team1' ? 'timeline-bold-won timeline-bold-blue' : 'timeline-bold-lost'}`}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ duration: 0.15, delay: idx * 0.01 }}
-                          title={`${pt.winner === 'team1' ? team1 : team2} gagne (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
-                        >
-                          {pt.scoreAfter.team1}
-                        </motion.span>
-                      ))}
+                      {pts.map((pt, idx) => {
+                        const type = pt.point_type;
+                        const typeLabel = type === 'attack' ? 'A' : type === 'block' ? 'B' : type === 'service' ? 'S' : type === 'fault' ? 'F' : '';
+                        return (
+                          <motion.span
+                            key={idx}
+                            className={`timeline-number-bold ${
+                              pts.length <= 25 
+                                ? 'timeline-number-large' 
+                                : ''
+                            } ${pt.winner === 'team1' ? 'timeline-bold-won' : 'timeline-bold-lost'}`}
+                            style={pt.winner === 'team1' ? { color: 'var(--accent)' } : undefined}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.15, delay: idx * 0.01 }}
+                            title={`${pt.winner === 'team1' ? team1 : team2} gagne | Type: ${typeLabel || '?'} (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
+                          >
+                            {typeLabel && pt.winner === 'team1' && <span className="timeline-type-letter" style={{ color: 'var(--accent)' }}>{typeLabel}</span>}
+                            <span>{pt.scoreAfter.team1}</span>
+                          </motion.span>
+                        );
+                      })}
                     </div>
 
                     {/* Center line */}
@@ -176,24 +182,30 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                       <div className="timeline-center-line-inner" />
                     </div>
 
-                    {/* Bottom row: team2 scores */}
+                    {/* Bottom row: team2 scores + type letters */}
                     <div className="timeline-row timeline-row-bottom">
-                      {pts.map((pt, idx) => (
-                        <motion.span
-                          key={idx}
-                          className={`timeline-number-bold ${
-                            pts.length <= 25 
-                              ? 'timeline-number-large' 
-                              : ''
-                          } ${pt.winner === 'team2' ? 'timeline-bold-won timeline-bold-red' : 'timeline-bold-lost'}`}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ duration: 0.15, delay: idx * 0.01 }}
-                          title={`${pt.winner === 'team2' ? team2 : team1} gagne (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
-                        >
-                          {pt.scoreAfter.team2}
-                        </motion.span>
-                      ))}
+                      {pts.map((pt, idx) => {
+                        const type = pt.point_type;
+                        const typeLabel = type === 'attack' ? 'A' : type === 'block' ? 'B' : type === 'service' ? 'S' : type === 'fault' ? 'F' : '';
+                        return (
+                          <motion.span
+                            key={idx}
+                            className={`timeline-number-bold ${
+                              pts.length <= 25 
+                                ? 'timeline-number-large' 
+                                : ''
+                            } ${pt.winner === 'team2' ? 'timeline-bold-won' : 'timeline-bold-lost'}`}
+                            style={pt.winner === 'team2' ? { color: 'var(--text-secondary)' } : undefined}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.15, delay: idx * 0.01 }}
+                            title={`${pt.winner === 'team2' ? team2 : team1} gagne | Type: ${typeLabel || '?'} (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
+                          >
+                            {typeLabel && pt.winner === 'team2' && <span className="timeline-type-letter" style={{ color: 'var(--text-secondary)' }}>{typeLabel}</span>}
+                            <span>{pt.scoreAfter.team2}</span>
+                          </motion.span>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -201,7 +213,7 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                 <motion.button
                   className="scroll-arrow scroll-arrow-right"
                   onClick={() => scrollRow(setNum, 1)}
-                  whileHover={{ scale: 1.1, background: 'rgba(232,72,72,0.15)' }}
+                  whileHover={{ scale: 1.1, background: 'rgba(200,150,92,0.1)' }}
                   whileTap={{ scale: 0.95 }}
                 >
                   ▶

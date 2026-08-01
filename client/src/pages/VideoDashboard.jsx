@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback }  from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { videosAPI, cuttingAPI, pointsAPI } from '../services/api';
@@ -245,8 +245,18 @@ function VideoDashboard({ user, onLogout }) {
   nextPointRef.current = goToNextPoint;
   prevPointRef.current = goToPrevPoint;
 
+  const handlePointTypeChange = (pointIndex, type) => {
+    setPoints(prev => {
+      const updated = [...prev];
+      const point = { ...updated[pointIndex] };
+      point.point_type = point.point_type === type ? '' : type;
+      updated[pointIndex] = point;
+      return updated;
+    });
+  };
+
   useEffect(() => {
-    if (activeTab === 'annotate' && points.length > 0) {
+    if ((activeTab === 'annotate' || activeTab === 'annotatePoints') && points.length > 0) {
       jumpToPointInVideo(currentPointIndex);
     }
   }, [currentPointIndex, activeTab]);
@@ -397,7 +407,7 @@ function VideoDashboard({ user, onLogout }) {
       }
       return;
     }
-    if (activeTab === 'annotate') {
+    if (activeTab === 'annotate' || activeTab === 'annotatePoints') {
       if (e.key === 'ArrowRight') { e.preventDefault(); if (nextPointRef.current) nextPointRef.current(); return; }
       if (e.key === 'ArrowLeft') { e.preventDefault(); if (prevPointRef.current) prevPointRef.current(); return; }
     }
@@ -472,11 +482,12 @@ function VideoDashboard({ user, onLogout }) {
 
       <div className="dashboard-content">
         <div className="video-tabs">
-          {/* Left group: Découper, Annoter Match */}
+          {/* Left group: Découper, Annoter Match, Annoter Points */}
           <div style={{ display: 'flex', gap: 4 }}>
             {[
-              { key: 'cut', icon: '✂️', label: 'Découper' },
-              { key: 'annotate', icon: '🏷️', label: 'Annoter Match' },
+              { key: 'cut', label: 'Découper' },
+              { key: 'annotate', label: 'Annoter Match' },
+              { key: 'annotatePoints', label: 'Annoter Points' },
             ].map(tab => (
               <motion.button
                 key={tab.key}
@@ -486,26 +497,30 @@ function VideoDashboard({ user, onLogout }) {
                     if (points.length === 0) initializePointsFromSegments();
                     setCurrentPointIndex(0);
                   }
+                  if (tab.key === 'annotatePoints') {
+                    if (points.length === 0) initializePointsFromSegments();
+                    setCurrentPointIndex(0);
+                  }
                   setActiveTab(tab.key);
                 }}
                 disabled={
-                  (tab.key === 'annotate' && segments.length === 0 && points.length === 0)
+                  (tab.key === 'annotate' && segments.length === 0 && points.length === 0) ||
+                  (tab.key === 'annotatePoints' && segments.length === 0)
                 }
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.98 }}
                 layout
               >
-                {tab.icon} {tab.label}
+                {tab.label}
                 {tab.badge && <span className="tab-badge">{tab.badge}</span>}
               </motion.button>
             ))}
           </div>
-          {/* Right group: Annoter Points, Consulter Vidéo, Chronologie Points */}
+          {/* Right group: Consulter Vidéo, Chronologie Points */}
           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
             {[
-              { key: 'annotatePoints', icon: '📝', label: 'Annoter Points' },
-              { key: 'view', icon: '👁️', label: 'Consulter Vidéo' },
-              { key: 'points', icon: '📊', label: 'Chronologie Points' },
+              { key: 'view', label: 'Consulter Vidéo' },
+              { key: 'points', label: 'Chronologie Points' },
             ].map(tab => (
               <motion.button
                 key={tab.key}
@@ -513,10 +528,6 @@ function VideoDashboard({ user, onLogout }) {
                 onClick={() => {
                   if (tab.key === 'view') {
                     setViewCurrentIndex(0);
-                  }
-                  if (tab.key === 'annotatePoints') {
-                    // TODO: à implémenter ensemble
-                    return;
                   }
                   setActiveTab(tab.key);
                 }}
@@ -527,7 +538,7 @@ function VideoDashboard({ user, onLogout }) {
                 whileTap={{ scale: 0.98 }}
                 layout
               >
-                {tab.icon} {tab.label}
+                {tab.label}
                 {tab.badge && <span className="tab-badge">{tab.badge}</span>}
               </motion.button>
             ))}
@@ -552,7 +563,7 @@ function VideoDashboard({ user, onLogout }) {
                 <SpeedControls />
                 <motion.div
                   className="cut-instructions"
-                  animate={{ borderColor: isCutting ? 'rgba(255,26,94,0.4)' : 'rgba(14,165,233,0.1)' }}
+                  animate={{ borderColor: isCutting ? 'var(--border-accent)' : 'var(--border-subtle)' }}
                 >
                   {isCutting ? '🔴 Appuyez sur M pour marquer la FIN du point' : '▶️ Appuyez sur M pour marquer le DÉBUT d\'un point'}
                 </motion.div>
@@ -956,37 +967,37 @@ function VideoDashboard({ user, onLogout }) {
                                   marginTop: isNewSet ? 4 : 0,
                                   borderRadius: 8,
                                   cursor: 'pointer',
-                                  background: isActive ? 'rgba(255,26,94,0.08)' : 'rgba(255,255,255,0.02)',
+                                  background: isActive ? 'rgba(200,150,92,0.06)' : 'rgba(255,255,255,0.03)',
                                   border: isNewSet
-                                    ? '1px solid rgba(232,72,72,0.25)'
-                                    : isActive ? '1px solid rgba(255,26,94,0.2)' : '1px solid rgba(255,255,255,0.04)',
-                                  borderTop: isNewSet ? '2px solid var(--neon-red)' : undefined,
+                                    ? '1px solid rgba(200,150,92,0.2)'
+                                    : isActive ? '1px solid rgba(200,150,92,0.2)' : '1px solid rgba(255,255,255,0.06)',
+                                  borderTop: isNewSet ? '2px solid var(--accent)' : undefined,
                                   transition: 'all 0.2s'
                                 }}
                               >
                                 {/* Set label */}
                                 {isNewSet && (
-                                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--neon-red)', textAlign: 'center', marginBottom: 4, letterSpacing: 1 }}>
+                                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', textAlign: 'center', marginBottom: 4, letterSpacing: 1 }}>
                                     ── SET {tlPt.setNumber} ──
                                   </div>
                                 )}
                                 {/* Big score */}
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6 }}>
-                                  <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--neon-blue)', textShadow: '0 0 8px rgba(40,104,184,0.3)' }}>
+                                  <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--accent)' }}>
                                     {tlPt ? tlPt.scoreBefore.team1 : '?'}
                                   </span>
                                   <span style={{ fontSize: 14, fontWeight: 300, color: 'var(--text-muted)' }}>-</span>
-                                  <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--neon-red)', textShadow: '0 0 8px rgba(232,72,72,0.3)' }}>
+                                  <span style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)' }}>
                                     {tlPt ? tlPt.scoreBefore.team2 : '?'}
                                   </span>
                                 </div>
                                 {/* Positions colored */}
                                 <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 13, fontWeight: 700 }}>
-                                  <span style={{ color: 'var(--neon-blue)' }}>
+                                  <span style={{ color: 'var(--accent)' }}>
                                     {pt.team1_position || '?'}
                                   </span>
                                   <span style={{ color: 'var(--text-muted)', fontWeight: 300 }}>|</span>
-                                  <span style={{ color: 'var(--neon-red)' }}>
+                                  <span style={{ color: 'var(--text-secondary)' }}>
                                     {pt.team2_position || '?'}
                                   </span>
                                 </div>
@@ -994,7 +1005,7 @@ function VideoDashboard({ user, onLogout }) {
                                 <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 2, fontSize: 10, color: 'var(--text-muted)' }}>
                                   <span>Set {tlPt?.setNumber || '?'}</span>
                                   <span>•</span>
-                                  <span style={{ color: pt.winner === 'team1' ? 'var(--neon-blue)' : 'var(--neon-red)' }}>
+                                  <span style={{ color: pt.winner === 'team1' ? 'var(--accent)' : 'var(--text-secondary)' }}>
                                     {getTeamLabel(pt.winner)}
                                   </span>
                                 </div>
@@ -1006,6 +1017,81 @@ function VideoDashboard({ user, onLogout }) {
                     </AnimatePresence>
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* TAB ANNOTATE POINTS — select point type */}
+          {activeTab === 'annotatePoints' && (
+            <motion.div
+              key="annotatePoints"
+              className="tab-layout"
+              variants={tabContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <div className="video-left">
+                <div className="annotation-progress">
+                  <span className="annotation-progress-text">Point {currentPointIndex + 1}/{points.length}</span>
+                  <div className="annotation-progress-bar">
+                    <motion.div
+                      className="annotation-progress-fill"
+                      initial={false}
+                      animate={{ width: `${((currentPointIndex + 1) / points.length) * 100}%` }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </div>
+                </div>
+                <div className="video-player-wrapper">
+                  <video ref={videoRef} key={`annotatePoints-${currentPointIndex}`} src={hasTrimmedVideo && trimmedVideoUrl ? trimmedVideoUrl : videoUrl} controls className="trimmed-player" playbackRate={playbackRate} />
+                </div>
+                <SpeedControls />
+                <div className="point-navigation">
+                  <motion.button className="btn btn-secondary btn-sm" onClick={goToPrevPoint} disabled={currentPointIndex === 0} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>⬅️ Précédent</motion.button>
+                  <span className="point-nav-time">
+                    {currentPoint ? `${formatTime(currentPoint.start_time)} - ${formatTime(currentPoint.end_time)}` : ''}
+                    <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)' }}>flèches ← →</span>
+                  </span>
+                  <motion.button className="btn btn-secondary btn-sm" onClick={goToNextPoint} disabled={currentPointIndex >= points.length - 1} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>Suivant ➡️</motion.button>
+                </div>
+              </div>
+              <div className="info-right">
+                <ScoreDisplay points={points} team1={team1} team2={team2} />
+                {currentPoint && (
+                  <div className="right-card">
+                    <h4>Action du point</h4>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                      Quel type d'action a marqué ce point ?
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {[
+                        { type: 'attack', label: 'Attaque', letter: 'A', desc: 'Attaque gagnante' },
+                        { type: 'block', label: 'Bloc', letter: 'B', desc: 'Contre gagnant' },
+                        { type: 'service', label: 'Service', letter: 'S', desc: 'Ace / Service gagnant' },
+                        { type: 'fault', label: 'Faute', letter: 'F', desc: 'Faute adverse' },
+                      ].map(item => (
+                        <motion.button
+                          key={item.type}
+                          className={`btn-choice ${currentPoint.point_type === item.type ? 'active' : ''}`}
+                          onClick={() => handlePointTypeChange(currentPointIndex, item.type)}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          style={{ padding: '12px 10px', flexDirection: 'column', gap: 2 }}
+                        >
+                          <span style={{ fontSize: 18, fontWeight: 800, fontFamily: 'JetBrains Mono, monospace' }}>{item.letter}</span>
+                          <span style={{ fontSize: 11 }}>{item.label}</span>
+                          <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{item.desc}</span>
+                        </motion.button>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                      <motion.button className="btn btn-primary btn-block" onClick={handleSavePoints} disabled={saving} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}>
+                        {saving ? 'Sauvegarde...' : '💾 Sauvegarder'}
+                      </motion.button>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}

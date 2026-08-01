@@ -82,6 +82,7 @@ db.serialize(() => {
     receiving_team TEXT,
     team1_position TEXT,
     team2_position TEXT,
+    point_type TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (video_id) REFERENCES videos(id)
   )`);
@@ -110,6 +111,15 @@ db.serialize(() => {
     }
     if (!columnNames.includes('color')) {
       db.run('ALTER TABLE videos ADD COLUMN color TEXT DEFAULT \'#1a73e8\'');
+    }
+  });
+
+  // Migrate points table: add point_type column if missing
+  db.all("PRAGMA table_info(points)", (err, columns) => {
+    if (err) return;
+    const columnNames = columns ? columns.map(col => col.name) : [];
+    if (columnNames.length > 0 && !columnNames.includes('point_type')) {
+      db.run('ALTER TABLE points ADD COLUMN point_type TEXT');
     }
   });
 });

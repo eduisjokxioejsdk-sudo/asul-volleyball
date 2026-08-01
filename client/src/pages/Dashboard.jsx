@@ -40,6 +40,9 @@ function Dashboard({ user, onLogout }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [editVideoName, setEditVideoName] = useState('');
   const [editVideoColor, setEditVideoColor] = useState('#1a73e8');
+  const [editingFolderId, setEditingFolderId] = useState(null);
+  const [editFolderName, setEditFolderName] = useState('');
+  const [editFolderColor, setEditFolderColor] = useState('#1a73e8');
   const [videosInCurrentFolder, setVideosInCurrentFolder] = useState([]);
   const fileInputRef = useRef(null);
 
@@ -179,6 +182,25 @@ function Dashboard({ user, onLogout }) {
       loadVideos();
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur lors de la modification');
+    }
+  };
+
+  const handleEditFolder = (folder) => {
+    setEditingFolderId(folder.id);
+    setEditFolderName(folder.name);
+    setEditFolderColor(folder.color || '#1a73e8');
+  };
+
+  const handleSaveFolderEdit = async (folderId) => {
+    try {
+      await foldersAPI.update(folderId, {
+        name: editFolderName,
+        color: editFolderColor
+      });
+      setEditingFolderId(null);
+      loadFolders();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur lors de la modification du dossier');
     }
   };
 
@@ -329,19 +351,52 @@ function Dashboard({ user, onLogout }) {
                           <span style={{ fontSize: 48 }}>📁</span>
                         </div>
                         <div className="video-card-body">
-                          <h3>{folder.name}</h3>
-                          <p style={{ fontSize: 13 }}>
-                            {folder.video_count || 0} vidéo{(folder.video_count || 0) !== 1 ? 's' : ''}
-                          </p>
-                          <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder.id); }}
-                              style={{ flex: 1 }}
-                            >
-                              🗑️
-                            </button>
-                          </div>
+                          {editingFolderId === folder.id ? (
+                            <>
+                              <input
+                                type="text"
+                                value={editFolderName}
+                                onChange={(e) => setEditFolderName(e.target.value)}
+                                style={{ width: '100%', padding: '4px 8px', marginBottom: 8, fontSize: 14, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'var(--text-primary)' }}
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+                                {VIDEO_COLORS.map(color => (
+                                  <button key={color}
+                                    onClick={(e) => { setEditFolderColor(color); e.stopPropagation(); }}
+                                    style={{ width: 24, height: 24, borderRadius: '50%', background: color,
+                                      border: editFolderColor === color ? '2px solid var(--text-primary)' : '2px solid transparent',
+                                      cursor: 'pointer', padding: 0,
+                                      boxShadow: editFolderColor === color ? 'var(--accent-glow)' : 'none' }}
+                                  />
+                                ))}
+                              </div>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button className="btn btn-success btn-sm"
+                                  onClick={(e) => { handleSaveFolderEdit(folder.id); e.stopPropagation(); }}
+                                  style={{ flex: 1 }}>✓</button>
+                                <button className="btn btn-secondary btn-sm"
+                                  onClick={(e) => { setEditingFolderId(null); e.stopPropagation(); }}
+                                  style={{ flex: 1 }}>✕</button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <h3>{folder.name}</h3>
+                              <p style={{ fontSize: 13 }}>
+                                {folder.video_count || 0} vidéo{(folder.video_count || 0) !== 1 ? 's' : ''}
+                              </p>
+                              <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+                                <button className="btn btn-secondary btn-sm"
+                                  onClick={(e) => { e.stopPropagation(); handleEditFolder(folder); }}
+                                  style={{ flex: 1 }}>✏️</button>
+                                <button className="btn btn-secondary btn-sm"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder.id); }}
+                                  style={{ flex: 1 }}>🗑️</button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </motion.div>
                     ))}
@@ -411,7 +466,7 @@ function Dashboard({ user, onLogout }) {
                                       border: editVideoColor === color ? '2px solid var(--text-primary)' : '2px solid transparent',
                                       cursor: 'pointer',
                                       padding: 0,
-                                      boxShadow: editVideoColor === color ? 'var(--neon-red-glow)' : 'none'
+                                      boxShadow: editVideoColor === color ? 'var(--accent-glow)' : 'none'
                                     }}
                                   />
                                 ))}
@@ -669,7 +724,7 @@ function Dashboard({ user, onLogout }) {
                           border: newFolderColor === color ? '3px solid var(--text-primary)' : '2px solid transparent',
                           cursor: 'pointer',
                           padding: 0,
-                          boxShadow: newFolderColor === color ? 'var(--neon-red-glow)' : 'none'
+                          boxShadow: newFolderColor === color ? 'var(--accent-glow)' : 'none'
                         }}
                       />
                     ))}

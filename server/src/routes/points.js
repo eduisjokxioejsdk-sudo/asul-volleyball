@@ -49,7 +49,7 @@ router.post('/:videoId', authenticateToken, (req, res) => {
       }
 
       const stmt = db.prepare(
-        'INSERT INTO points (video_id, point_number, start_time, end_time, winner, serving_team, receiving_team, team1_position, team2_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO points (video_id, point_number, start_time, end_time, winner, serving_team, receiving_team, team1_position, team2_position, point_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       );
 
       points.forEach((point) => {
@@ -62,7 +62,8 @@ router.post('/:videoId', authenticateToken, (req, res) => {
           point.serving_team || null,
           point.receiving_team || null,
           point.team1_position || null,
-          point.team2_position || null
+          point.team2_position || null,
+          point.point_type || null
         );
       });
 
