@@ -57,11 +57,28 @@ Cliquer "New" → "Raw Editor" et coller :
 ```json
 {
   "NODE_ENV": "production",
-  "PORT": "5000"
+  "PORT": "5000",
+  "JWT_SECRET": "une-longue-chaine-aleatoire-a-changer",
+  "R2_ACCOUNT_ID": "votre-account-id-cloudflare",
+  "R2_ACCESS_KEY_ID": "votre-access-key-id",
+  "R2_SECRET_ACCESS_KEY": "votre-secret-access-key",
+  "R2_BUCKET_NAME": "asul-videos",
+  "R2_PUBLIC_BASE_URL": "https://pub-xxxx.r2.dev"
 }
 ```
 
-### 2.3 Ajouter un volume pour la base de données
+> 💡 `R2_PUBLIC_BASE_URL` est optionnel : sans lui, le serveur génère des URLs signées temporaires (valables 1h).
+
+### 2.3 Configurer Cloudflare R2 (stockage des vidéos)
+1. Aller sur https://dash.cloudflare.com → **R2** → **Create bucket** (nom : `asul-videos`).
+2. Cliquer sur **Manage API Tokens** → **Create API Token**.
+3. Choisir l'autorisation **Object Read & Write**, limitée au bucket `asul-videos`.
+4. Copier l'**Access Key ID** et la **Secret Access Key**.
+5. L'**Account ID** se trouve dans l'URL du dashboard Cloudflare (ex: `https://dash.cloudflare.com/<ACCOUNT_ID>/...`).
+6. *(Optionnel, recommandé)* Pour une lecture directe : connecter un custom domain au bucket OU activer **Public access** (`r2.dev`) sur le bucket puis copier l'URL `https://pub-xxxx.r2.dev` dans `R2_PUBLIC_BASE_URL`.
+7. Reporter ces valeurs dans les variables d'environnement ci-dessus.
+
+### 2.4 Ajouter un volume pour la base de données
 1. Cliquer sur l'onglet "Volumes"
 2. Cliquer "New Volume"
 3. Nom : `data`
@@ -69,13 +86,13 @@ Cliquer "New" → "Raw Editor" et coller :
 5. Size : 1GB
 6. Cliquer "Add"
 
-### 2.4 Déployer
+### 2.5 Déployer
 1. Cliquer "Deploy"
 2. Attendre 2-3 minutes
 3. Une fois déployé, cliquer sur "Settings" → "Domains"
 4. Copier l'URL (ex: `https://asul-server-production.up.railway.app`)
 
-### 2.5 Initialiser la base de données
+### 2.6 Initialiser la base de données
 1. Cliquer sur l'onglet "Deployments"
 2. Cliquer sur votre déploiement
 3. Cliquer sur "View Logs"

@@ -5,6 +5,7 @@ const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
+const r2 = require('../r2');
 
 const router = express.Router();
 
@@ -67,32 +68,47 @@ router.post('/upload', authenticateToken, (req, res) => {
     const team1_name = req.body.team1_name || 'Équipe 1';
     const team2_name = req.body.team2_name || 'Équipe 2';
 
-    const video = {
-      user_id: req.user.id,
-      filename: req.file.filename,
-      original_name: req.file.originalname,
-      filepath: req.file.path,
-      team1_name,
-      team2_name,
-      status: 'uploaded'
+    // Upload to Cloudflare R2 if configured. The local temp file is used only
+    // as a staging area and is removed afterwards to save disk space.
+    const finishUpload = async (filepath) => {
+      try {
+        if (r2.R2_ENABLED()) {
+          await r2.uploadFile(req.file.path, req.file.filename, req.file.mimetype);
+          // Bascule la référence vers la clé logique R2 (filename).
+          // On supprime le fichier local temporaire.
+          filepath = req.file.filename;
+          fs.remove(req.file.path).catch(() => {});
+        }
+      } catch (uploadErr) {
+        console.error('R2 upload error:', uploadErr);
+        return res.status(500).json({ error: 'Failed to store video in R2: ' + uploadErr.message });
+      }
+
+      db.run(
+        'INSERT INTO videos (user_id, filename, original_name, filepath, team1_name, team2_name, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [req.user.id, req.file.filename, req.file.originalname, filepath, team1_name, team2_name, 'uploaded'],
+        function (err) {
+          if (err) {
+            return res.status(500).json({ error: 'Failed to save video metadata' });
+          }
+
+          res.status(201).json({
+            id: this.lastID,
+            user_id: req.user.id,
+            filename: req.file.filename,
+            original_name: req.file.originalname,
+            filepath,
+            team1_name,
+            team2_name,
+            status: 'uploaded',
+            filepath_trimmed: null,
+            duration: null
+          });
+        }
+      );
     };
 
-    db.run(
-      'INSERT INTO videos (user_id, filename, original_name, filepath, team1_name, team2_name, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [video.user_id, video.filename, video.original_name, video.filepath, video.team1_name, video.team2_name, video.status],
-      function (err) {
-        if (err) {
-          return res.status(500).json({ error: 'Failed to save video metadata' });
-        }
-
-        res.status(201).json({
-          id: this.lastID,
-          ...video,
-          filepath_trimmed: null,
-          duration: null
-        });
-      }
-    );
+    finishUpload(req.file.path);
   });
 });
 
@@ -140,10 +156,16 @@ router.delete('/:id', authenticateToken, (req, res) => {
         return res.status(404).json({ error: 'Video not found' });
       }
 
-      // Delete associated files
+      // Delete associated files (local + R2)
       fs.remove(video.filepath).catch(() => {});
       if (video.filepath_trimmed) {
         fs.remove(video.filepath_trimmed).catch(() => {});
+      }
+      // Delete from R2 using logical filenames
+      r2.deleteFile(video.filename).catch(() => {});
+      if (video.filepath_trimmed) {
+        const trimmedFilename = video.filepath_trimmed.split(/[\\/]/).pop();
+        r2.deleteFile(trimmedFilename).catch(() => {});
       }
 
       // Delete database records
@@ -159,10 +181,18 @@ router.delete('/:id', authenticateToken, (req, res) => {
   );
 });
 
-// Stream video file
-router.get('/file/:filename', (req, res) => {
+// Stream video file (redirects to R2 when configured, otherwise serves locally)
+router.get('/file/:filename', async (req, res) => {
+  try {
+    const url = await r2.resolvePlaybackUrl(req.params.filename);
+    if (url) {
+      return res.redirect(url);
+    }
+  } catch (err) {
+    console.error('R2 resolvePlaybackUrl error:', err.message);
+  }
+
   const filePath = path.join(uploadsDir, req.params.filename);
-  
   if (!fs.existsSync(filePath)) {
     // Check in trimmed directory
     const trimmedPath = path.join(trimmedDir, req.params.filename);
@@ -175,10 +205,18 @@ router.get('/file/:filename', (req, res) => {
   }
 });
 
-// Stream trimmed video file
-router.get('/trimmed/:filename', (req, res) => {
+// Stream trimmed video file (redirects to R2 when configured)
+router.get('/trimmed/:filename', async (req, res) => {
+  try {
+    const url = await r2.resolvePlaybackUrl(req.params.filename);
+    if (url) {
+      return res.redirect(url);
+    }
+  } catch (err) {
+    console.error('R2 resolvePlaybackUrl error:', err.message);
+  }
+
   const filePath = path.join(trimmedDir, req.params.filename);
-  
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Trimmed file not found' });
   }

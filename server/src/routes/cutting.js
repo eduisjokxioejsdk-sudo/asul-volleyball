@@ -4,6 +4,7 @@ const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
+const r2 = require('../r2');
 
 const router = express.Router();
 
@@ -101,7 +102,19 @@ router.post('/generate/:videoId', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'No segments found. Please cut the video first.' });
     }
 
-    const inputPath = video.filepath;
+    // Resolve the local input path. When R2 is enabled, video.filepath stores
+    // the logical filename so we download the object to a temporary local file
+    // for ffmpeg to process.
+    let inputPath = video.filepath;
+    let tempInputPath = null;
+
+    if (r2.R2_ENABLED()) {
+      tempInputPath = path.join(trimmedDir, `r2input_${uuidv4()}${path.extname(video.filename)}`);
+      inputPath = await r2.downloadFile(video.filename, tempInputPath);
+    } else if (!fs.existsSync(inputPath)) {
+      return res.status(404).json({ error: 'Source video file not found' });
+    }
+
     const outputFilename = `trimmed_${uuidv4()}.mp4`;
     const outputPath = path.join(trimmedDir, outputFilename);
 
@@ -117,33 +130,38 @@ router.post('/generate/:videoId', authenticateToken, async (req, res) => {
     const concatFilePath = path.join(trimmedDir, `concat_${uuidv4()}.txt`);
     fs.writeFileSync(concatFilePath, concatContent);
 
-    return new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       ffmpeg()
         .input(concatFilePath)
         .inputOptions(['-f concat', '-safe 0'])
         .outputOptions(['-c copy'])
-        .on('end', async () => {
-          // Clean up concat file
-          fs.remove(concatFilePath).catch(() => {});
-
-          // Update video record
-          db.run('UPDATE videos SET filepath_trimmed = ?, status = ? WHERE id = ?',
-            [outputPath, 'trimmed', videoId]);
-
-          res.json({
-            message: 'Trimmed video generated successfully',
-            trimmed_filename: outputFilename,
-            trimmed_filepath: outputPath
-          });
-          resolve();
-        })
-        .on('error', (err) => {
-          fs.remove(concatFilePath).catch(() => {});
-          reject(err);
-        })
+        .on('end', resolve)
+        .on('error', reject)
         .save(outputPath);
-    }).catch(err => {
-      return res.status(500).json({ error: 'Failed to generate trimmed video: ' + err.message });
+    });
+
+    // Cleanup concat file and temporary input file
+    fs.remove(concatFilePath).catch(() => {});
+    if (tempInputPath) {
+      fs.remove(tempInputPath).catch(() => {});
+    }
+
+    // Store the trimmed video (R2 or local)
+    let trimmedReference = outputPath;
+    if (r2.R2_ENABLED()) {
+      await r2.uploadFile(outputPath, outputFilename, 'video/mp4');
+      trimmedReference = outputFilename;
+      fs.remove(outputPath).catch(() => {});
+    }
+
+    // Update video record
+    db.run('UPDATE videos SET filepath_trimmed = ?, status = ? WHERE id = ?',
+      [trimmedReference, 'trimmed', videoId]);
+
+    res.json({
+      message: 'Trimmed video generated successfully',
+      trimmed_filename: outputFilename,
+      trimmed_filepath: trimmedReference
     });
 
   } catch (err) {

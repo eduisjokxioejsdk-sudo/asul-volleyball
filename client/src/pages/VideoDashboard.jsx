@@ -73,6 +73,12 @@ function VideoDashboard({ user, onLogout }) {
       const response = await videosAPI.getOne(id);
       setVideo(response.data.video);
       setHasTrimmedVideo(!!response.data.video.filepath_trimmed);
+      // Si la vidéo est entièrement annotée, ouvrir directement sur "Consulter Vidéo"
+      if (response.data.video.status === 'annotated') {
+        setActiveTab('view');
+        setViewCurrentIndex(0);
+        viewCurrentIndexRef.current = 0;
+      }
     } catch (err) {
       console.error('Failed to load video:', err);
       navigate('/dashboard');
@@ -198,6 +204,71 @@ function VideoDashboard({ user, onLogout }) {
     });
   };
 
+  // Auto-save points silently (debounced) + save on unmount
+  const hasPointsEverLoaded = useRef(false);
+  const pointsRef = useRef(points);
+  const pendingSaveRef = useRef(false);
+
+  // Keep pointsRef in sync
+  useEffect(() => {
+    pointsRef.current = points;
+    if (hasPointsEverLoaded.current && points.length > 0) {
+      pendingSaveRef.current = true;
+    }
+  }, [points]);
+
+  // Debounced auto-save
+  useEffect(() => {
+    if (!hasPointsEverLoaded.current) {
+      hasPointsEverLoaded.current = points.length > 0;
+      return () => {
+        // Cleanup: save on unmount/navigation
+        flushSave();
+      };
+    }
+    if (points.length === 0) return () => { flushSave(); };
+
+    pendingSaveRef.current = true;
+    const timeoutId = setTimeout(async () => {
+      await doSave();
+    }, 2000);
+
+    return () => {
+      clearTimeout(timeoutId);
+      flushSave();
+    };
+  }, [points, id]);
+
+  const doSave = async () => {
+    if (!pendingSaveRef.current) return;
+    pendingSaveRef.current = false;
+    try {
+      await pointsAPI.savePoints(id, pointsRef.current);
+    } catch (err) {
+      console.error('Auto-save points failed:', err);
+    }
+  };
+
+  const flushSave = () => {
+    if (!pendingSaveRef.current) return;
+    pendingSaveRef.current = false;
+    const pts = pointsRef.current;
+    if (!pts || pts.length === 0) return;
+    // Fire and forget — use sendBeacon-like approach
+    const token = localStorage.getItem('token');
+    const API_ORIGIN = import.meta.env.VITE_API_URL || '';
+    const API_BASE = API_ORIGIN ? `${API_ORIGIN}/api` : '/api';
+    fetch(`${API_BASE}/points/${id}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ points: pts }),
+      keepalive: true,
+    }).catch(() => {});
+  };
+
   const handleSavePoints = async () => {
     setSaving(true);
     try {
@@ -221,6 +292,7 @@ function VideoDashboard({ user, onLogout }) {
       receiving_team: index === 0 ? 'team2' : '',
       team1_position: index === 0 ? 'P1' : '',
       team2_position: index === 0 ? 'P4' : '',
+      point_type: '',
     }));
     setPoints(newPoints);
     setCurrentPointIndex(0);
@@ -441,8 +513,11 @@ function VideoDashboard({ user, onLogout }) {
   }
 
   const videoUrl = videosAPI.getFileUrl(video.filename);
-  const trimmedVideoUrl = hasTrimmedVideo
-    ? videosAPI.getTrimmedUrl(video.filename.replace(/\.\w+$/, '') + '.mp4')
+  const trimmedFilename = video.filepath_trimmed
+    ? video.filepath_trimmed.split(/[\\/]/).pop()
+    : null;
+  const trimmedVideoUrl = trimmedFilename
+    ? videosAPI.getTrimmedUrl(trimmedFilename)
     : null;
 
   const currentPoint = points[currentPointIndex] || null;

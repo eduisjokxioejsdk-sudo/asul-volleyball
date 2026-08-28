@@ -56,4 +56,6 @@ Thumbs.db
 *.temp
 test.txt
 .vercel
-.env*
+.env
+.env.*
+!.env.example

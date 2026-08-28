@@ -15,5 +15,10 @@ export default defineConfig({
         changeOrigin: true
       }
     }
-  }
+  },
+  // SPA fallback : renvoie index.html pour toute route inconnue
+  appType: 'spa',
+  preview: {
+    port: 4173,
+  },
 })
