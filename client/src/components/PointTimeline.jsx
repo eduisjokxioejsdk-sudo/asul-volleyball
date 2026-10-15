@@ -1,8 +1,30 @@
 import { useRef } from 'react';
 import { motion } from 'framer-motion';
-import { computeSetTimeline } from '../utils/volleyball';
+import { computeSetTimeline, getPointTypeLetter } from '../utils/volleyball';
+import { ChartColumn, Check, Trophy } from './icons';
 
-function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2: 0 }, onScoreEdit }) {
+/** Pastille d'événement de la frise : « T1/T2 » temps mort, « R1/R2 » remplacement. */
+function EventBadge({ event, label }) {
+  return (
+    <span
+      className={`timeline-event ${event.kind} ${event.team === 'away' ? 'away' : 'home'}`}
+      title={label}
+    >
+      {event.kind === 'timeout' ? 'T' : 'R'}
+      {event.team === 'away' ? '2' : '1'}
+    </span>
+  );
+}
+
+/**
+ * Frise chronologique des points.
+ *
+ * @param {Object} props
+ * @param {Array} props.points - points joués (winner, point_type, set_start…)
+ * @param {Array} [props.events] - temps morts et remplacements à marquer
+ *        ({ kind, team, setNumber, pointsPlayed, out, in })
+ */
+function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2: 0 }, onScoreEdit, onPointClick, readOnly = false, events = [] }) {
   const { 
     timeline, 
     sets, 
@@ -19,7 +41,7 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
   if (points.length === 0) {
     return (
       <div className="timeline-empty">
-        <span className="timeline-empty-icon">📊</span>
+        <span className="timeline-empty-icon"><ChartColumn size={32} /></span>
         <p>Aucun point annoté pour générer la frise.</p>
         <p className="timeline-empty-hint">Annotez d'abord les points dans l'onglet "Annoter".</p>
       </div>
@@ -34,6 +56,22 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
   });
 
   const setNumbers = Object.keys(timelineBySet).map(Number).sort((a,b) => a-b);
+
+  // Événements de match (temps morts, remplacements) groupés par set puis par
+  // position : « pointsPlayed » = points joués dans le set avant l'événement.
+  const eventsBySet = {};
+  (events || []).forEach((ev) => {
+    const s = Number(ev.setNumber) > 0 ? Number(ev.setNumber) : 1;
+    const pos = Math.max(0, Number(ev.pointsPlayed) || 0);
+    if (!eventsBySet[s]) eventsBySet[s] = {};
+    if (!eventsBySet[s][pos]) eventsBySet[s][pos] = [];
+    eventsBySet[s][pos].push(ev);
+  });
+  const eventsAt = (setNum, position) => eventsBySet[setNum]?.[position] || [];
+  const eventText = (ev) =>
+    ev.kind === 'timeout'
+      ? `Temps mort — ${ev.team === 'away' ? team2 : team1}`
+      : `Remplacement — ${ev.team === 'away' ? team2 : team1} : n°${ev.out} → n°${ev.in}`;
 
   const scrollRow = (setNum, direction) => {
     const el = scrollRefs.current[setNum];
@@ -66,8 +104,9 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
         <div className="timeline-initial-score">
           <span className="timeline-initial-label">Score de départ :</span>
           <span
-            className="timeline-initial-value"
+            className={`timeline-initial-value ${readOnly ? 'readonly' : ''}`}
             onClick={() => {
+              if (readOnly) return;
               const newVal = prompt(
                 `Score de départ (format: ${team1}-${team2})\nExemple: 2-2`,
                 `${initialScore.team1}-${initialScore.team2}`
@@ -79,7 +118,7 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                 }
               }
             }}
-            title="Cliquez pour modifier le score de départ"
+            title={readOnly ? '' : "Cliquez pour modifier le score de départ"}
           >
             {initialScore.team1}−{initialScore.team2}
           </span>
@@ -105,7 +144,7 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
         )}
         {matchOver && (
           <div className="tube-set-badge tube-set-over">
-            <span className="tube-set-label">🏆</span>
+            <span className="tube-set-label"><Trophy size={13} /></span>
             <span className="tube-set-score">
               {matchWinner === 'team1' ? team1 : team2}
             </span>
@@ -131,8 +170,15 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                 <span className={`set-timeline-label-score ${setInfo?.winner === 'team1' ? 'set-score-team1' : setInfo?.winner === 'team2' ? 'set-score-team2' : ''}`}>
                   {setResult}
                 </span>
-                {setInfo && <span className="set-timeline-label-check">✓</span>}
+                {setInfo && <span className="set-timeline-label-check"><Check size={12} /></span>}
                 {isCurrent && <span className="set-timeline-label-dot" />}
+                {eventsAt(setNum, 0).length > 0 && (
+                  <span className="set-timeline-label-events">
+                    {eventsAt(setNum, 0).map((ev, i) => (
+                      <EventBadge key={`set-ev-${i}`} event={ev} label={eventText(ev)} />
+                    ))}
+                  </span>
+                )}
               </div>
 
               {/* Scroll arrows + timeline */}
@@ -155,7 +201,7 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                     <div className="timeline-row timeline-row-top">
                       {pts.map((pt, idx) => {
                         const type = pt.point_type;
-                        const typeLabel = type === 'attack' ? 'A' : type === 'block' ? 'B' : type === 'service' ? 'S' : type === 'fault' ? 'F' : '';
+                        const typeLabel = pt.point_type_letter || getPointTypeLetter(type);
                         return (
                           <motion.span
                             key={idx}
@@ -164,11 +210,18 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                                 ? 'timeline-number-large' 
                                 : ''
                             } ${pt.winner === 'team1' ? 'timeline-bold-won' : 'timeline-bold-lost'}`}
-                            style={pt.winner === 'team1' ? { color: 'var(--accent)' } : undefined}
+                            style={{
+                              cursor: 'pointer',
+                              ...(pt.set_start != null
+                                ? { color: '#3b82f6', fontWeight: 800 }
+                                : pt.winner === 'team1' ? { color: 'var(--accent)' } : {})
+                            }}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ duration: 0.15, delay: idx * 0.01 }}
-                            title={`${pt.winner === 'team1' ? team1 : team2} gagne | Type: ${typeLabel || '?'} (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
+                            whileHover={{ scale: 1.15 }}
+                            title={`${pt.winner === 'team1' ? team1 : team2} gagne | Type: ${typeLabel || '?'} (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2}). Cliquer pour voir ce point.`}
+                            onClick={() => onPointClick && onPointClick(pt)}
                           >
                             {typeLabel && pt.winner === 'team1' && <span className="timeline-type-letter" style={{ color: 'var(--accent)' }}>{typeLabel}</span>}
                             <span>{pt.scoreAfter.team1}</span>
@@ -182,11 +235,11 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                       <div className="timeline-center-line-inner" />
                     </div>
 
-                    {/* Bottom row: team2 scores + type letters */}
+                    {/* Bottom row: team2 scores + type letters + événements */}
                     <div className="timeline-row timeline-row-bottom">
                       {pts.map((pt, idx) => {
                         const type = pt.point_type;
-                        const typeLabel = type === 'attack' ? 'A' : type === 'block' ? 'B' : type === 'service' ? 'S' : type === 'fault' ? 'F' : '';
+                        const typeLabel = pt.point_type_letter || getPointTypeLetter(type);
                         return (
                           <motion.span
                             key={idx}
@@ -195,14 +248,29 @@ function PointTimeline({ points, team1, team2, initialScore = { team1: 0, team2:
                                 ? 'timeline-number-large' 
                                 : ''
                             } ${pt.winner === 'team2' ? 'timeline-bold-won' : 'timeline-bold-lost'}`}
-                            style={pt.winner === 'team2' ? { color: 'var(--text-secondary)' } : undefined}
+                            style={{
+                              cursor: 'pointer',
+                              position: 'relative',
+                              ...(pt.set_start != null
+                                ? { color: '#3b82f6', fontWeight: 800 }
+                                : pt.winner === 'team2' ? { color: 'var(--text-secondary)' } : {})
+                            }}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ duration: 0.15, delay: idx * 0.01 }}
-                            title={`${pt.winner === 'team2' ? team2 : team1} gagne | Type: ${typeLabel || '?'} (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2})`}
+                            whileHover={{ scale: 1.15 }}
+                            title={`${pt.winner === 'team2' ? team2 : team1} gagne | Type: ${typeLabel || '?'} (${pt.scoreBefore.team1}-${pt.scoreBefore.team2} → ${pt.scoreAfter.team1}-${pt.scoreAfter.team2}). Cliquer pour voir ce point.`}
+                            onClick={() => onPointClick && onPointClick(pt)}
                           >
                             {typeLabel && pt.winner === 'team2' && <span className="timeline-type-letter" style={{ color: 'var(--text-secondary)' }}>{typeLabel}</span>}
                             <span>{pt.scoreAfter.team2}</span>
+                            {eventsAt(setNum, idx + 1).length > 0 && (
+                              <span className="timeline-event-badges">
+                                {eventsAt(setNum, idx + 1).map((ev, i) => (
+                                  <EventBadge key={`ev-${idx}-${i}`} event={ev} label={eventText(ev)} />
+                                ))}
+                              </span>
+                            )}
                           </motion.span>
                         );
                       })}

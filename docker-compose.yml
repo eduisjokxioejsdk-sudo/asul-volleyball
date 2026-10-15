@@ -1,0 +1,64 @@
+# ============================================================================
+# ASUL — déploiement en un conteneur (app) derrière Caddy (HTTPS automatique).
+#
+#   Démarrage :   docker compose up -d --build
+#   Journaux  :   docker compose logs -f
+#   Mise à jour : git pull && docker compose up -d --build
+#   Arrêt     :   docker compose down
+#
+# Variables (fichier « .env » à la racine, cf. deploy/env.production.example) :
+#   ASUL_DOMAIN  domaine public (DNS -> IP de la VM)
+#   ACME_EMAIL   e-mail Let's Encrypt
+#   JWT_SECRET   secret de signature des tokens
+# ============================================================================
+
+services:
+  asul:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: asul-app:latest
+    container_name: asul-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3001"
+      DATA_DIR: /data
+      CLIENT_DIST: /app/client/dist
+    volumes:
+      # Données persistantes : base SQLite + vidéos uploadées/découpées.
+      - asul-data:/data
+    expose:
+      - "3001"          # interne au réseau Docker : non exposé à Internet.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: asul-caddy
+    restart: unless-stopped
+    depends_on:
+      - asul
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file: .env
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data        # certificats Let's Encrypt (à conserver)
+      - caddy-config:/config
+
+volumes:
+  asul-data:
+  caddy-data:
+  caddy-config:

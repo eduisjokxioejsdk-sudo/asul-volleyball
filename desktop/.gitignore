@@ -1,0 +1,7 @@
+# Client (frontend) — remplace/complete .gitignore racine pour le dossier desktop
+node_modules/
+dist/
+resources/ffmpeg/
+resources/client/
+resources/server/
+*.log

@@ -1,0 +1,28 @@
+# Contexte de build allégé : on n'envoie que le code source nécessaire.
+.git
+.github
+desktop
+node_modules
+**/node_modules
+
+# Builds et artefacts locaux
+client/dist
+client/public/viewer.html
+**/*.log
+
+# Données locales (ne jamais embarquer base ni vidéos dans l'image)
+server/uploads
+server/asul.db
+server/asul.db-shm
+server/asul.db-wal
+server/jwt-secret.key
+
+# Secrets et fichiers d'environnement locaux
+.env
+.env.*
+server/.env
+server/.env.*
+
+# Divers
+*.md
+backups

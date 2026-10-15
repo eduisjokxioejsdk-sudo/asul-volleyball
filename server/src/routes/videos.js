@@ -5,17 +5,23 @@ const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
-const r2 = require('../r2');
+const syncHub = require('../syncHub');
+const { emitCollectionChanged } = require('../socket');
+const { mountSyncRoutes } = require('./sync');
 
 const router = express.Router();
 
-// En production (Railway), utiliser le volume persistant /data si disponible
-const dataDir = process.env.DATA_DIR || (fs.existsSync('/data') ? '/data' : path.join(__dirname, '..', '..'));
-const uploadsDir = path.join(dataDir, 'uploads');
-const trimmedDir = path.join(uploadsDir, 'trimmed');
-fs.ensureDirSync(uploadsDir);
-fs.ensureDirSync(trimmedDir);
+// Partage à distance (métadonnées vidéo seulement, jamais les fichiers).
+mountSyncRoutes(router, syncHub.videos);
 
+// Dossier de données (positionné par config.js ; repli sur server/ si absent).
+const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', '..');
+const uploadsDir = path.join(dataDir, 'uploads');
+// Dossier des versions « proxy » (lecture légère). Le nom « trimmed » est
+// conservé pour la compatibilité avec les installations existantes.
+const proxyDir = path.join(uploadsDir, 'trimmed');
+fs.ensureDirSync(uploadsDir);
+fs.ensureDirSync(proxyDir);
 
 // Configure multer for video uploads
 const storage = multer.diskStorage({
@@ -39,21 +45,15 @@ const upload = multer({
       cb(new Error('Invalid video format. Only mp4, mpeg, mov, avi, mkv are allowed.'));
     }
   },
-  limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit
+  // Limite de taille : 100 Go max (permet l'upload de très grosses vidéos,
+  // ex. fichiers de 12 Go). Passer à Infinity pour supprimer toute limite.
+  limits: { fileSize: 100 * 1024 * 1024 * 1024 }
 });
 
 // Upload a video
 router.post('/upload', authenticateToken, (req, res) => {
-  console.log('Upload attempt - Headers:', req.headers);
-  console.log('Upload attempt - Body:', req.body);
-  console.log('Upload attempt - File:', req.file);
-  
   upload.single('video')(req, res, (err) => {
-    console.log('Multer callback - Error:', err);
-    console.log('Multer callback - File:', req.file);
-    
     if (err) {
-      console.error('Multer error:', err);
       if (err instanceof multer.MulterError) {
         return res.status(400).json({ error: err.message });
       }
@@ -61,37 +61,24 @@ router.post('/upload', authenticateToken, (req, res) => {
     }
 
     if (!req.file) {
-      console.error('No file in request');
       return res.status(400).json({ error: 'No video file provided' });
     }
 
     const team1_name = req.body.team1_name || 'Équipe 1';
     const team2_name = req.body.team2_name || 'Équipe 2';
 
-    // Upload to Cloudflare R2 if configured. The local temp file is used only
-    // as a staging area and is removed afterwards to save disk space.
-    const finishUpload = async (filepath) => {
-      try {
-        if (r2.R2_ENABLED()) {
-          await r2.uploadFile(req.file.path, req.file.filename, req.file.mimetype);
-          // Bascule la référence vers la clé logique R2 (filename).
-          // On supprime le fichier local temporaire.
-          filepath = req.file.filename;
-          fs.remove(req.file.path).catch(() => {});
-        }
-      } catch (uploadErr) {
-        console.error('R2 upload error:', uploadErr);
-        return res.status(500).json({ error: 'Failed to store video in R2: ' + uploadErr.message });
-      }
-
+    // Le fichier est conservé sur le disque local (server/uploads).
+    const finishUpload = (filepath) => {
       db.run(
-        'INSERT INTO videos (user_id, filename, original_name, filepath, team1_name, team2_name, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [req.user.id, req.file.filename, req.file.originalname, filepath, team1_name, team2_name, 'uploaded'],
+        'INSERT INTO videos (user_id, filename, original_name, filepath, team1_name, team2_name, status, sync_uuid, dirty, local_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)',
+        [req.user.id, req.file.filename, req.file.originalname, filepath, team1_name, team2_name, 'uploaded', uuidv4(), new Date().toISOString()],
         function (err) {
           if (err) {
             return res.status(500).json({ error: 'Failed to save video metadata' });
           }
 
+          syncHub.videos.syncNow({ reason: 'upload' }).catch(() => {});
+          emitCollectionChanged('videos');
           res.status(201).json({
             id: this.lastID,
             user_id: req.user.id,
@@ -101,7 +88,6 @@ router.post('/upload', authenticateToken, (req, res) => {
             team1_name,
             team2_name,
             status: 'uploaded',
-            filepath_trimmed: null,
             duration: null
           });
         }
@@ -156,69 +142,37 @@ router.delete('/:id', authenticateToken, (req, res) => {
         return res.status(404).json({ error: 'Video not found' });
       }
 
-      // Delete associated files (local + R2)
+      // Supprime les fichiers associés (source + proxy).
       fs.remove(video.filepath).catch(() => {});
-      if (video.filepath_trimmed) {
-        fs.remove(video.filepath_trimmed).catch(() => {});
+      if (video.filepath_proxy) {
+        fs.remove(video.filepath_proxy).catch(() => {});
       }
-      // Delete from R2 using logical filenames
-      r2.deleteFile(video.filename).catch(() => {});
-      if (video.filepath_trimmed) {
-        const trimmedFilename = video.filepath_trimmed.split(/[\\/]/).pop();
-        r2.deleteFile(trimmedFilename).catch(() => {});
-      }
-
       // Delete database records
-      db.run('DELETE FROM points WHERE video_id = ?', [video.id]);
-      db.run('DELETE FROM cut_segments WHERE video_id = ?', [video.id]);
       db.run('DELETE FROM videos WHERE id = ?', [video.id], function (err) {
         if (err) {
           return res.status(500).json({ error: 'Failed to delete video' });
         }
+        emitCollectionChanged('videos');
         res.json({ message: 'Video deleted successfully' });
       });
     }
   );
 });
 
-// Stream video file (redirects to R2 when configured, otherwise serves locally)
-router.get('/file/:filename', async (req, res) => {
-  try {
-    const url = await r2.resolvePlaybackUrl(req.params.filename);
-    if (url) {
-      return res.redirect(url);
-    }
-  } catch (err) {
-    console.error('R2 resolvePlaybackUrl error:', err.message);
-  }
-
+// Stream video file (local storage)
+router.get('/file/:filename', (req, res) => {
   const filePath = path.join(uploadsDir, req.params.filename);
   if (!fs.existsSync(filePath)) {
-    // Check in trimmed directory
-    const trimmedPath = path.join(trimmedDir, req.params.filename);
-    if (!fs.existsSync(trimmedPath)) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-    res.sendFile(trimmedPath);
-  } else {
-    res.sendFile(filePath);
+    return res.status(404).json({ error: 'File not found' });
   }
+  res.sendFile(filePath);
 });
 
-// Stream trimmed video file (redirects to R2 when configured)
-router.get('/trimmed/:filename', async (req, res) => {
-  try {
-    const url = await r2.resolvePlaybackUrl(req.params.filename);
-    if (url) {
-      return res.redirect(url);
-    }
-  } catch (err) {
-    console.error('R2 resolvePlaybackUrl error:', err.message);
-  }
-
-  const filePath = path.join(trimmedDir, req.params.filename);
+// Stream proxy video file (version légère pour la lecture / navigation)
+router.get('/proxy/:filename', (req, res) => {
+  const filePath = path.join(proxyDir, req.params.filename);
   if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Trimmed file not found' });
+    return res.status(404).json({ error: 'Proxy file not found' });
   }
   res.sendFile(filePath);
 });
@@ -404,7 +358,6 @@ router.get('/folders/:id/videos', authenticateToken, (req, res) => {
           if (err) {
             return res.status(500).json({ error: 'Database error' });
           }
-          console.log(`Found ${videos.length} videos in folder ${req.params.id}`);
           res.json({ videos });
         }
       );

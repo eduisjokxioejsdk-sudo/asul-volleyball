@@ -1,0 +1,85 @@
+# ============================================================================
+# Configuration electron-builder — ASUL (poste statisticien Windows)
+#
+# L'application embarque :
+#   • le frontend buildé        (client/dist            → resources/client/dist)
+#   • le backend Node complet   (server/src + node_modules → resources/server)
+#   • ffmpeg                    (desktop/resources/ffmpeg  → resources/ffmpeg)
+#
+# Résultat : un seul installeur NSIS, aucune dépendance à installer sur le PC
+# du statisticien (ni Node.js, ni ffmpeg).
+# ============================================================================
+
+appId: fr.asul.volleyball
+productName: ASUL
+copyright: ASUL Volleyball
+
+directories:
+  output: dist
+  buildResources: build
+
+# Publication des mises à jour : l'installeur (ASUL-Setup-x.y.z.exe) et le
+# fichier latest.yml sont déposés dans une Release GitHub. L'application
+# installée les télécharge toute seule (electron-updater) puis propose de
+# redémarrer pour installer — le dépôt est public, donc aucun jeton n'est
+# nécessaire dans l'application.
+publish:
+  - provider: github
+    owner: eduisjokxioejsdk-sudo
+    repo: asul-volleyball
+    releaseType: release
+
+# Fichiers de la coquille Electron (le backend est copié via extraResources car
+# il doit rester sur le disque — ffmpeg et sqlite3 ne peuvent pas vivre dans
+# l'archive asar).
+files:
+  - main.js
+  - preload.js
+  - splash.html
+  - splash-preload.js
+  - package.json
+
+extraResources:
+  - from: ../client/dist
+    to: client/dist
+  - from: ../server/src
+    to: server/src
+  - from: ../server/node_modules
+    to: server/node_modules
+  - from: ../server/package.json
+    to: server/package.json
+  - from: resources/ffmpeg
+    to: ffmpeg
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+  artifactName: ASUL-Setup-${version}.exe
+
+nsis:
+  # Installation PAR UTILISATEUR, silencieuse et sans administrateur :
+  #   • dossier %LOCALAPPDATA%\Programs\ASUL ;
+  #   • aucune élévation ni UAC (profil beaucoup moins suspect pour les
+  #     antivirus que « Program Files + administrateur ») ;
+  #   • la mise à jour automatique s'installe ensuite sans UAC.
+  # allowElevation reste vrai uniquement pour désinstaller une ancienne version
+  # installée « pour tous les utilisateurs » (C:\Program Files\ASUL) : dans ce
+  # cas seulement, Windows demande une élévation.
+  #
+  # La règle de pare-feu du match en direct n'est plus créée ici : elle est
+  # demandée par l'application au premier besoin (menu Serveur), ce qui évite à
+  # l'installeur d'exécuter netsh avec élévation.
+  oneClick: true
+  perMachine: false
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ASUL
+  include: build/installer.nsh
+  deleteAppDataOnUninstall: false
+  # Les données du statisticien (%APPDATA%\ASUL) ne sont jamais supprimées :
+  # installées par utilisateur, elles survivent à une désinstallation ou à une
+  # mise à jour de l'application.

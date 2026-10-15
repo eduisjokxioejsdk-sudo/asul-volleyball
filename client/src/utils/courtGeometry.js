@@ -1,0 +1,93 @@
+// ============================================================================
+// Géométrie du terrain de volley (18 m × 9 m, filet au centre).
+// Unités : 1 unité SVG = 10 cm, 1 mètre = 10 unités.
+//
+// Repère officiel, vu par chaque équipe (filet en haut pour elle) :
+//        filet
+//   P4    P3    P2        (avant, à 3 m du filet)
+//   P5    P6    P1        (arrière)   P1 = arrière droit = serveur
+//
+// Chaque équipe est vue depuis son propre côté : le terrain est donc
+// symétrique par rapport au filet (comme sur un vrai plan de match).
+// En coordonnées d'équipe : [profondeur depuis la ligne de fond, largeur
+// depuis la ligne de gauche] — 0 = gauche, 9 = droite.
+//   P1 : arrière droit · P2 : avant droit · P3 : avant centre
+//   P4 : avant gauche  · P5 : arrière gauche · P6 : arrière centre
+// ============================================================================
+
+/** 1 unité SVG = 10 cm. */
+export const U = 10;
+/** Largeur du terrain (ligne de côté à ligne de côté), en mètres. */
+export const M = 9;
+/** Zone libre autour du terrain, en unités. */
+export const FREE = 5;
+/** Profondeur d'un camp, en mètres. */
+export const HALF_M = 9;
+/** Ligne d'attaque : 3 m du filet. */
+export const ATTACK_M = 3;
+
+export const W = M * 2 * U + FREE * 2; // 190
+export const H = M * U + FREE * 2; // 100
+export const LEFT_X = FREE; // ligne de fond de l'équipe de gauche
+export const NET_X = FREE + M * U; // 95
+export const RIGHT_X = FREE + M * 2 * U; // 185
+export const ATTACK = 3 * U; // 30
+
+/** Postes, dans le repère de l'équipe. */
+export const COURT_SPOTS = {
+  P1: [1.5, 7.5],
+  P2: [7.5, 7.5],
+  P3: [7.5, 4.5],
+  P4: [7.5, 1.5],
+  P5: [1.5, 1.5],
+  P6: [1.5, 4.5],
+};
+
+/** Les 9 zones de chaque camp, dans le repère de l'équipe. */
+export const ZONE_CELLS = {
+  4: [7.5, 1.5],
+  3: [7.5, 4.5],
+  2: [7.5, 7.5],
+  7: [4.5, 1.5],
+  8: [4.5, 4.5],
+  9: [4.5, 7.5],
+  5: [1.5, 1.5],
+  6: [1.5, 4.5],
+  1: [1.5, 7.5],
+};
+
+export const SPOT_LABELS = {
+  P1: 'Arrière droit (service)',
+  P2: 'Avant droit',
+  P3: 'Avant centre',
+  P4: 'Avant gauche',
+  P5: 'Arrière gauche',
+  P6: 'Arrière centre',
+};
+
+export const SPOTS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
+
+/** Distance au filet (en unités SVG) d'un poste, pour un côté donné. */
+export function distanceToNet(spot, side) {
+  const { x } = spotXY(spot, side);
+  return Math.abs(NET_X - x);
+}
+
+/** Coordonnées SVG (profondeur, largeur → x, y) pour le côté donné. */
+export function xyFrom(depth, width, side) {
+  if (side === 'left') {
+    return { x: LEFT_X + depth * U, y: FREE + width * U };
+  }
+  return { x: RIGHT_X - depth * U, y: FREE + (M - width) * U };
+}
+
+/** Coordonnées SVG d'un poste, pour l'équipe de gauche (côté) ou de droite. */
+export function spotXY(spot, side) {
+  const [depth, width] = COURT_SPOTS[spot];
+  return xyFrom(depth, width, side);
+}
+
+/** Vrai si le point est à l'intérieur des lignes du terrain. */
+export function insideCourt(p) {
+  return p.x >= LEFT_X && p.x <= RIGHT_X && p.y >= FREE && p.y <= FREE + M * U;
+}

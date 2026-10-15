@@ -1,12 +1,56 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { videosAPI, foldersAPI } from '../services/api';
+import { videosAPI, foldersAPI, liveAPI, datavolleyAPI } from '../services/api';
+import TrajectoryHome from '../components/TrajectoryHome';
+import useCollectionChanged from '../hooks/useCollectionChanged';
+import {
+  Check,
+  Dices,
+  Film,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Route,
+  Sparkles,
+  Trash,
+  Trophy,
+  Upload,
+  Users,
+  Video,
+  X,
+} from '../components/icons';
 
 const VIDEO_COLORS = [
   '#1a73e8', '#ea4335', '#34a853', '#fbbc04', '#9c27b0',
   '#ff5722', '#00bcd4', '#ff4081', '#795548', '#607d8b'
 ];
+
+/** Ballon de volley animé — décor 3D léger (SVG, aucune dépendance). */
+function BallArt() {
+  return (
+    <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+      <defs>
+        <radialGradient id="asulBallGrad" cx="34%" cy="28%" r="82%">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="52%" stopColor="#eaf1ff" />
+          <stop offset="100%" stopColor="#b7c7e8" />
+        </radialGradient>
+      </defs>
+      <circle cx="50" cy="50" r="47" fill="url(#asulBallGrad)" stroke="#2868b8" strokeWidth="2.5" />
+      <g fill="none" stroke="#3d8bff" strokeWidth="2.6" strokeLinecap="round" opacity="0.9">
+        <path d="M50 3 C 22 30, 22 70, 50 97" />
+        <path d="M50 3 C 78 30, 78 70, 50 97" />
+        <path d="M3 50 C 30 22, 70 22, 97 50" />
+        <path d="M3 50 C 30 78, 70 78, 97 50" />
+      </g>
+      <ellipse cx="36" cy="29" rx="15" ry="8" fill="#ffffff" opacity="0.55" />
+    </svg>
+  );
+}
 
 const cardVariants = {
   hidden: { opacity: 0, y: 30 },
@@ -23,6 +67,10 @@ const cardVariants = {
 
 function Dashboard({ user, onLogout }) {
   const navigate = useNavigate();
+  // Mode actif : 'datavolley' (codage DataVolley) ou 'trajectories'.
+  const [mode, setMode] = useState(() => localStorage.getItem('asul.mode') || 'datavolley');
+  const handleSetMode = (m) => { setMode(m); localStorage.setItem('asul.mode', m); };
+  const openVideo = (videoId) => navigate(`/datavolley/${videoId}`);
   const [videos, setVideos] = useState([]);
   const [folders, setFolders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,9 +94,29 @@ function Dashboard({ user, onLogout }) {
   const [videosInCurrentFolder, setVideosInCurrentFolder] = useState([]);
   const fileInputRef = useRef(null);
 
+  // Match en direct
+  const [liveSessions, setLiveSessions] = useState([]);
+  const [showLiveCreate, setShowLiveCreate] = useState(false);
+  const [liveName, setLiveName] = useState('');
+  const [liveTeam1, setLiveTeam1] = useState('');
+  const [liveTeam2, setLiveTeam2] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [joinRole, setJoinRole] = useState('statistician');
+  const [liveMsg, setLiveMsg] = useState(null);
+
+  // Corbeille (matchs supprimés temporairement)
+  const [trashedSessions, setTrashedSessions] = useState([]);
+  const [showTrash, setShowTrash] = useState(false);
+
+  // Matchs finis (mode DataVolley)
+  const [finishedMatches, setFinishedMatches] = useState([]);
+
   useEffect(() => {
     loadVideos();
     loadFolders();
+    loadLiveSessions();
+    loadTrash();
+    loadFinished();
   }, []);
 
   useEffect(() => {
@@ -70,6 +138,9 @@ function Dashboard({ user, onLogout }) {
     }
   };
 
+  // Une vidéo importée/supprimée sur un autre poste recharge la liste.
+  useCollectionChanged('videos', loadVideos);
+
   const loadFolders = async () => {
     try {
       const response = await foldersAPI.getAll();
@@ -79,12 +150,103 @@ function Dashboard({ user, onLogout }) {
     }
   };
 
+  const loadFinished = async () => {
+    try {
+      const res = await datavolleyAPI.getFinished();
+      setFinishedMatches(res.data.matches || []);
+    } catch (err) {
+      console.error('Failed to load finished matches:', err);
+    }
+  };
+
   const loadVideosInFolder = async (folderId) => {
     try {
       const response = await foldersAPI.getVideos(folderId);
       setVideosInCurrentFolder(response.data.videos);
     } catch (err) {
       console.error('Failed to load videos in folder:', err);
+    }
+  };
+
+  const loadLiveSessions = async () => {
+    try {
+      const response = await liveAPI.mine();
+      setLiveSessions(response.data.sessions || []);
+    } catch (err) {
+      console.error('Failed to load live sessions:', err);
+    }
+  };
+
+  const loadTrash = async () => {
+    try {
+      const response = await liveAPI.getTrash();
+      setTrashedSessions(response.data.sessions || []);
+    } catch (err) {
+      console.error('Failed to load trash:', err);
+    }
+  };
+
+  const createLive = async () => {
+    try {
+      const response = await liveAPI.create({
+        name: liveName,
+        team1_name: liveTeam1,
+        team2_name: liveTeam2,
+      });
+      setLiveName(''); setLiveTeam1(''); setLiveTeam2('');
+      setShowLiveCreate(false);
+      navigate(`/live/${response.data.id}`);
+    } catch (err) {
+      setLiveMsg({ ok: false, text: 'Erreur de création du match' });
+    }
+  };
+
+  const joinLive = async () => {
+    try {
+      const response = await liveAPI.join({
+        join_code: joinCode,
+        role: joinRole,
+        nickname: user.name,
+      });
+      setJoinCode('');
+      navigate(`/live/${response.data.sessionId}`);
+    } catch (err) {
+      setLiveMsg({ ok: false, text: 'Code invalide' });
+    }
+  };
+
+  const handleTrashMatch = async (s) => {
+    if (!window.confirm(`Mettre « ${s.name} » à la corbeille ?`)) return;
+    try {
+      await liveAPI.trash(s.id);
+      loadLiveSessions();
+      loadTrash();
+    } catch (err) {
+      console.error('Trash failed:', err);
+      alert(err.response?.data?.error || 'Erreur lors de la mise à la corbeille');
+    }
+  };
+
+  const handleRestoreMatch = async (s) => {
+    try {
+      await liveAPI.restore(s.id);
+      loadLiveSessions();
+      loadTrash();
+    } catch (err) {
+      console.error('Restore failed:', err);
+      alert(err.response?.data?.error || 'Erreur lors de la restauration');
+    }
+  };
+
+  const handleDeleteMatchForever = async (s) => {
+    if (!window.confirm(`Supprimer définitivement « ${s.name} » ? Cette action est irréversible.`)) return;
+    try {
+      await liveAPI.deletePermanently(s.id);
+      loadLiveSessions();
+      loadTrash();
+    } catch (err) {
+      console.error('Permanent delete failed:', err);
+      alert(err.response?.data?.error || 'Erreur lors de la suppression définitive');
     }
   };
 
@@ -229,16 +391,6 @@ function Dashboard({ user, onLogout }) {
     }
   };
 
-  const getStatusLabel = (status) => {
-    const labels = {
-      'uploaded': 'Uploadée',
-      'cut_ready': 'Points marqués',
-      'trimmed': 'Découpée',
-      'annotated': 'Annotée'
-    };
-    return labels[status] || status;
-  };
-
   const formatDate = (dateStr) => {
     return new Date(dateStr).toLocaleDateString('fr-FR', {
       day: 'numeric',
@@ -251,7 +403,7 @@ function Dashboard({ user, onLogout }) {
   const videosToDisplay = currentFolder ? videosInCurrentFolder : videos;
 
   return (
-    <div className="dashboard">
+    <div className="dashboard asul-modern">
       <nav className="navbar">
         <div className="navbar-brand">
           <img src="/logo.png" alt="ASUL" style={{ height: 28, marginRight: 4 }} />
@@ -261,6 +413,12 @@ function Dashboard({ user, onLogout }) {
           <span className="user-info">
             <span className="user-name">{user.name}</span>
           </span>
+          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/training')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Dices size={14} /> Entraînement
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/teams')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Users size={14} /> Équipes
+          </button>
           <button className="btn btn-secondary btn-sm" onClick={onLogout}>
             Déconnexion
           </button>
@@ -268,6 +426,164 @@ function Dashboard({ user, onLogout }) {
       </nav>
 
       <div className="dashboard-content">
+        <section className="asul-hero asul-rise">
+          <div className="asul-hero-grid">
+            <div className="asul-hero-copy">
+              <span className="asul-hero-eyebrow"><Sparkles size={13} /> Analyse vidéo volleyball</span>
+              <h1>Bienvenue {user?.name} 👋<br /><em>Code, analyse, progresse.</em></h1>
+              <p>Code tes matchs en DataVolley, découpe les trajectoires et entraîne-toi à lire le jeu — tout au même endroit.</p>
+              <div className="asul-hero-actions">
+                <motion.button className="btn btn-primary" onClick={() => setShowUpload(true)} whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}>
+                  <Upload size={15} /> Uploader une vidéo
+                </motion.button>
+                <motion.button className="btn btn-secondary" onClick={() => navigate('/training')} whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}>
+                  <Dices size={15} /> S’entraîner
+                </motion.button>
+              </div>
+            </div>
+            <div className="asul-ball-stage">
+              <div className="asul-ball"><BallArt /></div>
+            </div>
+          </div>
+        </section>
+
+        <div className="mode-selector">
+          <button className={`mode-btn ${mode === 'datavolley' ? 'active' : ''}`} onClick={() => handleSetMode('datavolley')}>
+            <Video size={16} /> Codage DataVolley
+          </button>
+          <button className={`mode-btn ${mode === 'trajectories' ? 'active' : ''}`} onClick={() => handleSetMode('trajectories')}>
+            <Route size={16} /> Trajectoires
+          </button>
+        </div>
+
+        {/* Onglet Trajectoires : espace de travail dédié (les sections vidéo n'y servent pas) */}
+        {mode === 'trajectories' ? (
+          <TrajectoryHome user={user} />
+        ) : (
+          /* Les vidéos sont communes aux deux onglets. Les sections « Match en
+             direct » (sessions live, corbeille et matchs finis) ne concernent
+             que le codage DataVolley : elles sont absentes de Découpage. */
+          <>
+
+        {mode === 'datavolley' && (
+          <>
+
+        <div className="live-section">
+          <div className="live-section-head">
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Video size={18} /> Match en direct
+            </h3>
+            <div className="live-section-actions">
+              {!showLiveCreate && (
+                <button className="btn btn-primary" onClick={() => setShowLiveCreate(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Plus size={14} /> Créer un match
+                </button>
+              )}
+              <input
+                className="live-join-input"
+                type="text"
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                placeholder="Code (ex. AB12CD)"
+              />
+              <select value={joinRole} onChange={(e) => setJoinRole(e.target.value)} className="live-join-role">
+                <option value="statistician">Statisticien</option>
+                <option value="viewer">Consultation</option>
+                <option value="camera">Caméra (filmer le terrain)</option>
+              </select>
+              <button className="btn btn-secondary" onClick={joinLive}>Rejoindre</button>
+            </div>
+          </div>
+          {liveMsg && <div className={`live-msg ${liveMsg.ok ? 'ok' : 'err'}`}>{liveMsg.text}</div>}
+          {showLiveCreate && (
+            <div className="live-create-form">
+              <input type="text" value={liveName} onChange={(e) => setLiveName(e.target.value)} placeholder="Nom du match" />
+              <input type="text" value={liveTeam1} onChange={(e) => setLiveTeam1(e.target.value)} placeholder="Équipe domicile" />
+              <input type="text" value={liveTeam2} onChange={(e) => setLiveTeam2(e.target.value)} placeholder="Équipe extérieur" />
+              <button className="btn btn-primary" onClick={createLive}>Créer</button>
+              <button className="btn btn-secondary" onClick={() => setShowLiveCreate(false)}>Annuler</button>
+            </div>
+          )}
+          {liveSessions.length > 0 && (
+            <div className="live-list">
+              {liveSessions.map((s) => (
+                <div
+                  key={s.id}
+                  className="live-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/live/${s.id}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/live/${s.id}`); }}
+                >
+                  <div className="live-card-name">{s.name}</div>
+                  <div className="live-card-teams">{s.team1_name} vs {s.team2_name}</div>
+                  <span className={`live-status ${s.status}`}>{s.status === 'active' ? 'En cours' : 'Terminé'}</span>
+                  {s.owner_user_id === user.id && (
+                    <button
+                      className="btn btn-danger btn-sm live-card-trash"
+                      title="Mettre le match à la corbeille"
+                      onClick={(e) => { e.stopPropagation(); handleTrashMatch(s); }}
+                    >
+                      <Trash size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {trashedSessions.length > 0 && (
+          <div className="live-section" style={{ marginBottom: 24 }}>
+            <div className="live-section-head">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Trash size={18} /> Corbeille
+              </h3>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowTrash(!showTrash)}>
+                {showTrash ? 'Masquer' : `Afficher (${trashedSessions.length})`}
+              </button>
+            </div>
+            {showTrash && (
+              <div className="live-list">
+                {trashedSessions.map((s) => (
+                  <div key={s.id} className="live-card" style={{ opacity: 0.7 }}>
+                    <div className="live-card-name">{s.name}</div>
+                    <div className="live-card-teams">{s.team1_name} vs {s.team2_name}</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => handleRestoreMatch(s)} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                        <RotateCcw size={14} /> Restaurer
+                      </button>
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDeleteMatchForever(s)} style={{ flex: 1 }}>Suppr. définitivement</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {finishedMatches.length > 0 && (
+          <div className="live-section" style={{ marginBottom: 24 }}>
+            <div className="live-section-head">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Trophy size={18} /> Matchs finis
+              </h3>
+            </div>
+            <div className="live-list">
+              {finishedMatches.map((m) => (
+                <button key={m.id} className="live-card" onClick={() => navigate(`/datavolley/${m.id}`)}>
+                  <div className="live-card-name">{m.display_name || m.original_name}</div>
+                  <div className="live-card-teams">{m.team1_name} vs {m.team2_name}</div>
+                  <span className="live-status finished">Terminé</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+          </>
+        )}
+
         <div className="videos-header">
           <h2>Mes vidéos</h2>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -277,7 +593,7 @@ function Dashboard({ user, onLogout }) {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              📁 Nouveau dossier
+              <FolderPlus size={14} /> Nouveau dossier
             </motion.button>
             <motion.button
               className="btn btn-primary"
@@ -285,7 +601,7 @@ function Dashboard({ user, onLogout }) {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              + Uploader
+              <Upload size={14} /> Uploader
             </motion.button>
           </div>
         </div>
@@ -301,7 +617,7 @@ function Dashboard({ user, onLogout }) {
             className={`breadcrumb-item ${!currentFolder ? 'active' : ''}`}
             onClick={() => navigateToFolder(-1)}
           >
-            📂 Racine
+            <FolderOpen size={14} /> Racine
           </button>
           {folderPath.map((folder, index) => (
             <div key={folder.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -316,7 +632,7 @@ function Dashboard({ user, onLogout }) {
                   fontWeight: index === folderPath.length - 1 ? 600 : 400
                 }}
               >
-                📁 {folder.name}
+                <Folder size={14} /> {folder.name}
               </button>
             </div>
           ))}
@@ -348,7 +664,9 @@ function Dashboard({ user, onLogout }) {
                           background: `linear-gradient(135deg, ${folder.color} 0%, rgba(0,0,0,0.3) 100%)`,
                           height: 120
                         }}>
-                          <span style={{ fontSize: 48 }}>📁</span>
+                          <span style={{ display: 'inline-flex', color: 'var(--text-primary)', opacity: 0.9 }}>
+                            <Folder size={48} strokeWidth={1.4} />
+                          </span>
                         </div>
                         <div className="video-card-body">
                           {editingFolderId === folder.id ? (
@@ -375,10 +693,10 @@ function Dashboard({ user, onLogout }) {
                               <div style={{ display: 'flex', gap: 4 }}>
                                 <button className="btn btn-success btn-sm"
                                   onClick={(e) => { handleSaveFolderEdit(folder.id); e.stopPropagation(); }}
-                                  style={{ flex: 1 }}>✓</button>
+                                  style={{ flex: 1 }}><Check size={14} /></button>
                                 <button className="btn btn-secondary btn-sm"
                                   onClick={(e) => { setEditingFolderId(null); e.stopPropagation(); }}
-                                  style={{ flex: 1 }}>✕</button>
+                                  style={{ flex: 1 }}><X size={14} /></button>
                               </div>
                             </>
                           ) : (
@@ -390,10 +708,10 @@ function Dashboard({ user, onLogout }) {
                               <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
                                 <button className="btn btn-secondary btn-sm"
                                   onClick={(e) => { e.stopPropagation(); handleEditFolder(folder); }}
-                                  style={{ flex: 1 }}>✏️</button>
+                                  style={{ flex: 1 }}><Pencil size={14} /></button>
                                 <button className="btn btn-secondary btn-sm"
                                   onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder.id); }}
-                                  style={{ flex: 1 }}>🗑️</button>
+                                  style={{ flex: 1 }}><Trash size={14} /></button>
                               </div>
                             </>
                           )}
@@ -417,7 +735,7 @@ function Dashboard({ user, onLogout }) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5 }}
                 >
-                  <span className="empty-state-icon">🎥</span>
+                  <span className="empty-state-icon"><Video size={40} strokeWidth={1.4} /></span>
                   <h3>Aucune vidéo dans ce dossier</h3>
                   <p>Ajoutez des vidéos à ce dossier en utilisant le menu déroulant.</p>
                 </motion.div>
@@ -433,14 +751,14 @@ function Dashboard({ user, onLogout }) {
                         animate="visible"
                         whileHover="hover"
                         className="video-card"
-                        onClick={() => navigate(`/video/${video.id}`)}
+                        onClick={() => openVideo(video.id)}
                         style={{ borderTop: `3px solid ${video.color || '#1a73e8'}` }}
                         layout
                       >
                         <div className="video-card-thumbnail" style={{
                           background: `linear-gradient(135deg, ${video.color || '#1a73e8'} 0%, rgba(0,0,0,0.3) 100%)`
                         }}>
-                          🎬
+                          <Film size={34} strokeWidth={1.4} />
                         </div>
                         <div className="video-card-body">
                           {editingVideo === video.id ? (
@@ -477,14 +795,14 @@ function Dashboard({ user, onLogout }) {
                                   onClick={(e) => { handleSaveVideoEdit(video.id); e.stopPropagation(); }}
                                   style={{ flex: 1 }}
                                 >
-                                  ✓
+                                  <Check size={14} />
                                 </button>
                                 <button
                                   className="btn btn-secondary btn-sm"
                                   onClick={(e) => { setEditingVideo(null); e.stopPropagation(); }}
                                   style={{ flex: 1 }}
                                 >
-                                  ✕
+                                  <X size={14} />
                                 </button>
                               </div>
                             </>
@@ -494,16 +812,13 @@ function Dashboard({ user, onLogout }) {
                                 {video.display_name || video.original_name}
                               </h3>
                               <p>{formatDate(video.created_at)}</p>
-                              <span className={`video-card-status status-${video.status}`}>
-                                {getStatusLabel(video.status)}
-                              </span>
                               <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
                                 <button
                                   className="btn btn-secondary btn-sm"
                                   onClick={(e) => { handleEditVideo(video); e.stopPropagation(); }}
                                   style={{ flex: 1 }}
                                 >
-                                  ✏️
+                                  <Pencil size={14} />
                                 </button>
                                 <select
                                   value=""
@@ -525,7 +840,7 @@ function Dashboard({ user, onLogout }) {
                                   className="btn btn-danger btn-sm"
                                   onClick={(e) => handleDeleteVideo(e, video.id)}
                                 >
-                                  🗑️
+                                  <Trash size={14} />
                                 </button>
                               </div>
                             </>
@@ -538,6 +853,8 @@ function Dashboard({ user, onLogout }) {
               )}
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
 
@@ -568,7 +885,7 @@ function Dashboard({ user, onLogout }) {
                   onClick={() => fileInputRef.current?.click()}
                   whileHover={{ scale: 1.01 }}
                 >
-                  <span className="upload-zone-icon">📹</span>
+                  <span className="upload-zone-icon"><Video size={38} strokeWidth={1.4} /></span>
                   <p>Cliquez pour sélectionner une vidéo</p>
                   <p style={{ fontSize: 12, marginTop: 8 }}>
                     Formats supportés : MP4, MOV, AVI, MKV (max 500MB)

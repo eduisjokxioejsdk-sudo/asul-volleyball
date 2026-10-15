@@ -1,0 +1,45 @@
+# ============================================================================
+# Maintien en éveil du projet Supabase servant au partage des équipes ASUL.
+#
+# L'offre gratuite de Supabase met un projet en pause après une semaine sans
+# activité. Ce workflow interroge la table `asul_teams` toutes les 6 heures
+# (une requête de lecture suffit) pour éviter cette mise en pause pendant les
+# périodes sans match.
+#
+# Mise en place :
+#   1. GitHub → Settings → Secrets and variables → Actions → New repository secret
+#      • SUPABASE_URL       = https://xxxxxxxxxxxx.supabase.co
+#      • SUPABASE_ANON_KEY  = clé « anon » du projet (voir SYNC.md)
+#   2. Onglet Actions → « Supabase keep-alive » → Run workflow (test immédiat).
+#
+# Optionnel : sans ces secrets, le workflow ne fait rien (aucune erreur).
+# Remarque : GitHub désactive les workflows planifiés après 60 jours sans
+# activité sur le dépôt ; il suffit alors de le relancer depuis l'onglet Actions.
+# ============================================================================
+
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Interroger la table des équipes partagées
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "Secrets SUPABASE_URL / SUPABASE_ANON_KEY absents : rien à faire."
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/rest/v1/asul_teams?select=sync_uuid&limit=1")
+          echo "Réponse de Supabase : $code"
+          test "$code" = "200"

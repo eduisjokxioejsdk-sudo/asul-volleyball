@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ASUL</title>
+    <style>
+      /* Reprend la palette de l'application (voir client/src/App.css). */
+      :root {
+        --bg-deep: #151311;
+        --bg-primary: #1b1917;
+        --bg-secondary: #201e1b;
+        --bg-tertiary: #262420;
+        --accent: #c8965c;
+        --accent-dark: #a07542;
+        --text-primary: #e8e0d5;
+        --text-secondary: #d4ccc0;
+        --text-muted: #a09888;
+        --danger: #e05252;
+        --border: rgba(232, 224, 213, 0.08);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        height: 100vh;
+        background: radial-gradient(circle at 30% 0%, #241f19 0%, var(--bg-deep) 70%);
+        color: var(--text-primary);
+        font-family: 'Segoe UI', Inter, system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        user-select: none;
+      }
+      header { -webkit-app-region: drag; display: flex; align-items: center; gap: 12px; padding: 18px 20px 10px; }
+      .ball { width: 34px; height: 34px; flex: 0 0 auto; }
+      .titles h1 { margin: 0; font-size: 20px; letter-spacing: 2px; }
+      .titles p { margin: 2px 0 0; font-size: 11px; color: var(--text-muted); letter-spacing: 0.5px; }
+      .close {
+        -webkit-app-region: no-drag;
+        margin-left: auto;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        width: 28px; height: 28px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 15px;
+        line-height: 1;
+      }
+      .close:hover { color: var(--text-primary); border-color: var(--accent); }
+      main { flex: 1; padding: 6px 20px 16px; overflow-y: auto; }
+      footer {
+        padding: 10px 20px 16px;
+        font-size: 10px;
+        color: var(--text-muted);
+        border-top: 1px solid var(--border);
+        word-break: break-all;
+      }
+      .screen { display: none; }
+      .screen.active { display: block; }
+      h2 { font-size: 14px; margin: 6px 0 12px; font-weight: 600; }
+      .mode-card {
+        display: flex; gap: 10px; align-items: flex-start;
+        padding: 12px; margin-bottom: 10px;
+        border: 1px solid var(--border); border-radius: 12px;
+        background: var(--bg-secondary); cursor: pointer;
+      }
+      .mode-card:hover { border-color: var(--accent-dark); background: var(--bg-tertiary); }
+      .mode-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+      .mode-card input { margin-top: 3px; accent-color: var(--accent); }
+      .mode-card strong { display: block; font-size: 13px; margin-bottom: 3px; }
+      .mode-card span { font-size: 11px; color: var(--text-muted); line-height: 1.45; }
+      .field { display: none; margin: -2px 0 12px; }
+      .field.active { display: block; }
+      .field-label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+      .row { display: flex; gap: 8px; }
+      input[type="text"], input[type="number"] {
+        width: 100%; padding: 8px 10px; border-radius: 8px;
+        border: 1px solid var(--border); background: var(--bg-primary);
+        color: var(--text-primary); font-size: 13px;
+        font-family: 'JetBrains Mono', Consolas, monospace;
+      }
+      input:focus { outline: none; border-color: var(--accent); }
+      .port { width: 90px; }
+      .hint { font-size: 10px; color: var(--text-muted); margin: 6px 0 0; line-height: 1.5; }
+      .status { font-size: 11px; margin-top: 8px; min-height: 15px; }
+      .status.ok { color: var(--accent); }
+      .status.err { color: var(--danger); }
+      button.btn {
+        border-radius: 10px; border: 1px solid var(--border);
+        background: var(--bg-tertiary); color: var(--text-primary);
+        padding: 9px 14px; font-size: 12px; cursor: pointer;
+      }
+      button.btn.primary { background: var(--accent); border-color: var(--accent); color: #1b1917; font-weight: 600; }
+      button.btn.primary:hover { background: #d4a76a; }
+      button.btn:hover { border-color: var(--accent-dark); }
+      .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+      .spinner {
+        width: 34px; height: 34px; margin: 18px auto 14px;
+        border: 3px solid var(--border); border-top-color: var(--accent);
+        border-radius: 50%; animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .center { text-align: center; }
+      .message { font-size: 13px; color: var(--text-secondary); }
+      pre.detail {
+        background: var(--bg-primary); border: 1px solid var(--border);
+        border-radius: 10px; padding: 10px; font-size: 10px;
+        color: var(--text-muted); max-height: 150px; overflow: auto;
+        white-space: pre-wrap; user-select: text;
+      }
+      .error-title { color: var(--danger); font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <svg class="ball" viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="21" fill="#201e1b" stroke="#c8965c" stroke-width="2" />
+        <path d="M3 24h42" stroke="#c8965c" stroke-width="1.5" opacity="0.65" />
+        <path d="M24 3c9 6 9 36 0 42" stroke="#c8965c" stroke-width="1.5" fill="none" opacity="0.65" />
+        <path d="M24 3c-9 6-9 36 0 42" stroke="#c8965c" stroke-width="1.5" fill="none" opacity="0.65" />
+      </svg>
+      <div class="titles">
+        <h1>ASUL</h1>
+        <p>Analyse vidéo de volleyball — poste statisticien</p>
+      </div>
+      <button class="close" id="quit" title="Quitter">✕</button>
+    </header>
+
+    <main>
+      <!-- 1. Choix du mode ------------------------------------------------->
+      <section class="screen" id="screen-choose">
+        <h2>Comment utiliser ce poste ?</h2>
+
+        <label class="mode-card" id="card-host">
+          <input type="radio" name="mode" value="host" id="mode-host" />
+          <span>
+            <strong>Ce PC héberge le match (hôte)</strong>
+            Le serveur ASUL et les données du match sont sur ce poste. Les autres statisticiens s'y
+            connectent depuis leur ordinateur ou leur navigateur, et chacun crée son propre compte.
+          </span>
+        </label>
+
+        <label class="mode-card" id="card-client">
+          <input type="radio" name="mode" value="client" id="mode-client" />
+          <span>
+            <strong>Rejoindre un match (autre poste hôte)</strong>
+            Ce poste ne stocke rien en local : il se connecte au PC hôte qui héberge le match en direct.
+          </span>
+        </label>
+
+        <div class="field" id="field-host">
+          <label class="field-label" for="host-address">
+            Adresse du PC hôte (affichée sur le poste hôte : menu Serveur → « Adresse pour les autres statisticiens »)
+          </label>
+          <div class="row">
+            <input type="text" id="host-address" placeholder="192.168.1.168" autocomplete="off" />
+            <input type="number" class="port" id="host-port" min="1" max="65535" value="3001" />
+          </div>
+          <p class="hint">
+            Les deux postes doivent être sur le même réseau (Wi-Fi de la salle ou partage de connexion du PC hôte).
+          </p>
+          <div class="status" id="test-status"></div>
+          <div class="actions" style="margin-top: 8px">
+            <button class="btn" id="test-host">Tester la connexion</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn primary" id="start">Démarrer</button>
+          <button class="btn" id="open-folder">Dossier des données</button>
+        </div>
+      </section>
+
+      <!-- 2. Démarrage ---------------------------------------------------->
+      <section class="screen" id="screen-loading">
+        <div class="center">
+          <div class="spinner"></div>
+          <p class="message" id="loading-message">Démarrage d’ASUL…</p>
+        </div>
+        <pre class="detail" id="loading-detail" style="display: none"></pre>
+      </section>
+
+      <!-- 3. Erreur ------------------------------------------------------->
+      <section class="screen" id="screen-error">
+        <p class="error-title" id="error-message">Une erreur est survenue.</p>
+        <pre class="detail" id="error-detail" style="display: none"></pre>
+        <div class="actions">
+          <button class="btn primary" id="retry">Réessayer</button>
+          <button class="btn" id="change-mode">Changer de mode</button>
+          <button class="btn" id="error-logs">Ouvrir le journal</button>
+        </div>
+      </section>
+    </main>
+
+    <footer id="footer"></footer>
+
+    <script>
+      const api = window.asulSplash;
+      const el = (id) => document.getElementById(id);
+      let lastState = { screen: 'loading' };
+
+      function showScreen(name) {
+        for (const section of document.querySelectorAll('.screen')) {
+          section.classList.toggle('active', section.id === `screen-${name}`);
+        }
+      }
+
+      function selectMode(mode) {
+        el('mode-host').checked = mode === 'host';
+        el('mode-client').checked = mode === 'client';
+        el('card-host').classList.toggle('selected', mode === 'host');
+        el('card-client').classList.toggle('selected', mode === 'client');
+        el('field-host').classList.toggle('active', mode === 'client');
+      }
+
+      function render(state) {
+        lastState = { ...lastState, ...state };
+
+        if (lastState.dataDir) {
+          el('footer').textContent = `Données : ${lastState.dataDir}`;
+        }
+
+        if (lastState.screen === 'choose') {
+          showScreen('choose');
+          selectMode(lastState.mode === 'client' ? 'client' : 'host');
+          if (lastState.host) el('host-address').value = lastState.host;
+          if (lastState.port) el('host-port').value = lastState.port;
+          return;
+        }
+
+        if (lastState.screen === 'error') {
+          showScreen('error');
+          el('error-message').textContent = lastState.message || 'Une erreur est survenue.';
+          const errorDetail = el('error-detail');
+          errorDetail.textContent = lastState.detail || '';
+          errorDetail.style.display = lastState.detail ? 'block' : 'none';
+          return;
+        }
+
+        showScreen('loading');
+        el('loading-message').textContent = lastState.message || 'Démarrage d’ASUL…';
+        const loadingDetail = el('loading-detail');
+        loadingDetail.textContent = lastState.detail || '';
+        loadingDetail.style.display = lastState.detail ? 'block' : 'none';
+      }
+
+      // --- Événements --------------------------------------------------------
+      el('mode-host').addEventListener('change', () => selectMode('host'));
+      el('mode-client').addEventListener('change', () => selectMode('client'));
+      el('card-host').addEventListener('click', () => selectMode('host'));
+      el('card-client').addEventListener('click', () => selectMode('client'));
+
+      el('test-host').addEventListener('click', async () => {
+        const status = el('test-status');
+        status.className = 'status';
+        status.textContent = 'Test en cours…';
+        const result = await api.testHost({
+          host: el('host-address').value,
+          port: Number(el('host-port').value) || 3001,
+        });
+        status.className = `status ${result.ok ? 'ok' : 'err'}`;
+        status.textContent = result.message;
+      });
+
+      el('start').addEventListener('click', () => {
+        const client = el('mode-client').checked;
+        api.choose({
+          mode: client ? 'client' : 'host',
+          host: el('host-address').value,
+          port: Number(el('host-port').value) || 3001,
+        });
+        render({
+          screen: 'loading',
+          message: client ? 'Connexion au poste hôte…' : 'Préparation du serveur ASUL…',
+          detail: '',
+        });
+      });
+
+      el('retry').addEventListener('click', () => {
+        api.retry();
+        render({ screen: 'loading', message: 'Nouvelle tentative…', detail: '' });
+      });
+      el('change-mode').addEventListener('click', () => api.chooseMode());
+      el('error-logs').addEventListener('click', () => api.openLogs());
+      el('open-folder').addEventListener('click', () => api.openDataFolder());
+      el('quit').addEventListener('click', () => api.quit());
+
+      api.onState(render);
+      api.getState().then((state) => state && render(state));
+    </script>
+  </body>
+</html>

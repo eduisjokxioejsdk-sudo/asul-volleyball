@@ -1,199 +1,192 @@
-# 🚀 Guide de Déploiement ASUL
+# 🚀 Déployer ASUL gratuitement (Oracle Cloud + Docker + HTTPS)
 
-Ce guide vous explique comment déployer votre application ASUL sur Vercel (frontend) et Railway (backend).
+Guide pas-à-pas pour mettre l'app **en ligne**, en **HTTPS**, sur **ton domaine**,
+avec une machine **Oracle Cloud « Always Free »** (gratuit à vie) via **Docker**.
 
-## 📋 Prérequis
-
-- Compte GitHub : https://github.com/signup
-- Compte Railway : https://railway.app (sign up with GitHub)
-- Compte Vercel : https://vercel.com (sign up with GitHub)
+> Résultat : `https://asul.tondomaine.fr` accessible partout, la base SQLite et
+> les vidéos conservées sur un **disque persistant**.
 
 ---
 
-## 🎯 Étape 1 : Uploader le code vers GitHub
+## 0. Ce qui est gratuit
 
-### Option A : Script automatique (RECOMMANDÉ)
-1. Double-cliquer sur `push-to-github.bat`
-2. Attendre que ça se termine
-3. Vérifier sur https://github.com/eduisjokxioejsdk-sudo/asul-volleyball
+| Élément | Solution | Coût |
+|---|---|---|
+| Serveur (CPU / RAM / disque) | Oracle Cloud *Always Free* | 0 € |
+| HTTPS + certificat | Let's Encrypt via Caddy | 0 € |
+| Reverse-proxy | Caddy (conteneur) | 0 € |
+| Domaine | *(le tien)* | — |
+| Base de données | SQLite (fichier) | 0 € |
 
-### Option B : Manuellement (si le script ne marche pas)
-```powershell
-# Ouvrir PowerShell dans c:\Users\gabri\Documents\Asulv2
+---
 
-# Initialiser Git
-git init
+## 1. Créer la VM Oracle « Always Free »
 
-# Ajouter tous les fichiers
-git add .
+1. Compte sur <https://www.oracle.com/cloud/free/> (carte demandée seulement pour
+   vérifier l'identité — aucun débit).
+2. ☰ **Compute → Instances → Create Instance**.
+3. **Image** : *Canonical Ubuntu 22.04*.
+4. **Shape** : *Ampere → VM.Standard.A1.Flex* (ARM), **2 OCPU / 12 Go** suffisent
+   (jusqu'à 4 OCPU / 24 Go, toujours gratuit).
+   → Si « Out of capacity », réessaie plus tard ou change d'*Availability Domain*.
+5. **Networking** : VCN public, coche **Assign a public IPv4 address**.
+6. **SSH keys** : laisse Oracle générer la paire, **télécharge la clé privée**.
+7. **Create** → note l'**IP publique**.
 
-# Commit
-git commit -m "Initial commit - ASUL Volleyball App"
+## 2. Ouvrir les ports 80 et 443
 
-# Envoyer vers GitHub
-git remote add origin https://github.com/eduisjokxioejsdk-sudo/asul-volleyball.git
-git branch -M main
-git push -u origin main
+Il y a **deux** pare-feux à ouvrir (Oracle + Ubuntu).
+
+**a) Côté Oracle** — VCN → *Security Lists* → *Default* → **Add Ingress Rules** :
+- Source `0.0.0.0/0`, protocole **TCP**, port destination **80**
+- Idem pour **443**
+
+**b) Dans Ubuntu** (après connexion SSH, cf. §3) :
+```bash
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo netfilter-persistent save
 ```
 
-**Si on vous demande un mot de passe :**
-- Utilisez votre mot de passe GitHub
-- Ou créez un Personal Access Token : GitHub → Settings → Developer settings → Personal access tokens
+## 3. Se connecter et installer Docker
 
----
+```bash
+ssh -i /chemin/vers/cle-privee.key ubuntu@IP_PUBLIQUE
 
-## 🎯 Étape 2 : Déployer le Backend sur Railway
-
-### 2.1 Créer le projet
-1. Aller sur https://railway.app
-2. Cliquer "New Project"
-3. Sélectionner "Deploy from GitHub repo"
-4. Choisir `asul-volleyball`
-5. Dans "Root Directory", entrer : `server`
-6. Cliquer "Add Variables"
-
-### 2.2 Ajouter les variables d'environnement
-Cliquer "New" → "Raw Editor" et coller :
-```json
-{
-  "NODE_ENV": "production",
-  "PORT": "5000",
-  "JWT_SECRET": "une-longue-chaine-aleatoire-a-changer",
-  "R2_ACCOUNT_ID": "votre-account-id-cloudflare",
-  "R2_ACCESS_KEY_ID": "votre-access-key-id",
-  "R2_SECRET_ACCESS_KEY": "votre-secret-access-key",
-  "R2_BUCKET_NAME": "asul-videos",
-  "R2_PUBLIC_BASE_URL": "https://pub-xxxx.r2.dev"
-}
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
+newgrp docker
+docker --version && docker compose version
 ```
 
-> 💡 `R2_PUBLIC_BASE_URL` est optionnel : sans lui, le serveur génère des URLs signées temporaires (valables 1h).
+## 4. Récupérer le code ASUL
 
-### 2.3 Configurer Cloudflare R2 (stockage des vidéos)
-1. Aller sur https://dash.cloudflare.com → **R2** → **Create bucket** (nom : `asul-videos`).
-2. Cliquer sur **Manage API Tokens** → **Create API Token**.
-3. Choisir l'autorisation **Object Read & Write**, limitée au bucket `asul-videos`.
-4. Copier l'**Access Key ID** et la **Secret Access Key**.
-5. L'**Account ID** se trouve dans l'URL du dashboard Cloudflare (ex: `https://dash.cloudflare.com/<ACCOUNT_ID>/...`).
-6. *(Optionnel, recommandé)* Pour une lecture directe : connecter un custom domain au bucket OU activer **Public access** (`r2.dev`) sur le bucket puis copier l'URL `https://pub-xxxx.r2.dev` dans `R2_PUBLIC_BASE_URL`.
-7. Reporter ces valeurs dans les variables d'environnement ci-dessus.
-
-### 2.4 Ajouter un volume pour la base de données
-1. Cliquer sur l'onglet "Volumes"
-2. Cliquer "New Volume"
-3. Nom : `data`
-4. Mount Path : `/app/data`
-5. Size : 1GB
-6. Cliquer "Add"
-
-### 2.5 Déployer
-1. Cliquer "Deploy"
-2. Attendre 2-3 minutes
-3. Une fois déployé, cliquer sur "Settings" → "Domains"
-4. Copier l'URL (ex: `https://asul-server-production.up.railway.app`)
-
-### 2.6 Initialiser la base de données
-1. Cliquer sur l'onglet "Deployments"
-2. Cliquer sur votre déploiement
-3. Cliquer sur "View Logs"
-4. Si vous voyez des erreurs de base de données, c'est normal - Railway va la créer automatiquement
-
----
-
-## 🎯 Étape 3 : Déployer le Frontend sur Vercel
-
-### 3.1 Créer le projet
-1. Aller sur https://vercel.com
-2. Cliquer "Add New..." → "Project"
-3. Sélectionner `asul-volleyball`
-4. Dans "Root Directory", sélectionner `client`
-5. Dans "Environment Variables", ajouter :
-   - Name : `VITE_API_URL`
-   - Value : `https://asul-server-production.up.railway.app` (votre URL Railway)
-6. Cliquer "Deploy"
-
-### 3.2 Attendre le déploiement
-- Vercel va builder et déployer en 2-3 minutes
-- Vous obtiendrez une URL comme : `https://asul-volleyball.vercel.app`
-
----
-
-## 🎯 Étape 4 : Mettre à jour la configuration
-
-### 4.1 Mettre à jour vercel.json
-Ouvrir `vercel.json` et remplacer l'URL Railway par la vôtre :
-```json
-{
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "https://VOTRE_URL_RAILWAY.up.railway.app/api/$1"
-    }
-  ]
-}
+```bash
+git clone https://github.com/eduisjokxioejsdk-sudo/asul-volleyball.git asul
+cd asul
 ```
 
-### 4.2 Mettre à jour README.md
-Remplacer l'URL dans le README.md par vos URLs finales.
+## 5. Configurer le domaine et les secrets
+
+```bash
+cp deploy/env.production.example .env
+nano .env
+```
+
+Renseigne dans `.env` :
+- `ASUL_DOMAIN` = ton domaine/sous-domaine (ex. `asul.tondomaine.fr`)
+- `ACME_EMAIL` = ton e-mail
+- `JWT_SECRET` = une longue chaîne aléatoire :
+
+```bash
+openssl rand -hex 48    # copie le résultat dans JWT_SECRET
+```
+
+## 6. Configurer le DNS
+
+Chez ton registrar (ou Cloudflare), crée un **enregistrement A** :
+
+| Type | Nom | Valeur |
+|---|---|---|
+| A | `asul` | `IP_PUBLIQUE_DE_LA_VM` |
+
+> **Sur Cloudflare** : mets ce sous-domaine en **« DNS only » (nuage gris)** le
+> temps que Caddy obtienne le certificat (sinon il reste en attente).
+
+Vérifie la propagation : `dig +short asul.tondomaine.fr` doit renvoyer l'IP.
+
+## 7. Lancer ASUL
+
+```bash
+docker compose up -d --build
+docker compose logs -f
+```
+
+Caddy demande le certificat et le serveur démarre. Ouvre ensuite
+**https://asul.tondomaine.fr**. 🎉
+
+Vérifications :
+```bash
+docker compose ps
+curl -s https://asul.tondomaine.fr/api/health
+```
+
+## 8. Créer ton compte
+
+Le premier écran est **Inscription** → crée le compte administrateur.
+(Pour fermer les inscriptions plus tard, voir « Sécurité », §13.)
+
+## 9. Mettre à jour l'application
+
+```bash
+cd ~/asul
+git pull
+docker compose up -d --build
+```
+
+## 10. Sauvegardes
+
+```bash
+chmod +x deploy/backup.sh
+./deploy/backup.sh /root/asul-backups
+```
+
+Cron quotidien (3 h) :
+```bash
+crontab -e
+# ajoute la ligne :
+0 3 * * * cd /root/asul && ./deploy/backup.sh /root/asul-backups
+```
+
+> Chaque sauvegarde contient la base (`asul-*.db`) et les vidéos
+> (`uploads-*.tar.gz`). Copie-les régulièrement ailleurs (PC, cloud…).
+
+## 11. Surveiller le disque
+
+Les vidéos s'accumulent dans le volume `asul-data` :
+```bash
+df -h /                                        # espace de la VM
+docker system df                               # espace utilisé par Docker
+docker compose exec asul du -sh /data/uploads  # taille des vidéos
+```
+Supprime d'anciennes vidéos via l'interface ASUL (chaque vidéo a un bouton de
+suppression), ce qui libère le disque.
+
+## 12. Dépannage
+
+| Symptôme | Cause probable | Solution |
+|---|---|---|
+| Page blanche / 502 | conteneur `asul` en erreur | `docker compose logs asul` |
+| Pas de HTTPS | DNS non propagé / nuage orange Cloudflare | `docker compose logs caddy` + DNS en « DNS only » |
+| Port 80/443 injoignable | pare-feu Oracle **ou** iptables | refaire l'étape 2 |
+| `no such table: users` | base pas encore prête au 1er démarrage | attendre/recharger |
+| Export vidéo indisponible | ffmpeg | `docker compose exec asul ffmpeg -version` |
+
+## 13. Notes & limites
+
+- **Caméra du direct** : nécessite HTTPS ✅ (fourni par Caddy). Un seul
+  téléphone filme à la fois.
+- **Échelle** : convient à une équipe (1 match direct + quelques uploads
+  simultanés). Au besoin, augmente la « shape » Oracle (gratuit jusqu'à
+  4 OCPU / 24 Go).
+- **Sécurité** : app privée. Pour fermer les inscriptions publiques, ajoute une
+  protection par mot de passe dans le `Caddyfile` (directive `basicauth`) ou
+  limite l'accès.
+- **Coût** : 0 € (VM gratuite à vie, HTTPS gratuit, domaine déjà possédé).
 
 ---
 
-## 🎯 Étape 5 : Tester
+## Fichiers ajoutés pour ce déploiement
 
-1. **Aller sur votre site** : `https://asul-volleyball.vercel.app`
-2. **Tester la connexion** : Créer un compte et se connecter
-3. **Tester l'upload** : Uploader une petite vidéo
-4. **Vérifier** : Les vidéos sont bien sauvegardées
+| Fichier | Rôle |
+|---|---|
+| `Dockerfile` | image de production (front + back + ffmpeg) |
+| `docker-compose.yml` | app + Caddy + volume persistant |
+| `.dockerignore` | contexte de build allégé |
+| `deploy/Caddyfile` | reverse-proxy HTTPS automatique |
+| `deploy/env.production.example` | modèle de `.env` |
+| `deploy/backup.sh` | sauvegarde base + vidéos |
 
----
 
-## 🔧 Dépannage
-
-### Le site ne charge pas
-- Vérifier les logs Vercel : Vercel → Project → Deployments → View Logs
-- Vérifier que l'URL de l'API est correcte
-
-### Erreur 500 sur l'API
-- Vérifier les logs Railway : Railway → Project → Deployments → View Logs
-- Vérifier que le volume est bien monté sur `/app/data`
-
-### Les vidéos ne s'uploadent pas
-- Vérifier que le dossier `uploads` existe dans le volume Railway
-- Vérifier les permissions du dossier
-
-### La base de données ne se crée pas
-- Railway crée automatiquement la base au premier démarrage
-- Si ça ne marche pas, vérifier les logs pour voir l'erreur
-
----
-
-## 📊 Limites du gratuit
-
-### Railway
-- 750 heures/mois (suffisant pour un petit projet)
-- 1GB de stockage (attention aux vidéos volumineuses)
-- Le projet se met en pause après 30 jours d'inactivité
-
-### Vercel
-- 100GB de bande passante/mois
-- Déploiements illimités
-- HTTPS automatique
-
----
-
-## 🎉 Félicitations !
-
-Votre site est maintenant en ligne et accessible depuis n'importe où dans le monde !
-
-**URLs à partager :**
-- Frontend : https://asul-volleyball.vercel.app
-- Backend API : https://asul-server-production.up.railway.app
-
----
-
-## 📝 Notes importantes
-
-1. **Sauvegarde** : Téléchargez régulièrement la base de données depuis Railway
-2. **Vidéos** : Limitez la taille des vidéos uploadées (max 500MB recommandé)
-3. **Monitoring** : Surveillez votre consommation sur Railway et Vercel
-4. **Mises à jour** : Pour mettre à jour le code, repoussez vers GitHub et les plateformes redéploieront automatiquement

@@ -1,0 +1,20 @@
+# ============================================================================
+# ASUL — reverse-proxy HTTPS (Caddy).
+# Caddy obtient et renouvelle automatiquement le certificat Let's Encrypt pour
+# {$ASUL_DOMAIN}, et relaie tout (y compris les WebSocket du match en direct)
+# vers le conteneur « asul ».
+# ============================================================================
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$ASUL_DOMAIN} {
+	encode zstd gzip
+
+	# flush_interval -1 : pas de mise en tampon -> utile pour la caméra du
+	# match en direct (flux continu) et les gros uploads de vidéos.
+	reverse_proxy asul:3001 {
+		flush_interval -1
+	}
+}

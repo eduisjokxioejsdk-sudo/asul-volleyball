@@ -1,171 +1,31 @@
-// Volleyball rotation logic utility
-
-// Rotation order: P6 -> P5 -> P4 -> P3 -> P2 -> P1 -> P6 (loop)
-const ROTATION_ORDER = ['P6', 'P5', 'P4', 'P3', 'P2', 'P1'];
-
-/**
- * Get the next position in rotation
- * @param {string} currentPosition - e.g. 'P1', 'P6'
- * @returns {string} next position
- */
-export function getNextPosition(currentPosition) {
-  const index = ROTATION_ORDER.indexOf(currentPosition);
-  if (index === -1) return 'P1';
-  return ROTATION_ORDER[(index + 1) % ROTATION_ORDER.length];
-}
+// ============================================================================
+// Points et frise chronologique (score par set).
+// La logique de rotation (six de départ, rotations, remplacements) vit dans
+// utils/rotation.js ; ce fichier ne garde que ce qui sert à la frise des points.
+// ============================================================================
 
 /**
- * Determine the serving team for point N+1 based on point N result
- * If a team wins point N, they serve for point N+1
- * @param {string} winner - 'team1' or 'team2'
- * @param {string} previousServingTeam - 'team1' or 'team2'
- * @returns {{ servingTeam: string, receivingTeam: string, teamRotates: boolean }}
+ * Types de points affichés dans la frise.
+ * `type` est l'identifiant stable sauvegardé en base ; `letter` est
+ * l'identifiant visuel compact.
  */
-export function determineNextService(winner, previousServingTeam) {
-  const previousReceivingTeam = previousServingTeam === 'team1' ? 'team2' : 'team1';
-  
-  // If the serving team wins the point, they keep serving (no rotation for them)
-  // If the receiving team wins the point (side-out), they take over serving AND rotate
-  if (winner === previousServingTeam) {
-    return {
-      servingTeam: previousServingTeam,
-      receivingTeam: previousReceivingTeam,
-      teamRotates: false
-    };
-  } else {
-    // Side-out: receiving team wins, they become serving team and rotate
-    return {
-      servingTeam: previousReceivingTeam,
-      receivingTeam: previousServingTeam,
-      teamRotates: true
-    };
-  }
-}
+export const POINT_TYPES = [
+  { type: 'block', label: 'Bloc', letter: 'B', desc: 'Bloc gagnant' },
+  { type: 'attack', label: 'Attaque', letter: 'A', desc: 'Attaque gagnante' },
+  { type: 'service', label: 'Service', letter: 'S', desc: 'Ace / Service gagnant' },
+  { type: 'fault_service', label: 'Faute service adverse', letter: 'F', desc: 'Faute de service adverse' },
+  { type: 'fault_attack', label: 'Faute attaque adverse', letter: 'G', desc: "Faute d'attaque adverse" },
+  { type: 'fault_other', label: 'Faute autre adverse', letter: 'D', desc: 'Autre faute adverse' },
+];
 
 /**
- * Auto-fill data for point N+1 based on point N data
- * @param {Object} previousPoint - The previous point's annotation data
- * @param {string} winner - Winner of the current point N
- * @returns {Object} Auto-filled data for point N+1
+ * Retourne la lettre d'affichage associée à un type de point.
+ * @param {string} type - ex. 'attack', 'fault_service'
+ * @returns {string} lettre (ex. 'A', 'F') ou '' si inconnu
  */
-export function autoFillNextPoint(previousPoint, winner) {
-  if (!previousPoint) return null;
-
-  const { serving_team } = previousPoint;
-  let prevTeam1Pos = previousPoint.team1_position || '';
-  let prevTeam2Pos = previousPoint.team2_position || '';
-
-  const { servingTeam, receivingTeam, teamRotates } = determineNextService(winner, serving_team);
-
-  // Apply rotation to the team that won (if they were receiving and did side-out)
-  let newTeam1Pos = prevTeam1Pos;
-  let newTeam2Pos = prevTeam2Pos;
-
-  if (teamRotates) {
-    if (winner === 'team1') {
-      newTeam1Pos = getNextPosition(prevTeam1Pos);
-    } else {
-      newTeam2Pos = getNextPosition(prevTeam2Pos);
-    }
-  }
-
-  return {
-    serving_team: servingTeam,
-    receiving_team: receivingTeam,
-    team1_position: newTeam1Pos,
-    team2_position: newTeam2Pos
-  };
-}
-
-/**
- * Get the rotation order array
- */
-export function getRotationOrder() {
-  return ROTATION_ORDER;
-}
-
-/**
- * Compute set-based scores from points.
- * A set is won when a team reaches 25 points with at least a 2-point lead.
- * If the score reaches 24-24, play continues until one team leads by 2.
- * The score resets to 0 for the next set once a set is won.
- *
- * @param {Array} points - Array of point objects with a 'winner' field ('team1' or 'team2')
- * @returns {Object} { currentSet, team1Score, team2Score, sets }
- *   - currentSet: the current set number (1-based)
- *   - team1Score: current set score for team1
- *   - team2Score: current set score for team2
- *   - sets: array of completed sets, each { team1, team2, winner, setNumber }
- */
-export function computeSetScores(points) {
-  const sets = [];
-  let team1Score = 0;
-  let team2Score = 0;
-  let currentSet = 1;
-
-  for (const point of points) {
-    if (!point.winner) continue;
-
-    if (point.winner === 'team1') {
-      team1Score++;
-    } else if (point.winner === 'team2') {
-      team2Score++;
-    }
-
-    // A set is won when a team reaches 25+ points AND leads by 2+
-    if (team1Score >= 25 && team1Score - team2Score >= 2) {
-      sets.push({ team1: team1Score, team2: team2Score, winner: 'team1', setNumber: currentSet });
-      team1Score = 0;
-      team2Score = 0;
-      currentSet++;
-    } else if (team2Score >= 25 && team2Score - team1Score >= 2) {
-      sets.push({ team1: team1Score, team2: team2Score, winner: 'team2', setNumber: currentSet });
-      team1Score = 0;
-      team2Score = 0;
-      currentSet++;
-    }
-  }
-
-  return {
-    currentSet,
-    team1Score,
-    team2Score,
-    sets,
-  };
-}
-
-/**
- * Compute the cumulative match score point by point.
- * Each point gets its score context (score before the point, score after).
- *
- * @param {Array} points - Array of point objects with a 'winner' field ('team1' or 'team2')
- * @param {Object} initialScore - { team1: 0, team2: 0 } optional starting score
- * @returns {Array} Each point enriched with { scoreBefore: { team1, team2 }, scoreAfter: { team1, team2 } }
- */
-export function computeMatchTimeline(points, initialScore = { team1: 0, team2: 0 }) {
-  const timeline = [];
-  let t1 = initialScore.team1 || 0;
-  let t2 = initialScore.team2 || 0;
-
-  for (const point of points) {
-    const scoreBefore = { team1: t1, team2: t2 };
-
-    if (point.winner === 'team1') {
-      t1++;
-    } else if (point.winner === 'team2') {
-      t2++;
-    }
-
-    const scoreAfter = { team1: t1, team2: t2 };
-
-    timeline.push({
-      ...point,
-      scoreBefore,
-      scoreAfter,
-    });
-  }
-
-  return timeline;
+export function getPointTypeLetter(type) {
+  const found = POINT_TYPES.find((p) => p.type === type);
+  return found ? found.letter : '';
 }
 
 /**
@@ -184,6 +44,22 @@ export function computeSetTimeline(points, initialScore = { team1: 0, team2: 0 }
   let t2 = initialScore.team2 || 0;
 
   for (const point of points) {
+    // Début de set manuel (set_start = 2..5) : force le passage au set indiqué.
+    const manualSet = point.set_start ? Number(point.set_start) : 0;
+    if (manualSet > currentSet) {
+      if (t1 > 0 || t2 > 0) {
+        sets.push({
+          team1: t1,
+          team2: t2,
+          winner: t1 > t2 ? 'team1' : 'team2',
+          setNumber: currentSet,
+        });
+      }
+      currentSet = manualSet;
+      t1 = 0;
+      t2 = 0;
+    }
+
     // If no winner, skip (don't affect score)
     if (!point.winner || (point.winner !== 'team1' && point.winner !== 'team2')) {
       timeline.push({
@@ -203,12 +79,13 @@ export function computeSetTimeline(points, initialScore = { team1: 0, team2: 0 }
 
     const scoreAfter = { team1: t1, team2: t2 };
 
-    // Check if this point ends the set
+    // Check if this point ends the set (15 points au 5e set, 25 sinon)
     let isSetBreak = false;
-    if (t1 >= 25 && t1 - t2 >= 2) {
+    const target = currentSet >= 5 ? 15 : 25;
+    if (t1 >= target && t1 - t2 >= 2) {
       sets.push({ team1: t1, team2: t2, winner: 'team1', setNumber: currentSet });
       isSetBreak = true;
-    } else if (t2 >= 25 && t2 - t1 >= 2) {
+    } else if (t2 >= target && t2 - t1 >= 2) {
       sets.push({ team1: t1, team2: t2, winner: 'team2', setNumber: currentSet });
       isSetBreak = true;
     }
@@ -245,6 +122,3 @@ export function computeSetTimeline(points, initialScore = { team1: 0, team2: 0 }
     matchWinner: team1SetsWon >= 3 ? 'team1' : team2SetsWon >= 3 ? 'team2' : null,
   };
 }
-
-
-

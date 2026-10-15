@@ -1,0 +1,81 @@
+{
+  "version": "2.0.0",
+  "releasedAt": "2026-10-15",
+  "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
+  "notes": [
+    {
+      "version": "2.0.0",
+      "date": "2026-10-15",
+      "title": "Partage et collaboration en ligne (Supabase)",
+      "items": [
+        "Partage via Supabase de tout le travail : équipes, fiches de trajectoire, codage DataVolley et métadonnées vidéo",
+        "Synchronisation automatique entre les postes (les fichiers vidéo restent locaux)",
+        "Rechargement en temps réel : une fiche ou une attribution de set modifiée sur un autre poste apparaît aussitôt",
+        "Barre « Partage à distance » dans l'onglet Trajectoires (état + synchronisation immédiate)",
+        "Fiabilité : clés de synchronisation isolées par collection et suppression des fiches venues d'un autre poste"
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "date": "2026-10-06",
+      "title": "Codage DataVolley complet, entraînement et replay du direct",
+      "items": [
+        "Combinaisons d'attaque (X1, XP, CB…), appels passeur (K) et formules combinées service.réception ET attaque.contre/défense",
+        "Saisie plus rapide : code attendu prédit (action suivante + passeur)",
+        "Nouveau mode Entraînement : jeux d'association (paires) et traduction chronométrée",
+        "Rapports enrichis : stats et efficacité par combinaison, directions d'attaque, synthèse par set, export CSV",
+        "Export / import du format DataVolley (.dvw), avec la rotation point par point",
+        "La caméra du direct est enregistrée : le match devient une vidéo de replay avec les points ancrés",
+        "Retrait du découpage vidéo (l'application se concentre sur le codage, les trajectoires et le direct)"
+      ]
+    },
+    {
+      "version": "1.2.1",
+      "date": "2026-09-29",
+      "title": "Mise à jour automatique et installation simplifiée",
+      "items": [
+        "Mise à jour automatique de l'application Windows (bandeau, téléchargement, redémarrage)",
+        "Bandeau « Quoi de neuf » dans l'interface, avec la description de chaque mise à jour",
+        "Installation par utilisateur : sans administrateur, sans UAC, sans écrire dans C:\\Program Files",
+        "La règle de pare-feu du match en direct est désormais demandée par l'application (menu Serveur), et non plus par l'installeur",
+        "L'application Windows signale aussi les mises à jour d'elle-même (progression visible dans l'interface)"
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "date": "2026-09-29",
+      "title": "Fiches de trajectoire",
+      "items": [
+        "Nouvel onglet « Trajectoires », à côté de Découpage et Codage DataVolley",
+        "Création d'un match avec 1 ou 2 équipes (celles de l'application, ou créées sur place)",
+        "Un onglet par équipe, puis Services / Attaque",
+        "Un terrain par joueur, avec le nom du joueur au-dessus du terrain",
+        "1er clic : point de départ · 2e clic : point d'arrivée",
+        "Arrivée hors des lignes : flèche rouge automatiquement, aucune question posée",
+        "Arrivée dans le terrain : point, continuité ou faute (à l'attaque : feintes en arc de cercle)",
+        "Terrain teinté différemment en Services (bleu) et en Attaque (ambré)"
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-08-01",
+      "title": "Match en direct et équipes partagées",
+      "items": [
+        "Match en direct multi-appareils (code de session, rôles statisticien / consultation)",
+        "Équipes partagées entre tous les postes : joueurs, rôles et libéro",
+        "Six de départ, passeur et premier serveur par set",
+        "Corbeille des matchs et liste des matchs terminés"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-06-01",
+      "title": "Première version",
+      "items": [
+        "Upload et découpage des vidéos de match",
+        "Codage DataVolley (clavier et formules) avec synchronisation vidéo",
+        "Bilan de match, distribution et export"
+      ]
+    }
+  ]
+}

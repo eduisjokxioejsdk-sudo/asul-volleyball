@@ -38,7 +38,7 @@ function Login({ onLogin }) {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page asul-modern">
       <motion.div
         className="auth-container"
         variants={containerVariants}

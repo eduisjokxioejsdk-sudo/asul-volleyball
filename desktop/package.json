@@ -1,0 +1,30 @@
+{
+  "name": "asul-desktop",
+  "productName": "ASUL",
+  "version": "2.0.0",
+  "description": "ASUL - poste statisticien volleyball (application Windows, usage local ou en reseau)",
+  "main": "main.js",
+  "author": "ASUL Volleyball",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "start:choose": "electron . --choose-mode",
+    "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
+    "import:local": "node scripts/import-local-data.mjs",
+    "build:client": "npm --prefix ../client run build",
+    "dist": "npm run fetch:ffmpeg && npm run build:client && electron-builder --win nsis && node scripts/stage-installer.mjs",
+    "dist:publish": "npm run fetch:ffmpeg && npm run build:client && electron-builder --win nsis --publish always && node scripts/stage-installer.mjs",
+    "stage": "node scripts/stage-installer.mjs",
+    "dist:dir": "npm run fetch:ffmpeg && npm run build:client && electron-builder --win --dir",
+    "dist:portable": "npm run fetch:ffmpeg && npm run build:client && electron-builder --win zip --publish never",
+    "build:installer": "node scripts/build-installer.mjs"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}
