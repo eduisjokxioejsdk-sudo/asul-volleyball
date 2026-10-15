@@ -1,8 +1,18 @@
 {
-  "version": "2.0.0",
+  "version": "2.0.1",
   "releasedAt": "2026-10-15",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "2.0.1",
+      "date": "2026-10-15",
+      "title": "Mise à jour automatique et affichage des fiches partagées",
+      "items": [
+        "Mise à jour automatique de l'application via GitHub Releases (plus d'envoi manuel d'installeur)",
+        "Les fiches de trajectoire partagées affichent désormais l'effectif et les flèches automatiquement",
+        "Configuration Supabase pré-remplie à l'installation : la synchronisation est active immédiatement"
+      ]
+    },
     {
       "version": "2.0.0",
       "date": "2026-10-15",

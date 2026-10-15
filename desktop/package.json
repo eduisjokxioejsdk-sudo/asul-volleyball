@@ -1,7 +1,7 @@
 {
   "name": "asul-desktop",
   "productName": "ASUL",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "ASUL - poste statisticien volleyball (application Windows, usage local ou en reseau)",
   "main": "main.js",
   "author": "ASUL Volleyball",
