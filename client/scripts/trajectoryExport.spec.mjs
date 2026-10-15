@@ -120,6 +120,26 @@ check(
   (VIEWER_CSS.match(/{/g) || []).length === (VIEWER_CSS.match(/}/g) || []).length
 );
 
+console.log('\n== Lecteur : désignation d’une zone ==');
+check('styles de la zone désignée', VIEWER_CSS.includes('.tj-sel-rect') && VIEWER_CSS.includes('.tj-sel-count'));
+check('violet « flashy » repris', VIEWER_JS.includes("var SELECT = '#c026ff'"));
+check('terrains repérés par une clé', VIEWER_JS.includes('data-court='));
+check('flèches repérées par un index', VIEWER_JS.includes('data-shot='));
+check('compteur par joueur', VIEWER_JS.includes('data-sel-count='));
+check('cadre de sélection présent dans le terrain', VIEWER_JS.includes('class="tj-sel-rect"'));
+check(
+  'glissement géré au pointeur',
+  VIEWER_JS.includes("addEventListener('pointerdown'") &&
+    VIEWER_JS.includes("addEventListener('pointermove'") &&
+    VIEWER_JS.includes("addEventListener('pointerup'")
+);
+check(
+  'géométrie : segments et arcs',
+  VIEWER_JS.includes('function segmentHitsRect') && VIEWER_JS.includes('function shotPoints')
+);
+check('zone effacée par Échap', VIEWER_JS.includes('clearSelections'));
+check('compteur annoncé en toutes lettres', VIEWER_JS.includes('sélectionnée'));
+
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);
 process.exit(failures === 0 ? 0 : 1);
 

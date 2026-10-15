@@ -11,6 +11,11 @@
 // Seul data.js change d'un match à l'autre : les trois autres fichiers sont
 // statiques, ce qui garde le visualiseur identique partout.
 //
+// Le visualiseur reprend les fonctions de la consultation de l'application :
+// onglets d'équipe, Services / Attaque, filtre des issues, agrandissement, et
+// désignation d'une zone au glissement de la souris (les flèches traversées
+// passent en violet et leur nombre s'affiche).
+//
 // Les données sont chargées par <script src="data.js"> et non par fetch() :
 // un fetch d'un fichier local est bloqué sous file:// par les navigateurs.
 // ============================================================================
@@ -157,7 +162,7 @@ body { font-family: var(--font-body); background: var(--bg-deep); color: var(--t
 .tj-card-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 20px; }
 .tj-hint { color: var(--text-muted); font-size: 12px; }
 
-.tj-court-svg { width: 100%; height: auto; border-radius: 8px; background: rgba(255, 255, 255, 0.02); }
+.tj-court-svg { width: 100%; height: auto; border-radius: 8px; background: rgba(255, 255, 255, 0.02); cursor: crosshair; touch-action: none; }
 .tj-court-svg.tj-kind-serve { background: rgba(88, 124, 172, 0.16); }
 .tj-court-svg.tj-kind-attack { background: rgba(200, 150, 92, 0.15); }
 .tj-court-free { fill: rgba(200, 150, 92, 0.05); }
@@ -169,6 +174,12 @@ body { font-family: var(--font-body); background: var(--bg-deep); color: var(--t
 .tj-court-kind { fill: #9fb4d0; letter-spacing: 0.6px; }
 .tj-kind-attack .tj-court-kind { fill: var(--accent-soft); }
 .tj-court-big { width: 100%; }
+
+/* Désignation d'une zone au glissement : cadre violet, flèches traversées en
+   violet « flashy » (les autres s'effacent) et compteur par joueur. */
+.tj-sel-rect { fill: rgba(192, 38, 255, 0.16); stroke: #c026ff; stroke-width: 0.8; stroke-dasharray: 3 2; pointer-events: none; }
+.tj-sel-count { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #c026ff; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #ecc0ff; background: rgba(192, 38, 255, 0.2); }
+.tj-sel-count[hidden] { display: none; }
 
 .tj-zoom-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.72); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 100; }
 .tj-zoom-overlay[hidden] { display: none; }
@@ -214,6 +225,7 @@ export const VIEWER_JS = `(function () {
   var ZONE_CELLS = { 4: [7.5, 1.5], 3: [7.5, 4.5], 2: [7.5, 7.5], 7: [4.5, 1.5], 8: [4.5, 4.5], 9: [4.5, 7.5], 5: [1.5, 1.5], 6: [1.5, 4.5], 1: [1.5, 7.5] };
   var ARC_BULGE = 32;
   var COURT_MID_Y = FREE + (M * U) / 2;
+  var SELECT = '#c026ff';
   var seq = 0;
 
   function r1(v) { return Math.round(v * 10) / 10; }
@@ -224,7 +236,7 @@ export const VIEWER_JS = `(function () {
   function straightPath(from, to) {
     return 'M ' + r1(from.x) + ' ' + r1(from.y) + ' L ' + r1(to.x) + ' ' + r1(to.y);
   }
-  function arcPath(from, to) {
+  function arcControl(from, to) {
     var dx = to.x - from.x, dy = to.y - from.y;
     var len = Math.sqrt(dx * dx + dy * dy) || 1;
     var midX = (from.x + to.x) / 2, midY = (from.y + to.y) / 2;
@@ -232,12 +244,65 @@ export const VIEWER_JS = `(function () {
     var bas = py > 0;
     var haut = from.y <= COURT_MID_Y && to.y <= COURT_MID_Y;
     var dir = (haut ? !bas : bas) ? 1 : -1;
-    var cx = midX + px * ARC_BULGE * dir, cy = midY + py * ARC_BULGE * dir;
-    return 'M ' + r1(from.x) + ' ' + r1(from.y) + ' Q ' + r1(cx) + ' ' + r1(cy) + ' ' + r1(to.x) + ' ' + r1(to.y);
+    return { x: midX + px * ARC_BULGE * dir, y: midY + py * ARC_BULGE * dir };
+  }
+  function arcPath(from, to) {
+    var c = arcControl(from, to);
+    return 'M ' + r1(from.x) + ' ' + r1(from.y) + ' Q ' + r1(c.x) + ' ' + r1(c.y) + ' ' + r1(to.x) + ' ' + r1(to.y);
   }
   function shotPath(shot) {
     var meta = RESULTS[shot.result];
     return meta && meta.arc ? arcPath(shot.start, shot.end) : straightPath(shot.start, shot.end);
+  }
+
+  // ---- Désignation d'une zone (mêmes règles que l'application) -----------
+  function normalizeRect(a, b) {
+    return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+  }
+  // Rognage de Liang-Barsky : le segment traverse-t-il le rectangle ?
+  function segmentHitsRect(a, b, rect) {
+    var xmin = rect.x, xmax = rect.x + rect.w, ymin = rect.y, ymax = rect.y + rect.h;
+    var dx = b.x - a.x, dy = b.y - a.y, t0 = 0, t1 = 1;
+    function clip(p, q) {
+      if (p === 0) return q >= 0;
+      var t = q / p;
+      if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+      else { if (t < t0) return false; if (t < t1) t1 = t; }
+      return true;
+    }
+    return clip(-dx, a.x - xmin) && clip(dx, xmax - a.x) && clip(-dy, a.y - ymin) && clip(dy, ymax - a.y);
+  }
+  // Une feinte est un arc : on l'échantillonne en petits segments.
+  function shotPoints(shot) {
+    var meta = RESULTS[shot.result];
+    if (!(meta && meta.arc)) return [shot.start, shot.end];
+    var c = arcControl(shot.start, shot.end);
+    var pts = [];
+    for (var i = 0; i <= 8; i += 1) {
+      var t = i / 8, u = 1 - t;
+      pts.push({
+        x: u * u * shot.start.x + 2 * u * t * c.x + t * t * shot.end.x,
+        y: u * u * shot.start.y + 2 * u * t * c.y + t * t * shot.end.y
+      });
+    }
+    return pts;
+  }
+  function shotHitsRect(shot, rect) {
+    if (!shot || !rect) return false;
+    var pts = shotPoints(shot);
+    for (var i = 0; i < pts.length - 1; i += 1) {
+      if (segmentHitsRect(pts[i], pts[i + 1], rect)) return true;
+    }
+    return false;
+  }
+  function selectedIndexes(shots, rect) {
+    var list = shots || [];
+    if (!rect || (rect.w <= 0 && rect.h <= 0)) return [];
+    var out = [];
+    for (var i = 0; i < list.length; i += 1) {
+      if (shotHitsRect(list[i], rect)) out.push(i);
+    }
+    return out;
   }
   function resultColor(id) { return (RESULTS[id] && RESULTS[id].color) || '#8b8b8b'; }
   function resultLabel(id) { return (RESULTS[id] && RESULTS[id].label) || 'Issue inconnue'; }
@@ -285,16 +350,21 @@ export const VIEWER_JS = `(function () {
   }
 
   // ---- Terrain -----------------------------------------------------------
-  function courtSvg(side, kind, shots, big) {
+  function courtKey(side, kind, number) { return side + '|' + kind + '|' + number; }
+
+  function courtSvg(side, kind, shots, big, number) {
     seq += 1;
     var mid = 'tjm' + seq;
+    var key = courtKey(side, kind, number);
+    courtShots[key] = shots;
     var teams = teamsLabels(side);
     var out = [];
-    out.push('<svg viewBox="' + VIEWBOX.x + ' ' + VIEWBOX.y + ' ' + VIEWBOX.w + ' ' + VIEWBOX.h + '" class="tj-court-svg tj-kind-' + kind + (big ? ' tj-court-big' : '') + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Terrain — ' + esc(teams.left) + '">');
+    out.push('<svg viewBox="' + VIEWBOX.x + ' ' + VIEWBOX.y + ' ' + VIEWBOX.w + ' ' + VIEWBOX.h + '" class="tj-court-svg tj-kind-' + kind + (big ? ' tj-court-big' : '') + '" preserveAspectRatio="xMidYMid meet" role="img" data-court="' + esc(key) + '" aria-label="Terrain — ' + esc(teams.left) + '">');
     out.push('<defs>');
     Object.keys(RESULTS).forEach(function (rid) {
       out.push('<marker id="' + mid + '-' + rid + '" viewBox="0 0 8 8" refX="6.6" refY="4" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 z" fill="' + RESULTS[rid].color + '"></path></marker>');
     });
+    out.push('<marker id="' + mid + '-sel" viewBox="0 0 8 8" refX="6.6" refY="4" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 z" fill="' + SELECT + '"></path></marker>');
     out.push('</defs>');
     out.push('<rect class="tj-court-free" x="' + VIEWBOX.x + '" y="' + VIEWBOX.y + '" width="' + VIEWBOX.w + '" height="' + VIEWBOX.h + '" rx="4"></rect>');
     out.push('<rect class="tj-court-field" x="' + COURT.x + '" y="' + COURT.y + '" width="' + COURT.w + '" height="' + COURT.h + '" stroke="#e8e0d5" stroke-width="1.2"></rect>');
@@ -312,13 +382,19 @@ export const VIEWER_JS = `(function () {
     out.push('<text class="tj-court-kind" x="' + (VIEWBOX.x + 2) + '" y="' + (VIEWBOX.y + 8) + '" font-size="6" font-weight="800">' + (kind === 'serve' ? 'SERVICES' : 'ATTAQUE') + '</text>');
     out.push('<text x="' + (COURT.x + 1) + '" y="' + (COURT.top - 6) + '" font-size="5" font-weight="800" fill="#d4ccc0">' + esc(teams.left) + '</text>');
     out.push('<text x="' + (COURT.x + COURT.w - 1) + '" y="' + (COURT.top - 6) + '" text-anchor="end" font-size="5" font-weight="800" fill="#a09888">' + esc(teams.right || 'Adversaire') + '</text>');
-    shots.forEach(function (shot) {
+    shots.forEach(function (shot, index) {
       var color = resultColor(shot.result);
-      out.push('<g><title>' + esc(resultLabel(shot.result)) + ' — de (' + shot.start.x + ' ; ' + shot.start.y + ') à (' + shot.end.x + ' ; ' + shot.end.y + ')</title>');
-      out.push('<path d="' + shotPath(shot) + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linecap="round" marker-end="url(#' + mid + '-' + shot.result + ')"></path>');
-      out.push('<circle cx="' + shot.start.x + '" cy="' + shot.start.y + '" r="1.5" fill="' + color + '" fill-opacity="0.8"></circle>');
-      out.push('<circle cx="' + shot.end.x + '" cy="' + shot.end.y + '" r="1.1" fill="' + color + '"></circle></g>');
+      var d = shotPath(shot);
+      var marker = mid + '-' + shot.result;
+      out.push('<g class="tj-shot" data-shot="' + index + '">');
+      out.push('<title>' + esc(resultLabel(shot.result)) + ' — de (' + shot.start.x + ' ; ' + shot.start.y + ') à (' + shot.end.x + ' ; ' + shot.end.y + ')</title>');
+      out.push('<path class="tj-shot-halo" d="' + d + '" fill="none" stroke="' + SELECT + '" stroke-width="4.6" stroke-linecap="round" opacity="0"></path>');
+      out.push('<path class="tj-shot-line" d="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linecap="round" marker-end="url(#' + marker + ')" data-color="' + color + '" data-marker="' + marker + '" data-marker-sel="' + mid + '-sel"></path>');
+      out.push('<circle class="tj-shot-dot" cx="' + shot.start.x + '" cy="' + shot.start.y + '" r="1.5" fill="' + color + '" fill-opacity="0.8" data-color="' + color + '"></circle>');
+      out.push('<circle class="tj-shot-dot" cx="' + shot.end.x + '" cy="' + shot.end.y + '" r="1.1" fill="' + color + '" data-color="' + color + '"></circle>');
+      out.push('</g>');
     });
+    out.push('<rect class="tj-sel-rect" x="0" y="0" width="0" height="0"></rect>');
     out.push('</svg>');
     return out.join('');
   }
@@ -329,6 +405,7 @@ export const VIEWER_JS = `(function () {
     var counts = countBy(shots);
     var rc = roleColor(player.role);
     var name = player.name || ('N°' + player.number);
+    var key = courtKey(side, kind, player.number);
     var out = [];
     out.push('<div class="tj-card tj-kind-' + kind + '">');
     out.push('<div class="tj-card-head">');
@@ -337,9 +414,11 @@ export const VIEWER_JS = `(function () {
     out.push('<span class="tj-role" style="color:' + rc + '">' + roleShort(player.role) + '</span>');
     out.push('<span class="tj-card-actions"><button type="button" class="btn btn-sm" data-zoom="' + side + '|' + kind + '|' + player.number + '" title="Agrandir le terrain">Agrandir</button></span>');
     out.push('</div>');
-    out.push(courtSvg(side, kind, shots, false));
+    out.push(courtSvg(side, kind, shots, false, player.number));
     out.push('<div class="tj-card-stats">');
     if (shots.length === 0) out.push('<span class="tj-hint">Aucune flèche pour ce joueur.</span>');
+    if (shots.length > 0) out.push('<span class="tj-hint">Glissez sur le terrain pour désigner une zone de flèches.</span>');
+    out.push('<span class="tj-sel-count" data-sel-count="' + esc(key) + '" hidden></span>');
     resultsFor(kind).forEach(function (id) {
       if (counts[id] > 0) {
         out.push('<span class="tj-chip" style="border-color:' + RESULTS[id].color + ';color:' + RESULTS[id].color + '">' + esc(RESULTS[id].short) + ' ' + counts[id] + '</span>');
@@ -401,12 +480,15 @@ export const VIEWER_JS = `(function () {
 
   // ---- Rendu global ------------------------------------------------------
   function render() {
+    // Nouvel affichage : les zones désignées sont abandonnées (les flèches
+    // affichées changent, donc les index aussi).
+    selection = {};
     var list = roster(state.side);
     var out = [];
     out.push('<header class="tj-top"><div class="tj-title"><strong>' + esc(D.name) + '</strong><span class="tj-badge">Consultation</span></div><div class="tj-teams">' + esc(teamName('home')) + (hasAway ? ' · ' + esc(teamName('away')) : '') + '</div></header>');
     out.push(renderTabs());
     out.push(renderToolbar());
-    out.push('<p class="tj-hint" style="margin:10px 0">Lecture seule : aucune flèche ne peut être ajoutée ni modifiée. Cliquez sur « Agrandir » pour voir un terrain en grand.</p>');
+    out.push('<p class="tj-hint" style="margin:10px 0">Lecture seule : glissez sur un terrain pour désigner une zone — les flèches concernées passent en violet et leur nombre s’affiche. Cliquez sur « Agrandir » pour voir un terrain en grand.</p>');
     out.push(renderRecap());
     if (list.length === 0) {
       out.push('<div class="tj-hint">Aucun joueur dans l’effectif de cette équipe.</div>');
@@ -419,6 +501,123 @@ export const VIEWER_JS = `(function () {
     app.innerHTML = out.join('');
   }
 
+  // ---- Désignation d'une zone (violet) -----------------------------------
+  var selection = {};   // clé de terrain → zone désignée (null si aucune)
+  var courtShots = {};  // clé de terrain → flèches affichées
+  var drag = null;      // glissement en cours : { key, from, svg }
+
+  /** Applique la zone désignée d'un terrain à tous ses exemplaires affichés. */
+  function applySelection(key) {
+    var rect = selection[key] || null;
+    var indexes = selectedIndexes(courtShots[key] || [], rect);
+    var chosen = {};
+    indexes.forEach(function (i) { chosen[i] = true; });
+    var has = indexes.length > 0;
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-court="' + key + '"]'), function (svg) {
+      Array.prototype.forEach.call(svg.querySelectorAll('[data-shot]'), function (group) {
+        var isSel = !!chosen[Number(group.getAttribute('data-shot'))];
+        group.setAttribute('opacity', has && !isSel ? '0.22' : '1');
+        var halo = group.querySelector('.tj-shot-halo');
+        if (halo) halo.setAttribute('opacity', isSel ? '0.4' : '0');
+        var line = group.querySelector('.tj-shot-line');
+        if (line) {
+          line.setAttribute('stroke', isSel ? SELECT : (line.getAttribute('data-color') || '#8b8b8b'));
+          line.setAttribute('stroke-width', isSel ? '2.4' : '1.5');
+          var marker = isSel ? line.getAttribute('data-marker-sel') : line.getAttribute('data-marker');
+          if (marker) line.setAttribute('marker-end', 'url(#' + marker + ')');
+        }
+        Array.prototype.forEach.call(group.querySelectorAll('.tj-shot-dot'), function (dot) {
+          dot.setAttribute('fill', isSel ? SELECT : (dot.getAttribute('data-color') || '#8b8b8b'));
+        });
+      });
+      var box = svg.querySelector('.tj-sel-rect');
+      if (box) {
+        box.setAttribute('x', rect ? rect.x : 0);
+        box.setAttribute('y', rect ? rect.y : 0);
+        box.setAttribute('width', rect ? rect.w : 0);
+        box.setAttribute('height', rect ? rect.h : 0);
+      }
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-sel-count="' + key + '"]'), function (badge) {
+      if (has) {
+        badge.textContent = indexes.length + ' flèche' + (indexes.length > 1 ? 's' : '') +
+          ' sélectionnée' + (indexes.length > 1 ? 's' : '');
+        badge.removeAttribute('hidden');
+      } else {
+        badge.textContent = '';
+        badge.setAttribute('hidden', '');
+      }
+    });
+  }
+
+  /** Efface toutes les zones désignées (Échap, ou simple clic sur un terrain). */
+  function clearSelections() {
+    Object.keys(courtShots).forEach(function (key) {
+      if (selection[key]) {
+        selection[key] = null;
+        applySelection(key);
+      }
+    });
+  }
+
+  /** Position d'un événement dans le repère du terrain (1 unité = 10 cm). */
+  function pointFromEvent(svg, event) {
+    var box = svg.getBoundingClientRect();
+    if (!box.width || !box.height) return null;
+    return {
+      x: VIEWBOX.x + ((event.clientX - box.left) / box.width) * VIEWBOX.w,
+      y: VIEWBOX.y + ((event.clientY - box.top) / box.height) * VIEWBOX.h
+    };
+  }
+
+  document.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    var svg = e.target && e.target.closest ? e.target.closest('[data-court]') : null;
+    if (!svg) return;
+    var point = pointFromEvent(svg, e);
+    if (!point) return;
+    drag = { key: svg.getAttribute('data-court'), from: point, svg: svg };
+    selection[drag.key] = { x: point.x, y: point.y, w: 0, h: 0 };
+    applySelection(drag.key);
+    e.preventDefault();
+  });
+
+  document.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var point = pointFromEvent(drag.svg, e);
+    if (!point) return;
+    selection[drag.key] = normalizeRect(drag.from, point);
+    applySelection(drag.key);
+  });
+
+  document.addEventListener('pointerup', function (e) {
+    if (!drag) return;
+    var key = drag.key;
+    var from = drag.from;
+    var svg = drag.svg;
+    drag = null;
+    var point = pointFromEvent(svg, e);
+    if (!point) {
+      selection[key] = null;
+      applySelection(key);
+      return;
+    }
+    var rect = normalizeRect(from, point);
+    // Un simple clic (sans glissement) efface la zone au lieu d'en créer une.
+    selection[key] = (rect.w < 1 && rect.h < 1) ? null : rect;
+    applySelection(key);
+  });
+
+  document.addEventListener('pointercancel', function () {
+    if (!drag) return;
+    var key = drag.key;
+    drag = null;
+    selection[key] = null;
+    applySelection(key);
+  });
+
   // ---- Agrandissement ----------------------------------------------------
   function closeZoom() { zoomEl.hidden = true; zoomEl.innerHTML = ''; }
   function openZoom(side, kind, number) {
@@ -430,11 +629,12 @@ export const VIEWER_JS = `(function () {
     var out = [];
     out.push('<div class="tj-zoom">');
     out.push('<div class="tj-card-head"><span class="tj-number" style="border-color:' + rc + '">' + player.number + '</span><span class="tj-name">' + esc(name) + '</span><span class="tj-card-actions"><button type="button" class="btn btn-sm" data-action="close-zoom">Fermer</button></span></div>');
-    out.push(courtSvg(side, kind, shots, true));
-    out.push('<p class="tj-hint">Consultation : les flèches sont en lecture seule.</p>');
+    out.push(courtSvg(side, kind, shots, true, number));
+    out.push('<p class="tj-hint">Consultation : glissez sur le terrain pour désigner une zone — les flèches concernées passent en violet et sont comptées.</p>');
     out.push('</div>');
     zoomEl.innerHTML = out.join('');
     zoomEl.hidden = false;
+    applySelection(courtKey(side, kind, number));
   }
 
   // ---- Interactions ------------------------------------------------------
@@ -471,6 +671,7 @@ export const VIEWER_JS = `(function () {
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && !zoomEl.hidden) { closeZoom(); return; }
+    if (e.key === 'Escape') { clearSelections(); return; }
     if (e.key === 't' || e.key === 'T') {
       state.kind = state.kind === 'serve' ? 'attack' : 'serve';
       state.hidden = [];
@@ -491,6 +692,11 @@ export const README_TEXT = [
   'La page est en lecture seule : on peut changer d’équipe, basculer',
   'Services / Attaque, filtrer les issues et agrandir un terrain, mais',
   'aucune flèche ne peut être ajoutée ni modifiée.',
+  '',
+  'Pour repérer les flèches d’une zone : glissez la souris sur un terrain.',
+  'Les flèches traversées passent en violet, les autres s’effacent, et leur',
+  'nombre s’affiche sous le terrain. Un simple clic (ou la touche Échap)',
+  'efface la désignation.',
   '',
   'Fichiers :',
   '  trajectoires.html  la page à ouvrir',

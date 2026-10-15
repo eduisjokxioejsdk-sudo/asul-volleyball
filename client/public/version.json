@@ -1,8 +1,18 @@
 {
-  "version": "2.0.4",
+  "version": "2.0.5",
   "releasedAt": "2026-10-15",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "2.0.5",
+      "date": "2026-10-15",
+      "title": "Fiches partagées : le lecteur hors ligne gagne la désignation de zone",
+      "items": [
+        "Le dossier ZIP partagé (fiche + lecteur hors ligne) reprend la désignation d'une zone : glissez sur un terrain, les flèches traversées passent en violet flashy et leur nombre s'affiche",
+        "Le lecteur hors ligne efface la zone au simple clic ou avec Échap, exactement comme la consultation dans l'application",
+        "La fiche partagée conserve les mêmes repères : onglets d'équipe, Services / Attaque, filtre des issues et agrandissement du terrain"
+      ]
+    },
     {
       "version": "2.0.4",
       "date": "2026-10-15",
