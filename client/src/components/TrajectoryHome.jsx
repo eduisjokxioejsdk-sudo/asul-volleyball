@@ -197,8 +197,9 @@ export default function TrajectoryHome({ user }) {
       </div>
 
       <p className="dv-hint">
-        Marquage des trajectoires de service et d’attaque, joueur par joueur, pour une équipe ou pour les deux. Les équipes
-        sont celles enregistrées dans l’application : elles restent partagées avec les onglets Découpage et Codage DataVolley.
+        Les fiches s’ouvrent en consultation (lecture seule) : cliquez une fiche pour regarder les flèches, ou « Annoter »
+        pour ajouter du marquage. Les équipes sont celles enregistrées dans l’application : elles restent partagées avec les
+        onglets Découpage et Codage DataVolley.
       </p>
 
       <SyncStatusBar api={trajectoryAPI} label="Fiches de trajectoire" />
@@ -246,8 +247,8 @@ export default function TrajectoryHome({ user }) {
               <button
                 type="button"
                 className="tj-home-open"
-                onClick={() => navigate(`/trajectories/${match.id}`)}
-                title="Ouvrir la fiche en marquage (mode Annoter)"
+                onClick={() => navigate(`/trajectories/${match.id}/consult`)}
+                title="Ouvrir la fiche en consultation (lecture seule) — mode d'ouverture par défaut"
               >
                 <span className="tj-home-thumb"><HomeThumb /></span>
                 <span className="live-card-name">{match.name}</span>
@@ -269,7 +270,7 @@ export default function TrajectoryHome({ user }) {
               <div className="tj-home-actions">
                 <button
                   type="button"
-                  className="btn btn-primary btn-sm"
+                  className="btn btn-secondary btn-sm"
                   onClick={() => navigate(`/trajectories/${match.id}`)}
                   title="Ajouter des flèches (marquage)"
                 >
@@ -277,9 +278,9 @@ export default function TrajectoryHome({ user }) {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm"
+                  className="btn btn-primary btn-sm"
                   onClick={() => navigate(`/trajectories/${match.id}/consult`)}
-                  title="Regarder les flèches en lecture seule, joueur par joueur et par type"
+                  title="Regarder les flèches en lecture seule, joueur par joueur et par type — mode d'ouverture par défaut"
                 >
                   <Eye size={13} /> Consulter
                 </button>

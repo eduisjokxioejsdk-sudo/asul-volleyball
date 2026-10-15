@@ -1,10 +1,13 @@
 // ============================================================================
-// Consultation d'une fiche de trajectoire (lecture seule).
+// Consultation d'une fiche de trajectoire (lecture seule) — mode d'ouverture
+// par défaut d'une fiche.
 //   • un onglet par équipe (un seul si une seule équipe a été choisie) ;
 //   • Services / Attaque, comme au marquage ;
 //   • un terrain par joueur, agrandissable, sans aucun tracé possible ;
+//   • un glissement sur un terrain désigne une zone : les flèches traversées
+//     passent en violet « flashy » et leur nombre s'affiche ;
 //   • un menu « Filtres » choisit les types de flèches affichés.
-// Aucun enregistrement : la fiche est seulement lue (l'annotation se poursuit
+// Aucun enregistrement : la fiche est seulement lue (le marquage se poursuit
 // dans le mode « Annoter »).
 // ============================================================================
 
@@ -27,9 +30,8 @@ import {
   rosterOf,
   shotFromRow,
 } from '../utils/trajectory';
-import { downloadTrajectoryZip } from '../utils/trajectoryExport';
 import { formatKeyLabel } from '../utils/shortcuts';
-import { FileDown, House, Keyboard, Pencil, Plane, Users } from '../components/icons';
+import { Eye, House, Keyboard, Pencil, Plane, Users } from '../components/icons';
 
 const TEAM_TABS = [
   { side: 'home', label: 'Équipe 1', icon: House },
@@ -53,9 +55,12 @@ export default function TrajectoryView({ user }) {
   const [zone, setZone] = useState('all'); // poste de départ des attaques affichées
   const [flash, setFlash] = useState(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  // Le bouton « Consulter » clignote cinq secondes à l'ouverture : la fiche
+  // s'ouvre désormais en consultation, et non plus en marquage.
+  const [blink, setBlink] = useState(true);
 
   const flashTimer = useRef(null);
+  const blinkTimer = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,21 +90,17 @@ export default function TrajectoryView({ user }) {
     flashTimer.current = setTimeout(() => setFlash(null), 2500);
   }, []);
 
-  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
+  useEffect(() => () => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    if (blinkTimer.current) clearTimeout(blinkTimer.current);
+  }, []);
 
-  // Exporte la fiche en dossier ZIP : un visualiseur hors ligne, en lecture seule.
-  const exportZip = useCallback(async () => {
-    if (!match || exporting) return;
-    setExporting(true);
-    try {
-      await downloadTrajectoryZip(match, shots);
-      notify(true, 'Dossier ZIP téléchargé.');
-    } catch (err) {
-      notify(false, 'Échec de l’export.');
-    } finally {
-      setExporting(false);
-    }
-  }, [match, shots, exporting, notify]);
+  // Le clignotement du bouton « Consulter » s'arrête de lui-même au bout de
+  // cinq secondes.
+  useEffect(() => {
+    blinkTimer.current = setTimeout(() => setBlink(false), 5000);
+    return () => { if (blinkTimer.current) clearTimeout(blinkTimer.current); };
+  }, []);
 
   // Raccourci configurable : une seule touche bascule Services ↔ Attaque.
   const toggleKind = useCallback(() => {
@@ -206,16 +207,14 @@ export default function TrajectoryView({ user }) {
               );
             })}
           </div>
+          <span
+            className={`btn btn-primary btn-sm tj-mode-active${blink ? ' tj-mode-blink' : ''}`}
+            title="Mode consultation (lecture seule) : c'est le mode d'ouverture par défaut d'une fiche"
+          >
+            <Eye size={14} /> Consulter
+          </span>
           <button
             className="btn btn-secondary btn-sm"
-            onClick={exportZip}
-            disabled={exporting}
-            title="Télécharger un dossier ZIP pour consulter cette fiche hors ligne (lecture seule)"
-          >
-            <FileDown size={14} /> {exporting ? 'Export…' : 'Télécharger'}
-          </button>
-          <button
-            className="btn btn-primary btn-sm"
             onClick={() => navigate(`/trajectories/${id}`)}
             title="Revenir au marquage pour ajouter des flèches"
           >
@@ -269,9 +268,10 @@ export default function TrajectoryView({ user }) {
             {flash && <div className={`live-msg ${flash.ok ? 'ok' : 'err'}`}>{flash.text}</div>}
 
             <p className="dv-hint">
-              Lecture seule : aucune flèche ne peut être ajoutée ni modifiée ici. Cliquez sur un terrain pour l’agrandir,
-              regardez chaque joueur, utilisez « Filtres » pour n’afficher que certains types de flèches et « Poste de
-              départ » pour trier les attaques selon la zone d’où part la flèche (4, 3, 2 ou arrière).
+              Lecture seule : aucune flèche ne peut être ajoutée ni modifiée ici. Glissez sur un terrain pour désigner une
+              zone : les flèches concernées passent en violet et leur nombre s’affiche. Cliquez sur un terrain pour
+              l’agrandir, utilisez « Filtres » pour n’afficher que certains types de flèches et « Poste de départ » pour
+              trier les attaques selon la zone d’où part la flèche (4, 3, 2 ou arrière).
             </p>
 
             <div className="tj-recap">

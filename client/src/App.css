@@ -4447,6 +4447,70 @@ table.report td {
   cursor: default;
 }
 
+/* Consultation : le terrain sert à désigner une zone de flèches au glissement. */
+.tj-card.readonly .tj-court-svg.selectable {
+  cursor: crosshair;
+}
+
+/* Zone désignée : cadre violet, les flèches traversées passent en violet
+   « flashy » (les autres s'effacent) — impossible à confondre avec le code
+   couleur des issues. */
+.tj-sel-rect {
+  fill: rgba(192, 38, 255, 0.16);
+  stroke: #c026ff;
+  stroke-width: 0.8;
+  stroke-dasharray: 3 2;
+  pointer-events: none;
+}
+
+.tj-sel-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid #c026ff;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #ecc0ff;
+  background: rgba(192, 38, 255, 0.2);
+}
+
+.tj-sel-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tj-sel-clear:hover {
+  color: #ffffff;
+}
+
+/* Mode consultation : le bouton « Consulter » clignote cinq secondes à
+   l'ouverture de la fiche, pour signaler le mode d'ouverture par défaut. */
+@keyframes tjModeBlink {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(192, 38, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(192, 38, 255, 0.6);
+  }
+}
+
+.tj-mode-active {
+  cursor: default;
+}
+
+.tj-mode-blink {
+  animation: tjModeBlink 0.75s ease-in-out infinite;
+}
+
 .tj-court-big {
   width: auto;
   max-width: 100%;

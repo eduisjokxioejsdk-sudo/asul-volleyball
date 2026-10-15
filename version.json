@@ -1,8 +1,18 @@
 {
-  "version": "2.0.3",
+  "version": "2.0.4",
   "releasedAt": "2026-10-15",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "2.0.4",
+      "date": "2026-10-15",
+      "title": "Trajectoires : ouverture en consultation et sélection d'une zone de flèches",
+      "items": [
+        "Une fiche de trajectoire s'ouvre désormais en mode Consulter (lecture seule) : le bouton « Consulter » clignote cinq secondes à l'ouverture pour le signaler",
+        "En consultation, glissez sur un terrain pour désigner une zone : les flèches concernées passent en violet flashy et leur nombre s'affiche",
+        "Retrait du bouton « Télécharger » (dossier ZIP) de la consultation"
+      ]
+    },
     {
       "version": "2.0.3",
       "date": "2026-10-15",

@@ -203,6 +203,103 @@ export function shotPath(from, to, resultId) {
 }
 
 /**
+ * Violet « flashy » des flèches désignées par une zone, en consultation :
+ * impossible à confondre avec le code couleur des issues (vert, bleu, orange,
+ * rouge).
+ */
+export const SELECTION_COLOR = '#c026ff';
+
+/**
+ * Rectangle normalisé (coin haut-gauche, largeur et hauteur positives) à partir
+ * de deux coins : le glissement peut se faire dans n'importe quel sens.
+ */
+export function normalizeRect(a, b) {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    w: Math.abs(b.x - a.x),
+    h: Math.abs(b.y - a.y),
+  };
+}
+
+/**
+ * Vrai si le segment [a;b] traverse le rectangle (rognage de Liang-Barsky : on
+ * coupe le segment par les quatre bords, s'il reste un morceau il est dedans).
+ */
+function segmentHitsRect(a, b, rect) {
+  const xmin = rect.x;
+  const xmax = rect.x + rect.w;
+  const ymin = rect.y;
+  const ymax = rect.y + rect.h;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  let t0 = 0;
+  let t1 = 1;
+  const clip = (p, q) => {
+    if (p === 0) return q >= 0; // segment parallèle à ce bord : dedans ou dehors
+    const t = q / p;
+    if (p < 0) {
+      if (t > t1) return false;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return false;
+      if (t < t1) t1 = t;
+    }
+    return true;
+  };
+  return clip(-dx, a.x - xmin) && clip(dx, xmax - a.x) && clip(-dy, a.y - ymin) && clip(dy, ymax - a.y);
+}
+
+/** Points d'une quadratique (arc des feintes), échantillonnée en petits segments. */
+function quadraticPoints(from, control, to, steps = 8) {
+  const points = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const u = 1 - t;
+    points.push({
+      x: u * u * from.x + 2 * u * t * control.x + t * t * to.x,
+      y: u * u * from.y + 2 * u * t * control.y + t * t * to.y,
+    });
+  }
+  return points;
+}
+
+/**
+ * Vrai si une flèche traverse la zone : une flèche droite est testée comme un
+ * segment, une feinte comme la suite de petits segments de son arc.
+ */
+export function shotHitsRect(shot, rect) {
+  if (!shot || !shot.start || !shot.end || !rect) return false;
+  const path = shotPath(shot.start, shot.end, shot.result);
+  const points = path.arc && path.control
+    ? quadraticPoints(shot.start, path.control, shot.end)
+    : [shot.start, shot.end];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    if (segmentHitsRect(points[i], points[i + 1], rect)) return true;
+  }
+  return false;
+}
+
+/**
+ * Index des flèches qui traversent la zone de sélection : elles sont affichées
+ * en violet et leur nombre est annoncé à l'écran. Une zone vide (simple clic
+ * sans glissement) ne désigne rien.
+ *
+ * @param {Array} shots flèches affichées (déjà filtrées par équipe et frappe)
+ * @param {{x:number,y:number,w:number,h:number}|null} rect zone de sélection
+ * @returns {number[]} index, dans l'ordre d'affichage, des flèches désignées
+ */
+export function selectedShotIndexes(shots, rect) {
+  const list = shots || [];
+  if (!rect || (rect.w <= 0 && rect.h <= 0)) return [];
+  const indexes = [];
+  list.forEach((shot, index) => {
+    if (shotHitsRect(shot, rect)) indexes.push(index);
+  });
+  return indexes;
+}
+
+/**
  * Issues proposées pour un type de frappe, « dehors » compris : sert à la
  * légende, au menu de filtre et à la consultation (lecture seule).
  */

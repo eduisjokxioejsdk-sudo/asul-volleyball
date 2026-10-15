@@ -6,6 +6,7 @@ import {
   ARC_BULGE,
   COURT_MID_Y,
   POPUP_RESULTS,
+  SELECTION_COLOR,
   SERVE_RESULTS,
   TRAJECTORY_COURT,
   TRAJECTORY_KINDS,
@@ -18,6 +19,7 @@ import {
   filterShots,
   isResultForKind,
   landingResult,
+  normalizeRect,
   normalizeResultForKind,
   popupResultsFor,
   resultColor,
@@ -25,7 +27,9 @@ import {
   resultLabel,
   resultsForKind,
   rosterOf,
+  selectedShotIndexes,
   shotFromRow,
+  shotHitsRect,
   shotPath,
   shotToRow,
   shotsFor,
@@ -257,6 +261,48 @@ check('contrée : proposée à l’attaque', isResultForKind('contree', 'attack'
 check('contrée : jamais au service', isResultForKind('contree', 'serve') === false);
 check('feinte : seulement à l’attaque', isResultForKind('feinte_point', 'attack') === true && isResultForKind('feinte_point', 'serve') === false);
 check('dehors : dans les deux onglets', isResultForKind('out', 'serve') && isResultForKind('out', 'attack'));
+
+console.log('\n== Sélection d’une zone (consultation) ==');
+check('violet « flashy » de la sélection', SELECTION_COLOR === '#c026ff', SELECTION_COLOR);
+const zone = normalizeRect({ x: 40, y: 30 }, { x: 10, y: 60 });
+check('rectangle normalisé', zone.x === 10 && zone.y === 30 && zone.w === 30 && zone.h === 30, JSON.stringify(zone));
+check(
+  'rectangle insensible au sens du glissement',
+  JSON.stringify(normalizeRect({ x: 10, y: 60 }, { x: 40, y: 30 })) === JSON.stringify(zone)
+);
+
+const flecheDroite = { start: { x: 0, y: 40 }, end: { x: 100, y: 40 }, result: 'point' };
+check('flèche qui traverse la zone : désignée', shotHitsRect(flecheDroite, zone) === true);
+check(
+  'flèche entièrement dans la zone : désignée',
+  shotHitsRect({ start: { x: 15, y: 35 }, end: { x: 25, y: 45 }, result: 'point' }, zone) === true
+);
+check('flèche hors de la zone : ignorée', shotHitsRect(flecheDroite, { x: 0, y: 0, w: 20, h: 20 }) === false);
+check('flèche sans coordonnées : ignorée', shotHitsRect({ result: 'point' }, zone) === false);
+
+// Une feinte est un arc : c’est l’arc qui compte, pas la corde.
+const feinte = { start: { x: 10, y: 20 }, end: { x: 90, y: 20 }, result: 'feinte_point' };
+const arcFeinte = arcPath(feinte.start, feinte.end);
+const sommet = {
+  x: (feinte.start.x + 2 * arcFeinte.control.x + feinte.end.x) / 4,
+  y: (feinte.start.y + 2 * arcFeinte.control.y + feinte.end.y) / 4,
+};
+const zoneSommet = { x: sommet.x - 2, y: sommet.y - 2, w: 4, h: 4 };
+check('arc de feinte détecté au sommet', shotHitsRect(feinte, zoneSommet) === true);
+check(
+  'même tracé en flèche droite : hors de la zone du sommet',
+  shotHitsRect({ ...feinte, result: 'point' }, zoneSommet) === false
+);
+
+check('simple clic (zone vide) : aucune flèche', selectedShotIndexes([flecheDroite], { x: 50, y: 50, w: 0, h: 0 }).length === 0);
+check(
+  'index des flèches désignées',
+  selectedShotIndexes([flecheDroite, { start: { x: 0, y: 0 }, end: { x: 5, y: 5 }, result: 'point' }], zone).join(',') === '0'
+);
+check('plusieurs flèches désignées', selectedShotIndexes([flecheDroite, feinte], { x: 0, y: 0, w: 200, h: 120 }).join(',') === '0,1');
+check('aucune flèche : liste vide', selectedShotIndexes([], zone).length === 0);
+check('liste absente acceptée', selectedShotIndexes(null, zone).length === 0);
+check('zone absente acceptée', selectedShotIndexes([flecheDroite], null).length === 0);
 
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);
 process.exit(failures === 0 ? 0 : 1);
