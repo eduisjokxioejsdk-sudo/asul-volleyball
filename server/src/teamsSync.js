@@ -8,7 +8,8 @@
 
 const db = require('./database');
 const core = require('./teamsSyncCore');
-const { emitTeamsChanged } = require('./socket');
+const { emitTeamsChanged, emitCollectionChanged } = require('./socket');
+const { relinkTeamReferences } = require('./relinkTeams');
 const { createSyncEngine } = require('./syncEngine');
 
 const runAsync = (sql, params = []) =>
@@ -126,7 +127,16 @@ const teamsCollection = {
     };
   },
   onChanged: (applied, removed) => {
-    if (applied || removed) emitTeamsChanged();
+    if (!(applied || removed)) return;
+    emitTeamsChanged();
+    // Quand une équipe arrive d'un autre poste, re-lie les fiches de trajectoire
+    // et les matchs qui la référencent par UUID mais n'ont pas encore d'id local.
+    relinkTeamReferences()
+      .then((relinked) => {
+        if (relinked.trajectories) emitCollectionChanged('trajectories');
+        if (relinked.matches) emitCollectionChanged('matches');
+      })
+      .catch((err) => console.warn('Re-liaison des équipes :', err.message));
   },
 };
 

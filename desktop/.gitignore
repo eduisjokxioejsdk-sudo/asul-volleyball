@@ -4,4 +4,5 @@ dist/
 resources/ffmpeg/
 resources/client/
 resources/server/
+resources/sync.json
 *.log

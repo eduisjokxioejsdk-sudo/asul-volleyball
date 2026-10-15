@@ -201,6 +201,8 @@ db.serialize(() => {
     finished_at DATETIME,
     home_team_id INTEGER,
     away_team_id INTEGER,
+    home_team_uuid TEXT,
+    away_team_uuid TEXT,
     FOREIGN KEY (video_id) REFERENCES videos(id)
   )`);
 
@@ -342,6 +344,8 @@ db.serialize(() => {
     name TEXT NOT NULL,
     home_team_id INTEGER,
     away_team_id INTEGER,
+    home_team_uuid TEXT,
+    away_team_uuid TEXT,
     team1_name TEXT,
     team2_name TEXT,
     status TEXT DEFAULT 'open',
@@ -369,15 +373,26 @@ db.serialize(() => {
 
   db.run('CREATE INDEX IF NOT EXISTS idx_trajectory_shots_match ON trajectory_shots (match_id, team_side, kind)');
 
-  // Colonne `created_by` (email du créateur, stable entre postes) : permet de
-  // garder la règle « seul le créateur supprime » correcte même pour une fiche
-  // arrivée d'un autre poste par synchronisation cloud (voir syncCollections.js).
+  // Colonnes de partage des trajectoires : `created_by` (email du créateur) et
+  // les UUID d'équipe (pour re-lier l'effectif quand l'équipe arrive après la
+  // fiche — voir syncCollections.js et relinkTeams.js).
   db.all('PRAGMA table_info(trajectory_matches)', (err, columns) => {
     if (err) return;
     const names = (columns || []).map((c) => c.name);
-    if (names.length && !names.includes('created_by')) {
-      db.run('ALTER TABLE trajectory_matches ADD COLUMN created_by TEXT');
-    }
+    if (!names.length) return;
+    if (!names.includes('created_by')) db.run('ALTER TABLE trajectory_matches ADD COLUMN created_by TEXT');
+    if (!names.includes('home_team_uuid')) db.run('ALTER TABLE trajectory_matches ADD COLUMN home_team_uuid TEXT');
+    if (!names.includes('away_team_uuid')) db.run('ALTER TABLE trajectory_matches ADD COLUMN away_team_uuid TEXT');
+  });
+
+  // Colonnes d'UUID d'équipe sur les matchs (codage DataVolley), pour la même
+  // re-liaison que les trajectoires.
+  db.all('PRAGMA table_info(volley_matches)', (err, columns) => {
+    if (err) return;
+    const names = (columns || []).map((c) => c.name);
+    if (!names.length) return;
+    if (!names.includes('home_team_uuid')) db.run('ALTER TABLE volley_matches ADD COLUMN home_team_uuid TEXT');
+    if (!names.includes('away_team_uuid')) db.run('ALTER TABLE volley_matches ADD COLUMN away_team_uuid TEXT');
   });
 
   // Migrate existing database if needed

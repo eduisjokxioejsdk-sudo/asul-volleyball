@@ -183,8 +183,8 @@ const trajectoriesCollection = makeFlatCollection({
     }
     return matches.map((m) => ({
       ...m,
-      home_team_uuid: m.home_team_id ? idToUuid.get(Number(m.home_team_id)) || null : null,
-      away_team_uuid: m.away_team_id ? idToUuid.get(Number(m.away_team_id)) || null : null,
+      home_team_uuid: m.home_team_uuid || (m.home_team_id ? idToUuid.get(Number(m.home_team_id)) || null : null),
+      away_team_uuid: m.away_team_uuid || (m.away_team_id ? idToUuid.get(Number(m.away_team_id)) || null : null),
       shots: byMatch.get(Number(m.id)) || [],
     }));
   },
@@ -215,17 +215,18 @@ const trajectoriesCollection = makeFlatCollection({
       await runAsync(
         `UPDATE trajectory_matches
             SET sync_uuid = ?, name = ?, home_team_id = ?, away_team_id = ?,
+                home_team_uuid = ?, away_team_uuid = ?,
                 team1_name = ?, team2_name = ?, status = ?, created_by = ?, deleted = ?,
                 dirty = 0, cloud_updated_at = ?
           WHERE id = ?`,
-        [entry.uuid, entry.name, homeTeamId, awayTeamId, entry.team1_name, entry.team2_name, entry.status, entry.created_by, deleted, entry.cloudUpdatedAt || now, localId]
+        [entry.uuid, entry.name, homeTeamId, awayTeamId, entry.home_team_uuid || null, entry.away_team_uuid || null, entry.team1_name, entry.team2_name, entry.status, entry.created_by, deleted, entry.cloudUpdatedAt || now, localId]
       );
     } else {
       const result = await runAsync(
         `INSERT INTO trajectory_matches
-            (sync_uuid, name, home_team_id, away_team_id, team1_name, team2_name, status, created_by, deleted, dirty, cloud_updated_at, local_updated_at, user_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)`,
-        [entry.uuid, entry.name, homeTeamId, awayTeamId, entry.team1_name, entry.team2_name, entry.status, entry.created_by, deleted, entry.cloudUpdatedAt || now, now]
+            (sync_uuid, name, home_team_id, away_team_id, home_team_uuid, away_team_uuid, team1_name, team2_name, status, created_by, deleted, dirty, cloud_updated_at, local_updated_at, user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)`,
+        [entry.uuid, entry.name, homeTeamId, awayTeamId, entry.home_team_uuid || null, entry.away_team_uuid || null, entry.team1_name, entry.team2_name, entry.status, entry.created_by, deleted, entry.cloudUpdatedAt || now, now]
       );
       localId = result.lastID;
     }
@@ -422,8 +423,8 @@ const matchesCollection = {
     return rows.map((r) => ({
       ...r,
       video_uuid: r.video_id ? idToUuid.get(Number(r.video_id)) || null : null,
-      home_team_uuid: r.home_team_id ? teamMap.get(Number(r.home_team_id)) || null : null,
-      away_team_uuid: r.away_team_id ? teamMap.get(Number(r.away_team_id)) || null : null,
+      home_team_uuid: r.home_team_uuid || (r.home_team_id ? teamMap.get(Number(r.home_team_id)) || null : null),
+      away_team_uuid: r.away_team_uuid || (r.away_team_id ? teamMap.get(Number(r.away_team_id)) || null : null),
     }));
   },
   rowToCloud: (row, originId) => ({
@@ -443,13 +444,14 @@ const matchesCollection = {
     const homeTeamId = entry.home_team_uuid ? teamMap.get(String(entry.home_team_uuid)) || null : null;
     const awayTeamId = entry.away_team_uuid ? teamMap.get(String(entry.away_team_uuid)) || null : null;
     await runAsync(
-      `INSERT INTO volley_matches (video_id, sync_uuid, status, finished_at, home_team_id, away_team_id, deleted, dirty, cloud_updated_at, local_updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+      `INSERT INTO volley_matches (video_id, sync_uuid, status, finished_at, home_team_id, away_team_id, home_team_uuid, away_team_uuid, deleted, dirty, cloud_updated_at, local_updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
        ON CONFLICT(video_id) DO UPDATE SET
          sync_uuid = excluded.sync_uuid, status = excluded.status, finished_at = excluded.finished_at,
          home_team_id = excluded.home_team_id, away_team_id = excluded.away_team_id,
+         home_team_uuid = excluded.home_team_uuid, away_team_uuid = excluded.away_team_uuid,
          deleted = excluded.deleted, dirty = 0, cloud_updated_at = excluded.cloud_updated_at`,
-      [videoId, entry.uuid, entry.status, entry.finished_at, homeTeamId, awayTeamId, entry.deleted ? 1 : 0, entry.cloudUpdatedAt || now, now]
+      [videoId, entry.uuid, entry.status, entry.finished_at, homeTeamId, awayTeamId, entry.home_team_uuid || null, entry.away_team_uuid || null, entry.deleted ? 1 : 0, entry.cloudUpdatedAt || now, now]
     );
     return videoId;
   },

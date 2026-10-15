@@ -1,0 +1,103 @@
+# ============================================================================
+# Construction et publication de l'installeur Windows (mise à jour automatique).
+#
+# À chaque push sur `main` (ou via le bouton « Run workflow »), ce workflow :
+#   1. vérifie que la version de version.json n'a pas encore de Release GitHub ;
+#   2. écrit la configuration Supabase pré-remplie (clé issue du secret) ;
+#   3. construit l'installeur `ASUL-Setup-x.y.z.exe` + `latest.yml` ;
+#   4. les publie dans une Release GitHub (tag `vx.y.z`).
+#
+# Les applications installées détectent alors la nouvelle version via
+# electron-updater et se mettent à jour toutes seules.
+#
+# Secret requis (Settings → Secrets and variables → Actions) :
+#   SUPABASE_ANON_KEY  = clé « anon » publique du projet Supabase.
+# ============================================================================
+
+name: Build & publier (mise à jour automatique)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Version courante
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Get-Content version.json -Raw | ConvertFrom-Json).version
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$v"
+
+      - name: Cette version est-elle déjà publiée ?
+        id: exists
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          $url = "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$v"
+          try {
+            Invoke-RestMethod -Uri $url -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "asul-ci" } | Out-Null
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "exists=true"
+          } catch {
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "exists=false"
+          }
+
+      - name: Clé Supabase présente ?
+        if: steps.exists.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.SUPABASE_ANON_KEY }}")) {
+            Write-Error "Secret SUPABASE_ANON_KEY absent : ajoutez-le dans Settings → Secrets and variables → Actions, puis relancez."
+          }
+
+      - name: Écrire la configuration Supabase pré-remplie
+        if: steps.exists.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          New-Item -ItemType Directory -Force -Path "desktop/resources" | Out-Null
+          $sync = [ordered]@{
+            enabled = $true
+            provider = "supabase"
+            url = "https://ywxijozqdzmqhbcgkgti.supabase.co"
+            key = $env:SUPABASE_ANON_KEY
+            intervalMs = 60000
+          }
+          $sync | ConvertTo-Json | Set-Content -Path "desktop/resources/sync.json" -Encoding utf8
+
+      - name: Installer les dépendances
+        if: steps.exists.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          npm ci --prefix client
+          npm ci --prefix server
+          npm ci --prefix desktop
+
+      - name: Construire et publier l'installeur
+        if: steps.exists.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Set-Location desktop
+          npm run dist:publish

@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "provider": "supabase",
+  "url": "https://ywxijozqdzmqhbcgkgti.supabase.co",
+  "key": "COLLEZ_ICI_LA_CLE_ANON",
+  "intervalMs": 60000
+}

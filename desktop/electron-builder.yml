@@ -50,6 +50,8 @@ extraResources:
     to: server/package.json
   - from: resources/ffmpeg
     to: ffmpeg
+  - from: resources/sync.json
+    to: sync.json
 
 win:
   target:

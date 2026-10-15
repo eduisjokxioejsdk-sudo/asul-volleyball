@@ -47,6 +47,11 @@ const CLIENT_DIST = app.isPackaged
 const FFMPEG_BIN = app.isPackaged
   ? path.join(process.resourcesPath, 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
   : path.join(__dirname, 'resources', 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+// Configuration Supabase pré-remplie embarquée dans l'installeur (copiée au
+// premier lancement si l'utilisateur n'a encore rien configuré).
+const SEED_SYNC = app.isPackaged
+  ? path.join(process.resourcesPath, 'sync.json')
+  : path.join(__dirname, 'resources', 'sync.json');
 
 const DEFAULT_CONFIG = { mode: null, host: '', port: 3001 };
 const FORCE_CHOOSE = process.argv.includes('--choose-mode');
@@ -83,6 +88,21 @@ function saveConfig(config) {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
   } catch (err) {
     console.error('Écriture de config.json impossible :', err.message);
+  }
+}
+
+// Copie la configuration Supabase embarquée dans l'installeur vers le dossier
+// de données, UNIQUEMENT si aucune configuration n'existe déjà (jamais écrasé).
+function seedSyncConfig() {
+  const target = path.join(DATA_DIR, 'sync.json');
+  try {
+    if (fs.existsSync(target)) return;
+    if (!fs.existsSync(SEED_SYNC)) return;
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.copyFileSync(SEED_SYNC, target);
+    appendLog('Configuration Supabase pré-remplie depuis l’installeur.');
+  } catch (err) {
+    console.error('Pré-remplissage de sync.json impossible :', err.message);
   }
 }
 
@@ -175,6 +195,9 @@ async function waitForServer(port, timeoutMs = 40000, onTick) {
 
 function startServer(port) {
   if (serverProcess) return;
+
+  // Pré-remplit la config Supabase embarquée (premier lancement uniquement).
+  seedSyncConfig();
 
   // On transmet explicitement tous les chemins au serveur : dans une
   // installation, ils sont dans resources/ et ne peuvent pas être devinés.
