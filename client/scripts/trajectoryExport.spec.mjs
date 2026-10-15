@@ -161,7 +161,8 @@ function runViewer(data) {
     setAttribute() { this.hidden = true; },
   };
   const listeners = {};
-  const app = { innerHTML: '', addEventListener() {} };
+  const appListeners = {};
+  const app = { innerHTML: '', addEventListener(type, fn) { appListeners[type] = fn; } };
   const zoom = { innerHTML: '', hidden: true, addEventListener() {} };
   const fakeDocument = {
     title: '',
@@ -174,7 +175,7 @@ function runViewer(data) {
     },
   };
   new Function('window', 'document', VIEWER_JS)({ TRAJ_DATA: data }, fakeDocument);
-  return { listeners, badge, court };
+  return { listeners, badge, court, app, appListeners };
 }
 
 // Le terrain simulé fait 100 × 50 px pour un viewBox de 224 × 134 unités
@@ -214,6 +215,48 @@ if (harness) {
   drag(echap.listeners, echap.court, { x: 70, y: 40 }, { x: 80, y: 50 });
   echap.listeners.keydown({ key: 'Escape' });
   check('Échap efface la sélection', echap.badge.hidden === true);
+}
+
+console.log('\n== Lecteur : tri par poste de départ ==');
+check('sélecteur de poste dans le lecteur', VIEWER_JS.includes('data-zone='));
+check('postes proposés', VIEWER_JS.includes('4 — avant gauche') && VIEWER_JS.includes('Arrière (5, 6, 1, 7, 8, 9)'));
+check('calcul du poste de départ', VIEWER_JS.includes('function attackZone'));
+check(
+  'tri limité aux attaques',
+  VIEWER_JS.includes('function filterByZone') && VIEWER_JS.includes("s.kind !== 'attack'")
+);
+check('styles du sélecteur de poste', VIEWER_CSS.includes('.tj-zone-filter'));
+
+// Deux attaques parties de la zone 4 et une de l'arrière, pour le même joueur.
+const zoneList = [
+  { team_side: 'home', player_number: 4, kind: 'attack', start: { x: 70, y: 20 }, end: { x: 100, y: 40 }, result: 'point' },
+  { team_side: 'home', player_number: 4, kind: 'attack', start: { x: 70, y: 30 }, end: { x: 100, y: 50 }, result: 'point' },
+  { team_side: 'home', player_number: 4, kind: 'attack', start: { x: 30, y: 20 }, end: { x: 90, y: 40 }, result: 'continuite' },
+];
+let zoneHarness = null;
+try {
+  zoneHarness = runViewer(buildTrajectoryData(match, zoneList));
+  // Onglet Attaque : le tri par poste n'y est proposé qu'à l'attaque.
+  zoneHarness.appListeners.click({
+    target: { closest: (sel) => (sel === '[data-kind]' ? { getAttribute: () => 'attack' } : null) },
+  });
+} catch (err) {
+  console.log(`       ${err.message}`);
+}
+check('lecteur exécutable avec le tri par poste', !!zoneHarness);
+if (zoneHarness) {
+  check('onglet Attaque : le sélecteur apparaît', zoneHarness.app.innerHTML.includes('data-zone='));
+  check('sans tri : les 3 attaques', zoneHarness.app.innerHTML.includes('· 3 flèches'));
+  const chooseZone = (value) =>
+    zoneHarness.appListeners.change({
+      target: { value, closest: (sel) => (sel === '[data-zone]' ? { value } : null) },
+    });
+  chooseZone('4');
+  check('poste 4 : 2 attaques', zoneHarness.app.innerHTML.includes('· 2 flèches'));
+  chooseZone('arriere');
+  check('arrière : 1 attaque', zoneHarness.app.innerHTML.includes('· 1 flèche'));
+  chooseZone('all');
+  check('retour à « Tous » : 3 attaques', zoneHarness.app.innerHTML.includes('· 3 flèches'));
 }
 
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);

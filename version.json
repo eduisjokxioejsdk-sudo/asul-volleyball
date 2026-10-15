@@ -1,8 +1,18 @@
 {
-  "version": "2.0.5",
+  "version": "2.0.6",
   "releasedAt": "2026-10-15",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "2.0.6",
+      "date": "2026-10-15",
+      "title": "Fiche partagée : tri des attaques par poste de départ",
+      "items": [
+        "Le lecteur du dossier ZIP partagé propose « Poste de départ » sur l'onglet Attaque : seules les attaques parties de la zone choisie (4, 3, 2 ou arrière) restent affichées",
+        "Les services restent affichés et le tri se combine avec le filtre des issues, exactement comme dans l'application",
+        "Les compteurs de flèches de la fiche partagée (par joueur et par issue) suivent le tri"
+      ]
+    },
     {
       "version": "2.0.5",
       "date": "2026-10-15",

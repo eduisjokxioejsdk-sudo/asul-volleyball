@@ -136,6 +136,11 @@ body { font-family: var(--font-body); background: var(--bg-deep); color: var(--t
 .tj-toolbar-team { color: var(--text-secondary); font-size: 13px; font-weight: 600; }
 .tj-spacer { flex: 1; }
 
+/* Tri des attaques par poste de départ (zone 4, 3, 2 ou arrière). */
+.tj-zone-filter { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.tj-zone-filter-label { font-weight: 700; }
+.tj-zone-filter select { font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--border-hover); border-radius: var(--radius); background: var(--bg-tertiary); color: var(--text-primary); }
+
 .tj-filter-menu { position: relative; }
 .tj-filter-dropdown { position: absolute; right: 0; top: calc(100% + 6px); width: 250px; background: var(--bg-tertiary); border: 1px solid var(--border-hover); border-radius: var(--radius); padding: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); display: none; z-index: 30; }
 .tj-filter-menu.open .tj-filter-dropdown { display: block; }
@@ -219,6 +224,7 @@ export const VIEWER_JS = `(function () {
   var NET_X = FREE + M * U;
   var RIGHT_X = FREE + M * 2 * U;
   var ATTACK = 3 * U;
+  var ATTACK_M = 3;
   var MARGIN = 22;
   var VIEWBOX = { x: LEFT_X - MARGIN, y: FREE - MARGIN, w: (RIGHT_X - LEFT_X) + MARGIN * 2, h: M * U + MARGIN * 2 };
   var COURT = { x: LEFT_X, y: FREE, w: RIGHT_X - LEFT_X, h: M * U, netX: NET_X, attack: ATTACK, top: FREE, bottom: FREE + M * U };
@@ -314,9 +320,46 @@ export const VIEWER_JS = `(function () {
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  // ---- Poste de départ des attaques (zone 4, 3, 2 ou arrière) ------------
+  var ATTACK_START_ZONES = [
+    { id: '4', label: '4 — avant gauche' },
+    { id: '3', label: '3 — avant centre' },
+    { id: '2', label: '2 — avant droit' },
+    { id: 'arriere', label: 'Arrière (5, 6, 1, 7, 8, 9)' }
+  ];
+
+  /**
+   * Poste de départ d'une attaque, dans le repère de l'équipe marquée : le camp
+   * est partagé en 3 colonnes de 3 m (gauche → 4, centre → 3, droite → 2) et la
+   * ligne d'attaque (3 m du filet) sépare l'avant de l'arrière.
+   */
+  function attackZone(start, side) {
+    if (!start) return null;
+    var depth = side === 'away' ? (RIGHT_X - start.x) / U : (start.x - LEFT_X) / U;
+    var width = side === 'away' ? M - (start.y - FREE) / U : (start.y - FREE) / U;
+    if (depth >= M - ATTACK_M) {
+      if (width < M / 3) return '4';
+      if (width < (M / 3) * 2) return '3';
+      return '2';
+    }
+    return 'arriere';
+  }
+
+  /**
+   * Attaques dont le départ tombe dans les postes demandés : les services ne
+   * sont pas concernés et restent affichés.
+   */
+  function filterByZone(shots, zones, side) {
+    var wanted = zones || [];
+    if (wanted.length === 0) return shots;
+    return shots.filter(function (s) {
+      return s.kind !== 'attack' || wanted.indexOf(attackZone(s.start, side)) > -1;
+    });
+  }
+
   // ---- État --------------------------------------------------------------
   var hasAway = !!D.away;
-  var state = { side: 'home', kind: 'serve', hidden: [], filterOpen: false };
+  var state = { side: 'home', kind: 'serve', hidden: [], zone: 'all', filterOpen: false };
 
   function teamOf(side) { return side === 'away' ? D.away : D.home; }
   function teamName(side) {
@@ -334,8 +377,13 @@ export const VIEWER_JS = `(function () {
   function sideShots(side, kind) {
     return D.shots.filter(function (s) { return s.team_side === side && s.kind === kind; });
   }
+  // Le tri par poste de départ ne concerne que les attaques (les services
+  // restent affichés) et précède le filtre des issues, comme dans l'application.
+  function zoneShots(side, kind) {
+    return filterByZone(sideShots(side, kind), state.zone === 'all' ? [] : [state.zone], side);
+  }
   function shownShots(side, kind) {
-    return sideShots(side, kind).filter(function (s) { return !isHidden(s.result); });
+    return zoneShots(side, kind).filter(function (s) { return !isHidden(s.result); });
   }
   function playerShots(side, kind, number) {
     return shownShots(side, kind).filter(function (s) { return Number(s.player_number) === Number(number); });
@@ -452,6 +500,18 @@ export const VIEWER_JS = `(function () {
     out.push('</div>');
     out.push('<span class="tj-toolbar-team">' + esc(current) + (opp ? ' vs ' + esc(opp) : '') + '</span>');
     out.push('<span class="tj-spacer"></span>');
+    // Tri des attaques par poste de départ : proposé comme dans l'application,
+    // uniquement sur l'onglet Attaque.
+    if (state.kind === 'attack') {
+      out.push('<label class="tj-zone-filter" title="Trier les attaques selon l’endroit d’où part la flèche">');
+      out.push('<span class="tj-zone-filter-label">Poste de départ</span>');
+      out.push('<select data-zone="1">');
+      out.push('<option value="all"' + (state.zone === 'all' ? ' selected' : '') + '>Tous</option>');
+      ATTACK_START_ZONES.forEach(function (z) {
+        out.push('<option value="' + z.id + '"' + (state.zone === z.id ? ' selected' : '') + '>' + esc(z.label) + '</option>');
+      });
+      out.push('</select></label>');
+    }
     out.push('<div class="tj-filter-menu' + (state.filterOpen ? ' open' : '') + '">');
     out.push('<button type="button" class="btn btn-sm' + (hiddenCount > 0 ? ' primary' : '') + '" data-action="toggle-filter">Filtres' + (hiddenCount > 0 ? ' (' + hiddenCount + ' masqué' + (hiddenCount > 1 ? 's' : '') + ')' : '') + '</button>');
     out.push('<div class="tj-filter-dropdown">');
@@ -488,7 +548,7 @@ export const VIEWER_JS = `(function () {
     out.push('<header class="tj-top"><div class="tj-title"><strong>' + esc(D.name) + '</strong><span class="tj-badge">Consultation</span></div><div class="tj-teams">' + esc(teamName('home')) + (hasAway ? ' · ' + esc(teamName('away')) : '') + '</div></header>');
     out.push(renderTabs());
     out.push(renderToolbar());
-    out.push('<p class="tj-hint" style="margin:10px 0">Lecture seule : glissez sur un terrain pour désigner une zone — les flèches concernées passent en violet et leur nombre s’affiche. Cliquez sur « Agrandir » pour voir un terrain en grand.</p>');
+    out.push('<p class="tj-hint" style="margin:10px 0">Lecture seule : glissez sur un terrain pour désigner une zone — les flèches concernées passent en violet et leur nombre s’affiche. À l’attaque, « Poste de départ » trie les flèches selon la zone d’où part la frappe (4, 3, 2 ou arrière). Cliquez sur « Agrandir » pour voir un terrain en grand.</p>');
     out.push(renderRecap());
     if (list.length === 0) {
       out.push('<div class="tj-hint">Aucun joueur dans l’effectif de cette équipe.</div>');
@@ -665,6 +725,14 @@ export const VIEWER_JS = `(function () {
     }
   });
 
+  // Le tri par poste de départ passe par un <select> : c'est un « change ».
+  app.addEventListener('change', function (e) {
+    var zoneSel = e.target && e.target.closest ? e.target.closest('[data-zone]') : null;
+    if (!zoneSel) return;
+    state.zone = zoneSel.value;
+    render();
+  });
+
   zoomEl.addEventListener('click', function (e) {
     if (e.target === zoomEl || e.target.closest('[data-action="close-zoom"]')) closeZoom();
   });
@@ -690,13 +758,17 @@ export const README_TEXT = [
   '',
   'Ouvrez trajectoires.html dans un navigateur (double-clic sur le fichier).',
   'La page est en lecture seule : on peut changer d’équipe, basculer',
-  'Services / Attaque, filtrer les issues et agrandir un terrain, mais',
-  'aucune flèche ne peut être ajoutée ni modifiée.',
+  'Services / Attaque, trier les attaques par poste de départ, filtrer les',
+  'issues et agrandir un terrain, mais aucune flèche ne peut être ajoutée ni',
+  'modifiée.',
   '',
   'Pour repérer les flèches d’une zone : glissez la souris sur un terrain.',
   'Les flèches traversées passent en violet, les autres s’effacent, et leur',
   'nombre s’affiche sous le terrain. Un simple clic (ou la touche Échap)',
   'efface la désignation.',
+  '',
+  'À l’onglet Attaque, « Poste de départ » ne garde que les attaques parties',
+  'de la zone choisie (4, 3, 2 ou arrière) : les services restent affichés.',
   '',
   'Fichiers :',
   '  trajectoires.html  la page à ouvrir',
