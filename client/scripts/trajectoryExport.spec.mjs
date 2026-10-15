@@ -140,6 +140,82 @@ check(
 check('zone effacée par Échap', VIEWER_JS.includes('clearSelections'));
 check('compteur annoncé en toutes lettres', VIEWER_JS.includes('sélectionnée'));
 
+console.log('\n== Lecteur : sélection exécutée (DOM simulé) ==');
+// Exécute le lecteur hors ligne dans un DOM minimal : on vérifie que le
+// glissement désigne bien les flèches traversées et met à jour le compteur.
+function runViewer(data) {
+  const rect = { setAttribute() {} };
+  const court = {
+    attrs: { 'data-court': 'home|serve|4' },
+    getAttribute(name) { return name in this.attrs ? this.attrs[name] : null; },
+    setAttribute(name, value) { this.attrs[name] = value; },
+    closest() { return this; },
+    querySelector(sel) { return sel === '.tj-sel-rect' ? rect : null; },
+    querySelectorAll() { return []; },
+    getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 50 }; },
+  };
+  const badge = {
+    textContent: '',
+    hidden: true,
+    removeAttribute() { this.hidden = false; },
+    setAttribute() { this.hidden = true; },
+  };
+  const listeners = {};
+  const app = { innerHTML: '', addEventListener() {} };
+  const zoom = { innerHTML: '', hidden: true, addEventListener() {} };
+  const fakeDocument = {
+    title: '',
+    getElementById: (id) => (id === 'app' ? app : id === 'zoom' ? zoom : null),
+    addEventListener: (type, fn) => { listeners[type] = fn; },
+    querySelectorAll: (sel) => {
+      if (sel.indexOf('data-court=') > -1) return [court];
+      if (sel.indexOf('data-sel-count=') > -1) return [badge];
+      return [];
+    },
+  };
+  new Function('window', 'document', VIEWER_JS)({ TRAJ_DATA: data }, fakeDocument);
+  return { listeners, badge, court };
+}
+
+// Le terrain simulé fait 100 × 50 px pour un viewBox de 224 × 134 unités
+// (marge de 22 unités autour du terrain) : règle de trois vers l'écran.
+function toScreen(point) {
+  return { clientX: ((point.x + 17) / 224) * 100, clientY: ((point.y + 17) / 134) * 50 };
+}
+function drag(listeners, court, from, to) {
+  listeners.pointerdown({ button: 0, target: court, ...toScreen(from), preventDefault() {} });
+  listeners.pointermove({ ...toScreen(to) });
+  listeners.pointerup({ ...toScreen(to) });
+}
+
+let viewerOk = true;
+let harness = null;
+try {
+  harness = runViewer(buildTrajectoryData(match, shots));
+} catch (err) {
+  viewerOk = false;
+  console.log(`       ${err.message}`);
+}
+check('lecteur exécutable dans un DOM minimal', viewerOk);
+if (harness) {
+  drag(harness.listeners, harness.court, { x: 70, y: 40 }, { x: 80, y: 50 });
+  check('zone traversant la flèche : 1 sélectionnée', harness.badge.textContent === '1 flèche sélectionnée', harness.badge.textContent);
+  check('compteur affiché', harness.badge.hidden === false);
+
+  const clic = runViewer(buildTrajectoryData(match, shots));
+  drag(clic.listeners, clic.court, { x: 70, y: 40 }, { x: 70, y: 40 });
+  check('simple clic : aucune sélection', clic.badge.hidden === true && clic.badge.textContent === '', clic.badge.textContent);
+
+  const ailleurs = runViewer(buildTrajectoryData(match, shots));
+  drag(ailleurs.listeners, ailleurs.court, { x: 190, y: 100 }, { x: 200, y: 110 });
+  check('zone à l’écart de la flèche : aucune sélection', ailleurs.badge.hidden === true);
+
+  const echap = runViewer(buildTrajectoryData(match, shots));
+  drag(echap.listeners, echap.court, { x: 70, y: 40 }, { x: 80, y: 50 });
+  echap.listeners.keydown({ key: 'Escape' });
+  check('Échap efface la sélection', echap.badge.hidden === true);
+}
+
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);
 process.exit(failures === 0 ? 0 : 1);
 
