@@ -26,5 +26,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
+  },
+  "overrides": {
+    "@noble/hashes": "1.4.0"
   }
 }
