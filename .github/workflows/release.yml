@@ -54,12 +54,25 @@ jobs:
         run: |
           $v = "${{ steps.version.outputs.version }}"
           $url = "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$v"
+          # La version n'est considérée publiée que si la Release contient TOUT ce dont
+          # la mise à jour automatique a besoin : l'installeur ET latest.yml. Une Release
+          # créée mais incomplète (envoi interrompu) doit être reconstruite, sinon plus
+          # aucune mise à jour n'aboutirait pour cette version, sans aucun signal.
+          $required = @("ASUL-Setup-$v.exe", "latest.yml")
+          $exists = $false
           try {
-            Invoke-RestMethod -Uri $url -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "asul-ci" } | Out-Null
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "exists=true"
+            $release = Invoke-RestMethod -Uri $url -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "asul-ci" }
+            $names = @($release.assets | ForEach-Object { $_.name })
+            $missing = @($required | Where-Object { $names -notcontains $_ })
+            if ($missing.Count -eq 0) {
+              $exists = $true
+            } else {
+              Write-Host "Release v$v incomplete (assets manquants : $($missing -join ', ')) : reconstruction."
+            }
           } catch {
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "exists=false"
+            Write-Host "Aucune Release v$v : construction."
           }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "exists=$($exists.ToString().ToLower())"
 
       - name: Clé Supabase présente ?
         if: steps.exists.outputs.exists == 'false'
