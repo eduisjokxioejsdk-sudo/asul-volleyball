@@ -106,11 +106,54 @@ jobs:
           npm ci --prefix server
           npm ci --prefix desktop
 
-      - name: Construire et publier l'installeur
+      - name: Créer la Release GitHub (l'installeur y sera déposé)
         if: steps.exists.outputs.exists == 'false'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # electron-builder crée lui-même la Release s'il ne la trouve pas, mais
+          # sa requête de création peut être rejetée par GitHub (422 « Published
+          # releases must have a valid tag ») quand le tag est créé au même
+          # moment. On crée donc la Release ici, une bonne fois : electron-builder
+          # se contentera ensuite d'y déposer les fichiers.
+          $v = "${{ steps.version.outputs.version }}"
+          $body = @{ tag_name = "v$v"; name = "$v"; draft = $false; prerelease = $false } | ConvertTo-Json -Compress
+          try {
+            Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/${{ github.repository }}/releases" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "asul-ci" } -ContentType "application/json; charset=utf-8" -Body $body | Out-Null
+            Write-Host "Release v$v créée."
+          } catch {
+            Write-Host "Release v$v déjà présente : $($_.Exception.Message)"
+          }
+
+      - name: Construire et publier l'installeur
+        if: steps.exists.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Autorise l'envoi dans une Release publiée depuis plus de deux heures :
+          # sans cela electron-builder refuserait d'y déposer les fichiers et une
+          # publication interrompue ne pourrait jamais être réparée.
+          EP_GH_IGNORE_TIME: "true"
+        run: |
           Set-Location desktop
           npm run dist:publish
+
+      - name: Vérifier que la Release est complète
+        if: steps.exists.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Une Release sans latest.yml ne permettrait aucune mise à jour : on
+          # échoue explicitement au lieu de laisser passer une publication
+          # partielle (la prochaine exécution la reconstruira).
+          $v = "${{ steps.version.outputs.version }}"
+          $url = "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$v"
+          $release = Invoke-RestMethod -Uri $url -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "asul-ci" }
+          $names = @($release.assets | ForEach-Object { $_.name })
+          $missing = @(@("ASUL-Setup-$v.exe", "latest.yml") | Where-Object { $names -notcontains $_ })
+          if ($missing.Count -gt 0) {
+            Write-Error "Release v$v incomplète : $($missing -join ', ') manquant(s)."
+          }
+          Write-Host "Release v$v complète : $($names -join ', ')"
