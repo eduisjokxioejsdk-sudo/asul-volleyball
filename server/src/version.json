@@ -1,8 +1,17 @@
 {
-  "version": "2.0.1",
+  "version": "2.0.3",
   "releasedAt": "2026-10-15",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "2.0.3",
+      "date": "2026-10-15",
+      "title": "Version de test : vérification de la mise à jour automatique",
+      "items": [
+        "Version publiée uniquement pour vérifier la mise à jour automatique de bout en bout : détection de la nouvelle version, téléchargement, redémarrage et installation",
+        "Aucun changement fonctionnel par rapport à la 2.0.1"
+      ]
+    },
     {
       "version": "2.0.1",
       "date": "2026-10-15",
