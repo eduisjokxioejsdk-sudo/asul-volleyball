@@ -5801,6 +5801,168 @@ table.report tbody tr:hover td {
   font-weight: 700;
 }
 
+/* --- Mode « Relecture » (MatchReviewHome, MatchReviewDashboard, MatchReviewSidebar) --- */
+
+.mrv-home {
+  max-width: 720px;
+}
+
+.mrv-card {
+  cursor: default;
+}
+
+.mrv-card-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.mrv-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mrv-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.mrv-filters {
+  margin-bottom: 0;
+}
+
+.mrv-points {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 120px;
+  max-height: 46vh;
+  padding-right: 2px;
+}
+
+.mrv-point {
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.mrv-point:hover {
+  border-color: var(--border-accent);
+}
+
+.mrv-point.active {
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+
+.mrv-point-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.mrv-point-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mrv-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.mrv-setting {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.mrv-now {
+  margin-top: 0;
+}
+
+.mrv-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.mrv-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
+.mrv-current {
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+
+.mrv-current-head {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.mrv-current-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mrv-current-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.mrv-current-row:first-of-type {
+  border-top: none;
+}
+
+.mrv-current-row code {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.mrv-current-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mrv-current-all {
+  margin-top: 8px;
+}
+
+.mrv-title-name {
+  font-size: 15px;
+}
+
 .plp-players {
   display: flex;
   flex-direction: column;

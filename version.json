@@ -1,8 +1,22 @@
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
   "releasedAt": "2026-10-19",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "2.2.0",
+      "date": "2026-10-19",
+      "title": "Relecture : le match entier, sans les temps morts",
+      "items": [
+        "Nouvel onglet « Relecture », à côté de Codage DataVolley, Trajectoires et Playlists : chaque match codé se relit en enchaînant les points, la vidéo sautant directement d'un point au suivant",
+        "Marges d'avance et de sortie réglables (2 à 6 s), compteur du temps mort évité, vitesse de lecture de 0,5× à 2×, et mode « Match complet » pour tout lire",
+        "À droite de l'écran, en permanence : filtres Action, Qualité (évaluation) et Position (poste de départ 4, 3, 2, arrière), complétés par équipe, joueur, set et conclusion du point",
+        "La liste des points suit la lecture : le point en cours est surligné et la liste défile toute seule ; un clic lit le point voulu",
+        "Les actions du point en cours s'affichent en bas de la liste : chaque action et le point entier s'ajoutent à une playlist d'un clic",
+        "Raccourcis du lecteur : Espace (lecture/pause), ← → (point précédent / suivant), + − (vitesse), Échap (arrêter)",
+        "L'onglet « Point par point » du codage est remplacé par un bouton « Relecture » dans la barre du codage : la même lecture, en plein écran, avec les filtres et l'ajout aux playlists"
+      ]
+    },
     {
       "version": "2.1.0",
       "date": "2026-10-19",

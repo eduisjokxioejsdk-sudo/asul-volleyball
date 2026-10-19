@@ -19,6 +19,10 @@ Application d'analyse de vidéos de volleyball.
   séance exportable en **CSV** (timecodes) et en **EDL** pour le montage, et **export de clips MP4** :
   un fichier par joueur, par poste, par joueur et poste ou la playlist entière (dossier ZIP, avec la
   feuille de séance), en coupes rapides ou précises.
+- **Relecture** : relisez un match codé **en enchaînant les points, sans les temps morts** — la vidéo
+  saute d'un point au suivant (marges et vitesse réglables). À droite, en permanence : filtres
+  **action**, **qualité** et **position** (poste de départ 4, 3, 2, arrière), la liste des points qui suit
+  la lecture, et les **actions du point en cours**, ajoutables à une playlist d'un clic.
 - **Interopérabilité** : export / import du format **`.dvw`** (DataVolley), rotation point par point incluse.
 - **Match en direct** : caméra multi-appareils ; l'enregistrement est conservé et devient une **vidéo de
   replay** avec les points **ancrés**.

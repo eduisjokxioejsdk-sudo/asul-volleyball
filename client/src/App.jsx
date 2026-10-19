@@ -13,6 +13,8 @@ import Dashboard from './pages/Dashboard';
 import DataVolleyDashboard from './pages/DataVolleyDashboard';
 import PlaylistHome from './pages/PlaylistHome';
 import PlaylistDashboard from './pages/PlaylistDashboard';
+import MatchReviewHome from './pages/MatchReviewHome';
+import MatchReviewDashboard from './pages/MatchReviewDashboard';
 import TrajectoryDashboard from './pages/TrajectoryDashboard';
 import TrajectoryView from './pages/TrajectoryView';
 import TrajectoryTeamReport from './pages/TrajectoryTeamReport';
@@ -129,6 +131,22 @@ function App() {
                 element={
                   <AnimatedPage>
                     {user ? <PlaylistDashboard user={user} /> : <Navigate to="/login" />}
+                  </AnimatedPage>
+                }
+              />
+              <Route
+                path="/relecture"
+                element={
+                  <AnimatedPage>
+                    {user ? <MatchReviewHome /> : <Navigate to="/login" />}
+                  </AnimatedPage>
+                }
+              />
+              <Route
+                path="/relecture/:id"
+                element={
+                  <AnimatedPage>
+                    {user ? <MatchReviewDashboard user={user} /> : <Navigate to="/login" />}
                   </AnimatedPage>
                 }
               />

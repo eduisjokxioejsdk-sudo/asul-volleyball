@@ -4,9 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { videosAPI, foldersAPI, liveAPI, datavolleyAPI } from '../services/api';
 import TrajectoryHome from '../components/TrajectoryHome';
 import PlaylistHome from './PlaylistHome';
+import MatchReviewHome from './MatchReviewHome';
 import useCollectionChanged from '../hooks/useCollectionChanged';
 import {
   Check,
+  CirclePlay,
   Dices,
   Film,
   Folder,
@@ -458,6 +460,9 @@ function Dashboard({ user, onLogout }) {
           <button className={`mode-btn ${mode === 'playlists' ? 'active' : ''}`} onClick={() => handleSetMode('playlists')}>
             <Film size={16} /> Playlists
           </button>
+          <button className={`mode-btn ${mode === 'relecture' ? 'active' : ''}`} onClick={() => handleSetMode('relecture')}>
+            <CirclePlay size={16} /> Relecture
+          </button>
         </div>
 
         {/* Onglet Trajectoires : espace de travail dédié (les sections vidéo n'y servent pas) */}
@@ -465,6 +470,8 @@ function Dashboard({ user, onLogout }) {
           <TrajectoryHome user={user} />
         ) : mode === 'playlists' ? (
           <PlaylistHome />
+        ) : mode === 'relecture' ? (
+          <MatchReviewHome />
         ) : (
           /* Les vidéos sont communes aux deux onglets. Les sections « Match en
              direct » (sessions live, corbeille et matchs finis) ne concernent
