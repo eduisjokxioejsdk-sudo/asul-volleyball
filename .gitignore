@@ -28,6 +28,9 @@ server/asul.db-wal
 # Uploads (keep folder, ignore files)
 server/uploads/**
 !server/uploads/.gitkeep
+
+# Exports temporaires (clips MP4 du mode « Playlists »)
+server/exports/
 *.mp4
 *.mov
 *.avi

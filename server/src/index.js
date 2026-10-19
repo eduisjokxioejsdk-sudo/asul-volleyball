@@ -13,6 +13,7 @@ const datavolleyRoutes = require('./routes/datavolley');
 const liveRoutes = require('./routes/live');
 const teamsRoutes = require('./routes/teams');
 const trajectoryRoutes = require('./routes/trajectories');
+const playlistRoutes = require('./routes/playlists');
 const systemRoutes = require('./routes/system');
 const { initSocket } = require('./socket');
 const db = require('./database');
@@ -50,6 +51,7 @@ app.use('/api/datavolley', datavolleyRoutes);
 app.use('/api/live', liveRoutes);
 app.use('/api/teams', teamsRoutes);
 app.use('/api/trajectories', trajectoryRoutes);
+app.use('/api/playlists', playlistRoutes);
 app.use('/api/system', systemRoutes);
 
 // Health check
@@ -117,6 +119,10 @@ db.waitReady(() => {
 
   // Initialise Socket.IO pour le mode "match en direct" (multi-appareils).
   initSocket(server);
+
+  // Exports de clips (mode « Playlists ») : le dossier temporaire est vidé au
+  // démarrage (les ZIP d'une session précédente ne sont plus téléchargeables).
+  require('./clipExport').purgeExports().catch(() => {});
 
   // Synchronisation cloud (partage à distance, Supabase) : boucles de fond
   // lancées APRÈS le démarrage, sans jamais le retarder. Sans configuration,

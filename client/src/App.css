@@ -5366,6 +5366,645 @@ table.report tbody tr:hover td {
 .dv-panel-toggle:disabled {
   opacity: 0.8;
   cursor: default;
+
+/* ============================================================================
+   MODE « PLAYLISTS » — accueil, lecteur, barre latérale et parcours du match.
+   (PlaylistHome, PlaylistDashboard, PlaylistSidebar, MatchBrowser)
+   ============================================================================ */
+
+/* --- Accueil (liste des playlists) ---------------------------------------- */
+.plp-home {
+  margin-top: 20px;
+}
+
+.plp-create {
+  flex-wrap: wrap;
+}
+
+.plp-rename-input {
+  padding: 4px 8px;
+  font-size: 13px;
+  min-width: 180px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+/* --- En-tête du lecteur --------------------------------------------------- */
+.plp-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.plp-name-input {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  min-width: 0;
+}
+
+.plp-name-input:hover,
+.plp-name-input:focus {
+  border-color: var(--border-subtle);
+  background: var(--bg-tertiary);
+  outline: none;
+}
+
+.plp-title-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-left: 6px;
+}
+
+.plp-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* --- Grille : vidéo à gauche, playlist à droite ---------------------------- */
+.plp-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 14px;
+  align-items: start;
+  min-height: 0;
+}
+
+.plp-player-col,
+.plp-side-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.plp-player-col .video-player-wrapper video {
+  width: 100%;
+  display: block;
+  border-radius: var(--radius);
+  background: #000;
+}
+
+.plp-player-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 260px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+.plp-player-empty p {
+  margin: 0;
+  font-size: 13px;
+  max-width: 420px;
+}
+
+.plp-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plp-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.plp-keys {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.plp-now {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.plp-now-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--text-primary);
+}
+
+.plp-now-meta {
+  color: var(--text-muted);
+}
+
+.plp-now .btn {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* --- Barre latérale ------------------------------------------------------- */
+.plp-side-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+
+.plp-side-tabs button {
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.plp-side-tabs button.active {
+  background: var(--accent);
+  color: #151311;
+}
+
+.plp-side,
+.plp-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.plp-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plp-side-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.plp-side-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.plp-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.plp-item {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.plp-item.active {
+  border-color: var(--border-accent);
+  box-shadow: var(--shadow-accent);
+}
+
+.plp-item.missing {
+  opacity: 0.62;
+}
+
+.plp-item-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  text-align: left;
+  font: inherit;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  padding: 8px 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.plp-item-main:hover {
+  background: var(--bg-card-hover);
+}
+
+.plp-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.plp-item-pos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #151311;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.plp-item-match {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.plp-item-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.plp-item-meta,
+.plp-item-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.plp-item-codes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plp-item-buttons {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 4px 4px 0;
+}
+
+.plp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  font: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.plp-icon-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.plp-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.plp-icon-btn.danger:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--border-accent);
+}
+
+/* --- Parcours du match (MatchBrowser) ------------------------------------- */
+.plp-mode-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.plp-mode-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.plp-mode-tabs button.active {
+  color: #151311;
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.plp-add-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.plp-add-scope label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.plp-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.plp-add-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-accent);
+}
+
+.plp-add-btn.ghost {
+  opacity: 0.8;
+}
+
+.plp-chip {
+  font: inherit;
+  cursor: pointer;
+}
+
+.plp-chip.matched {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+  font-weight: 700;
+}
+
+.plp-players {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plp-player-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+.plp-player-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.plp-player-head strong {
+  color: var(--text-primary);
+}
+
+.plp-player-role {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.plp-player-total {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.plp-player-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* --- Boîte « Ajouter à une playlist » (depuis le codage) ------------------- */
+.plp-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.plp-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  font: inherit;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.plp-pick:hover:not(:disabled) {
+  border-color: var(--border-accent);
+  background: var(--bg-card-hover);
+}
+
+.plp-pick:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.plp-pick-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.plp-pick-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* --- Export de clips MP4 --------------------------------------------------- */
+.plp-export-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+.plp-export-form .pl-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.plp-export-form select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+
+.plp-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.plp-export-job {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.plp-export-bar {
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.plp-export-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.plp-export-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.plp-export-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.plp-export-files li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 9px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.plp-export-file-name {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plp-export-file-size {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  flex: none;
+}
+
+@media (max-width: 1100px) {
+  .plp-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .plp-items {
+    max-height: none;
+  }
+}
+
 }
 
 .dv-panel-toggle-icon {

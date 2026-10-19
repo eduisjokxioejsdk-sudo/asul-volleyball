@@ -15,6 +15,7 @@ import MatchBoard from '../components/MatchBoard';
 import VideoShortcuts from '../components/VideoShortcuts';
 import CodingConsole from '../components/CodingConsole';
 import CodedActionsList from '../components/CodedActionsList';
+import AddToPlaylistDialog from '../components/AddToPlaylistDialog';
 import FloatingPanel from '../components/FloatingPanel';
 import PanelsMenu from '../components/PanelsMenu';
 import ShortcutSettings from '../components/ShortcutSettings';
@@ -27,6 +28,14 @@ import PointTimeline from '../components/PointTimeline';
 import { DvKeyPad, DvSyntaxHelp } from '../components/DvKeypad';
 import { AttackCourtPicker, DistributionCourt } from '../components/AttackCourt';
 import { buildTimelineEvents, buildTimelinePoints } from '../utils/matchTimeline';
+import {
+  PLAYLIST_POSTES,
+  filterPlaylistPoints,
+  matchedActionIndexes,
+  normalizePlaylistItems,
+  playlistItemFromRally,
+  posteOfAction,
+} from '../utils/playlists';
 import {
   AlertTriangle,
   ArrowDownUp,
@@ -46,6 +55,7 @@ import {
   House,
   Keyboard,
   ListChecks,
+  Film,
   MonitorPlay,
   Pencil,
   Plane,
@@ -320,6 +330,11 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [plAction, setPlAction] = useState('all');
   const [plEval, setPlEval] = useState('all');
   const [plMethod, setPlMethod] = useState('all');
+  // Tri « attaque du joueur X partie du poste Y » (4, 3, 2, arrière).
+  const [plPlayer, setPlPlayer] = useState('all');
+  const [plPoste, setPlPoste] = useState('all');
+  // Sélection envoyée vers une playlist de séance (boîte « Ajouter à une playlist »).
+  const [addTarget, setAddTarget] = useState(null);
 
   // Confort de saisie : pré-remplissage du serveur
   const [autoServe, setAutoServe] = useState(true);
@@ -704,18 +719,83 @@ function DataVolleyDashboard({ user, onLogout }) {
     [statsActions, statsRallies, setups, setterNumbers]
   );
 
-  // Playlist filtrée (matrice croisée équipe × action × évaluation × façon de gagner).
+  // Playlist filtrée (voir utils/playlists.js : critères « présents dans le
+  // point » + tri joueur × poste appliqué à la MÊME action).
+  const playlistFilters = useMemo(
+    () => ({
+      team: plTeam,
+      action: plAction,
+      evaluation: plEval,
+      method: plMethod,
+      playerNumber: plPlayer,
+      poste: plPoste,
+    }),
+    [plTeam, plAction, plEval, plMethod, plPlayer, plPoste]
+  );
+
   const filteredPlaylist = useMemo(
-    () =>
-      (playlist || []).filter((p) => {
-        const acts = p.actions || [];
-        if (plTeam !== 'all' && !acts.some((a) => a.team === plTeam)) return false;
-        if (plAction !== 'all' && !acts.some((a) => a.action === plAction)) return false;
-        if (plEval !== 'all' && !acts.some((a) => a.evaluation === plEval)) return false;
-        if (plMethod !== 'all' && rallyWinMethod(p).key !== plMethod) return false;
-        return true;
-      }),
-    [playlist, plTeam, plAction, plEval, plMethod]
+    () => filterPlaylistPoints(playlist, playlistFilters),
+    [playlist, playlistFilters]
+  );
+
+  /** Actions d'un point qui satisfont le tri joueur × poste (surlignage). */
+  const playlistMatchedActions = useCallback(
+    (rally) =>
+      plPlayer === 'all' && plPoste === 'all'
+        ? new Set()
+        : matchedActionIndexes(rally, {
+            team: plTeam,
+            playerNumber: plPlayer,
+            action: plAction,
+            poste: plPoste,
+          }),
+    [plTeam, plPlayer, plPoste, plAction]
+  );
+
+  /** Joueurs présents dans le codage (pour le sélecteur « Joueur »). */
+  const playlistPlayers = useMemo(() => {
+    const numbers = new Set();
+    for (const a of actions) {
+      if (plTeam !== 'all' && a.team !== plTeam) continue;
+      const n = Number(a.player_number) || 0;
+      if (n) numbers.add(n);
+    }
+    return [...numbers].sort((a, b) => a - b);
+  }, [actions, plTeam]);
+
+  /** Nom d'un joueur d'après les fiches d'équipe (roster du set en cours). */
+  const playerNameOf = useCallback(
+    (team, number) =>
+      ((team === 'away' ? awayConfig : homeConfig)?.roster || []).find(
+        (p) => Number(p.number) === Number(number)
+      )?.name || '',
+    [awayConfig, homeConfig]
+  );
+
+  /**
+   * Prépare une entrée de playlist depuis le codage (action seule ou point
+   * entier) et ouvre la boîte « Ajouter à une playlist ».
+   */
+  const openAddToPlaylist = useCallback(
+    (rally, action, scope) => {
+      if (!video) return;
+      const team = action?.team || rally?.actions?.[0]?.team || 'home';
+      const item = playlistItemFromRally(rally, action, {
+        video,
+        sync,
+        scope,
+        teamLabel: team === 'away' ? team2 : team1,
+        playerName: playerNameOf(team, action?.player_number),
+      });
+      if (!item) {
+        setFlash({ ok: false, text: 'Action sans timecode : synchronisez la vidéo avant de l’ajouter.' });
+        if (flashTimer.current) clearTimeout(flashTimer.current);
+        flashTimer.current = setTimeout(() => setFlash(null), 4000);
+        return;
+      }
+      setAddTarget({ items: normalizePlaylistItems([item]) });
+    },
+    [video, sync, team1, team2, playerNameOf]
   );
 
   // Chargement initial : vidéo + actions + synchronisation + état du match + positions.
@@ -1603,6 +1683,13 @@ function DataVolleyDashboard({ user, onLogout }) {
                     itemClassFor={(a) => (isTerminalEvaluation(a.action, a.evaluation) ? 'terminal' : '')}
                     itemTitle={(a) => `${describeCode(a.code, codeOpts)} — cliquer pour corriger la zone`}
                     onPickItem={(a) => setZoneActionUid(a.uid)}
+                    onAddToPlaylist={(a) => {
+                      const rally = rallies.find((r) => r.actions.includes(a));
+                      if (rally) openAddToPlaylist(rally, a, 'action');
+                    }}
+                    onAddRallyToPlaylist={(r) =>
+                      openAddToPlaylist(r, r.actions[r.actions.length - 1] || r.actions[0], 'rally')
+                    }
                     disabled={matchFinished}
                   />
                 </FloatingPanel>
@@ -1793,7 +1880,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                     <h4>Lecture point par point</h4>
                     <p className="dv-hint">
                       Enchaîne les points en ignorant les temps morts (lead-in {sync.lead_in ?? 4}s · lead-out{' '}
-                      {sync.lead_out ?? 3}s). Filtrez la playlist pour ne revoir que certains points.
+                      {sync.lead_out ?? 3}s). Filtrez la playlist pour ne revoir que certains points — ou triez
+                      par joueur et par poste de départ (4, 3, 2, arrière).
                     </p>
                     <div className="dv-playlist-controls">
                       {playlistMode ? (
@@ -1809,6 +1897,14 @@ function DataVolleyDashboard({ user, onLogout }) {
                           <Play size={13} /> Lecture continue
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => navigate('/playlists')}
+                        title="Séances : réunir des actions de plusieurs matchs dans une playlist"
+                      >
+                        <Film size={13} /> Playlists de séance
+                      </button>
                     </div>
 
                     <div className="pl-filters">
@@ -1847,34 +1943,70 @@ function DataVolleyDashboard({ user, onLogout }) {
                           ))}
                         </select>
                       </label>
+                      <label className="pl-filter" title="Attaques du joueur choisi">
+                        Joueur
+                        <select
+                          value={String(plPlayer)}
+                          onChange={(e) => setPlPlayer(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                        >
+                          <option value="all">Tous</option>
+                          {playlistPlayers.map((n) => (
+                            <option key={n} value={n}>
+                              n°{String(n).padStart(2, '0')}
+                              {playerNameOf('home', n) ? ` ${playerNameOf('home', n)}` : ''}
+                              {!playerNameOf('home', n) && playerNameOf('away', n) ? ` ${playerNameOf('away', n)}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="pl-filter" title="Tri des attaques selon l’endroit d’où part la frappe">
+                        Poste de départ
+                        <select value={plPoste} onChange={(e) => setPlPoste(e.target.value)}>
+                          <option value="all">Tous</option>
+                          {PLAYLIST_POSTES.map((poste) => (
+                            <option key={poste.id} value={poste.id}>{poste.label}</option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
                     <div className="pl-summary">
                       {filteredPlaylist.length} point(s) sur {playlist.length}
+                      {plPlayer !== 'all' || plPoste !== 'all'
+                        ? ' · tri joueur × poste : les actions concernées sont surlignées'
+                        : ''}
                     </div>
 
                     <div className="dv-actions-list">
                       {filteredPlaylist.length === 0 ? (
                         <p className="dv-empty">Aucun point ne correspond aux filtres (ou points incomplets).</p>
                       ) : (
-                        filteredPlaylist.map((p) => (
-                          <div
-                            key={p.pointNumber}
-                            className={`dv-rally ${playlistMode && playlistIndex === p.index - 1 ? 'active' : ''}`}
-                            onClick={() => startPlaylist(playlist.indexOf(p))}
-                          >
-                            <div className="dv-rally-head">
-                              <span>Point {p.pointNumber} · {rallyWinMethod(p).label}</span>
-                              <span className="dv-rally-time">
-                                {formatTimecode(p.segmentStart)} → {formatTimecode(p.segmentEnd)}
-                              </span>
+                        filteredPlaylist.map((p) => {
+                          const matched = playlistMatchedActions(p);
+                          return (
+                            <div
+                              key={p.pointNumber}
+                              className={`dv-rally ${playlistMode && playlistIndex === p.index - 1 ? 'active' : ''}`}
+                              onClick={() => startPlaylist(playlist.indexOf(p))}
+                            >
+                              <div className="dv-rally-head">
+                                <span>Point {p.pointNumber} · {rallyWinMethod(p).label}</span>
+                                <span className="dv-rally-time">
+                                  {formatTimecode(p.segmentStart)} → {formatTimecode(p.segmentEnd)}
+                                </span>
+                              </div>
+                              <div className="dv-rally-codes">
+                                {p.actions.map((a) => (
+                                  <span
+                                    key={a.action_index}
+                                    className={`dv-chip${matched.has(a.action_index) ? ' plp-chip matched' : ''}`}
+                                  >
+                                    {a.code}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
-                            <div className="dv-rally-codes">
-                              {p.actions.map((a) => (
-                                <span key={a.action_index} className="dv-chip">{a.code}</span>
-                              ))}
-                            </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </motion.div>
@@ -2092,6 +2224,21 @@ function DataVolleyDashboard({ user, onLogout }) {
           )}
         </div>{/* /.vd-main */}
       </div>{/* /.vd-workspace */}
+
+      {/* Boîte « Ajouter à une playlist » (playlists de séance, multi-matchs). */}
+      <AnimatePresence>
+        {addTarget && (
+          <AddToPlaylistDialog
+            items={addTarget.items}
+            onClose={() => setAddTarget(null)}
+            onDone={(ok, text) => {
+              setFlash({ ok, text });
+              if (flashTimer.current) clearTimeout(flashTimer.current);
+              flashTimer.current = setTimeout(() => setFlash(null), 4000);
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showSync && (

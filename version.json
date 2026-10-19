@@ -1,8 +1,24 @@
 {
-  "version": "2.0.6",
-  "releasedAt": "2026-10-15",
+  "version": "2.1.0",
+  "releasedAt": "2026-10-19",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "2.1.0",
+      "date": "2026-10-19",
+      "title": "Mode Playlists : des séances d'actions, joueur par joueur et par poste",
+      "items": [
+        "Nouvel onglet « Playlists », à côté de Codage DataVolley et Trajectoires : une playlist réunit des actions choisies à la main, y compris issues de plusieurs matchs",
+        "Parcours d'un match codé : point par point, ou par joueur avec ses attaques triées par poste de départ (4, 3, 2, arrière)",
+        "Chaque action s'ajoute d'un clic (« + » sur l'action, « + Point » pour tout le point) ; filtres équipe, joueur, action, poste et set",
+        "Depuis le codage d'un match : filtres « Joueur » et « Poste de départ » dans l'onglet Point par point (les actions concernées sont surlignées), et bouton « + » pour envoyer une action ou un point vers une playlist",
+        "Le lecteur enchaîne les actions — même d'un match à l'autre — et affiche la playlist à côté de la vidéo",
+        "Raccourcis du lecteur : Espace (lecture/pause), ← → (action précédente / suivante), Échap (arrêter) ; accès direct « Playlists de séance » depuis l'onglet Point par point du codage",
+        "Export de clips MP4 : découpage des actions par ffmpeg et livraison d'un dossier ZIP — un fichier par joueur, par poste de départ (4, 3, 2, arrière), par joueur et par poste, ou la playlist entière, avec en option un clip par action et la feuille de séance (CSV)",
+        "Coupes rapides (copie de flux, sans réencodage) ou précises (réencodage), avec suivi de l'avancement et téléchargement du ZIP depuis l'application",
+        "Feuille de séance exportable en CSV (timecodes, joueur, poste) et en EDL pour le montage"
+      ]
+    },
     {
       "version": "2.0.6",
       "date": "2026-10-15",

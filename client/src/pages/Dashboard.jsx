@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { videosAPI, foldersAPI, liveAPI, datavolleyAPI } from '../services/api';
 import TrajectoryHome from '../components/TrajectoryHome';
+import PlaylistHome from './PlaylistHome';
 import useCollectionChanged from '../hooks/useCollectionChanged';
 import {
   Check,
@@ -454,11 +455,16 @@ function Dashboard({ user, onLogout }) {
           <button className={`mode-btn ${mode === 'trajectories' ? 'active' : ''}`} onClick={() => handleSetMode('trajectories')}>
             <Route size={16} /> Trajectoires
           </button>
+          <button className={`mode-btn ${mode === 'playlists' ? 'active' : ''}`} onClick={() => handleSetMode('playlists')}>
+            <Film size={16} /> Playlists
+          </button>
         </div>
 
         {/* Onglet Trajectoires : espace de travail dédié (les sections vidéo n'y servent pas) */}
         {mode === 'trajectories' ? (
           <TrajectoryHome user={user} />
+        ) : mode === 'playlists' ? (
+          <PlaylistHome />
         ) : (
           /* Les vidéos sont communes aux deux onglets. Les sections « Match en
              direct » (sessions live, corbeille et matchs finis) ne concernent
