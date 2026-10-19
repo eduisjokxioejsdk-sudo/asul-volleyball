@@ -1,8 +1,18 @@
 {
-  "version": "3.0.0",
+  "version": "3.0.1",
   "releasedAt": "2026-10-19",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.0.1",
+      "date": "2026-10-19",
+      "title": "Écran noir corrigé à l'ouverture d'un match",
+      "items": [
+        "Correction de l'écran noir : depuis la 3.0.0, ouvrir un match pouvait afficher une page vide. Le codage, la Consultation, la Correction et l'Analyse s'ouvrent de nouveau normalement",
+        "Le système de playlists est définitivement supprimé : les playlists créées dans les versions 2.1 et 2.2 sont retirées des postes (elles n'étaient plus accessibles)",
+        "Un contrôle automatique a été ajouté aux vérifications du projet pour empêcher ce type d'erreur (valeur utilisée avant sa déclaration) de revenir"
+      ]
+    },
     {
       "version": "3.0.0",
       "date": "2026-10-19",

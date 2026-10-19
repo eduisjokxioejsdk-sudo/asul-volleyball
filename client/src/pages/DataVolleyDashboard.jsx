@@ -616,20 +616,6 @@ function DataVolleyDashboard({ user, onLogout }) {
     return rotationAt(consultFiltered, matchState, consultIndex) || liveRotation;
   }, [consultIndex, consultFiltered, matchState, liveRotation]);
 
-  // Anomalies du codage (mode Correction) : le match doit être synchronisé pour
-  // que l'absence de temps vidéo soit signalée.
-  const issues = useMemo(
-    () =>
-      codeIssues(actions, {
-        roster: {
-          home: (homeConfig?.roster || []).map((p) => p.number),
-          away: (awayConfig?.roster || []).map((p) => p.number),
-        },
-        requireTimecode: Number(sync.anchor_timecode || 0) > 0 || Number(sync.sync_offset || 0) !== 0,
-      }),
-    [actions, homeConfig, awayConfig, sync.anchor_timecode, sync.sync_offset]
-  );
-
   // Choix proposés par les filtres (Consultation et Analyse).
   const filterOptions = useMemo(() => {
     const players = new Map();
@@ -674,6 +660,21 @@ function DataVolleyDashboard({ user, onLogout }) {
   const savedAway = useMemo(() => parseSavedLineup(currentSetup.away_lineup), [currentSetup.away_lineup]);
   const homeConfig = savedHome.config;
   const awayConfig = savedAway.config;
+
+  // Anomalies du codage (mode Correction) : le match doit être synchronisé pour
+  // que l'absence de temps vidéo soit signalée. Calculé après les fiches équipe
+  // (elles servent au contrôle des numéros de joueur).
+  const issues = useMemo(
+    () =>
+      codeIssues(actions, {
+        roster: {
+          home: (homeConfig?.roster || []).map((p) => p.number),
+          away: (awayConfig?.roster || []).map((p) => p.number),
+        },
+        requireTimecode: Number(sync.anchor_timecode || 0) > 0 || Number(sync.sync_offset || 0) !== 0,
+      }),
+    [actions, homeConfig, awayConfig, sync.anchor_timecode, sync.sync_offset]
+  );
 
   const hasAnyPosition = (l) => !!l && Object.values(l).some((v) => Number(v) > 0);
   const boardState = {
@@ -993,184 +994,6 @@ function DataVolleyDashboard({ user, onLogout }) {
     }
   }, [matchFinished, autoServe, lightMode, setups, codeOpts, rallyOpts, myClaimedSet, matchState.currentSet]);
 
-  /** Lecture / pause de la vidéo (mode Consultation, touche Espace). */
-  const togglePlayback = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) v.play().catch(() => {});
-    else v.pause();
-  }, []);
-
-  /**
-   * Fin de point à la DataVolley : `[` pour l'équipe à domicile, `]` pour
-   * l'extérieure. Si la dernière action ne clôt pas le point, on lui donne
-   * l'évaluation qui convient (# pour l'équipe qui marque, = pour la faute de
-   * l'autre) — geste réversible par Ctrl+A.
-   */
-  const markPointEnd = useCallback(
-    (winner) => {
-      const notify = (ok, text) => {
-        setFlash({ ok, text });
-        if (flashTimer.current) clearTimeout(flashTimer.current);
-        flashTimer.current = setTimeout(() => setFlash(null), 3500);
-      };
-      if (matchFinished) return;
-      const list = actionsRef.current;
-      const last = list[list.length - 1];
-      if (!last) {
-        notify(false, 'Aucune action à clore.');
-        return;
-      }
-      if (isTerminalEvaluation(last.action, last.evaluation)) {
-        notify(false, `Le point est déjà terminé (${last.code}).`);
-        return;
-      }
-      const team = winner === 'away' ? 'away' : 'home';
-      const evaluation = last.team === team ? '#' : '=';
-      const code = formatCode({
-        teamKey: last.team === 'away' ? 'a' : '*',
-        player_number: last.player_number,
-        action: last.action,
-        type: last.type || '',
-        evaluation,
-        start_zone: last.start_zone || '',
-        end_zone: last.end_zone || '',
-        end_subzone: last.end_subzone || '',
-      });
-      applyActions(list.map((a) => (a.uid === last.uid ? { ...a, code, ...decomposeCode(code) } : a)));
-      notify(true, `Point pour ${team === 'away' ? team2 : team1} : ${last.code} → ${code}`);
-    },
-    [matchFinished, applyActions, team1, team2]
-  );
-
-  /** Ctrl+A : annule la dernière fin de point (le point reste ouvert). */
-  const undoPointEnd = useCallback(() => {
-    const notify = (ok, text) => {
-      setFlash({ ok, text });
-      if (flashTimer.current) clearTimeout(flashTimer.current);
-      flashTimer.current = setTimeout(() => setFlash(null), 3500);
-    };
-    if (matchFinished) return;
-    const list = actionsRef.current;
-    const last = list[list.length - 1];
-    if (!last || !isTerminalEvaluation(last.action, last.evaluation)) {
-      notify(false, 'Aucune fin de point à annuler.');
-      return;
-    }
-    const code = formatCode({
-      teamKey: last.team === 'away' ? 'a' : '*',
-      player_number: last.player_number,
-      action: last.action,
-      type: last.type || '',
-      evaluation: '',
-      start_zone: last.start_zone || '',
-      end_zone: last.end_zone || '',
-      end_subzone: last.end_subzone || '',
-    });
-    applyActions(list.map((a) => (a.uid === last.uid ? { ...a, code, ...decomposeCode(code) } : a)));
-    notify(true, `Fin de point annulée : ${last.code} → ${code}`);
-  }, [matchFinished, applyActions]);
-
-  // Capture clavier : les raccourcis (modifiables) pilotent la vidéo et la console ;
-  // tout autre caractère imprimable alimente le tampon de codage.
-  useEffect(() => {
-    const onKey = (e) => {
-      const tag = (e.target && e.target.tagName) || '';
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.altKey) return;
-
-      // Échap : fenêtre de commandes (temps morts, remplacements, code libre).
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        if (showSync) { setShowSync(false); return; }
-        setShowCommand((v) => !v);
-        return;
-      }
-
-      // En Consultation : Espace et flèches pour relire les points.
-      if (mode === 'consultation') {
-        if (e.key === ' ') { e.preventDefault(); togglePlayback(); return; }
-        if (e.key === 'ArrowRight') { e.preventDefault(); goToPoint(1); return; }
-        if (e.key === 'ArrowLeft') { e.preventDefault(); goToPoint(-1); return; }
-        return;
-      }
-
-      // En Analyse et en Correction, on laisse la main aux boutons de l'écran.
-      if (mode !== 'saisie') return;
-      if (e.ctrlKey || e.metaKey) return;
-
-      // Raccourcis vidéo (désactivés si le match est terminé pour la saisie).
-      if (matchesShortcut(e, shortcuts.pause)) { e.preventDefault(); videoAction('pause'); return; }
-      if (matchesShortcut(e, shortcuts.seekBack)) { e.preventDefault(); videoAction('seekBack'); return; }
-      if (matchesShortcut(e, shortcuts.seekForward)) { e.preventDefault(); videoAction('seekForward'); return; }
-      if (matchesShortcut(e, shortcuts.speedDown)) { e.preventDefault(); videoAction('speedDown'); return; }
-      if (matchesShortcut(e, shortcuts.speedUp)) { e.preventDefault(); videoAction('speedUp'); return; }
-      if (matchesShortcut(e, shortcuts.speedReset)) { e.preventDefault(); videoAction('speedReset'); return; }
-      if (matchesShortcut(e, shortcuts.togglePanels)) { e.preventDefault(); setMany(['score', 'court', 'positions', 'actions', 'shortcuts'], !arePanelsVisible); return; }
-
-      if (matchFinished) return;
-
-      // Gestes de saisie de DataVolley : [ et ] terminent le point, Ctrl+A l'annule.
-      if (e.key === '[') { e.preventDefault(); markPointEnd('home'); return; }
-      if (e.key === ']') { e.preventDefault(); markPointEnd('away'); return; }
-      if (e.key === 'a' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoPointEnd(); return; }
-
-      if (matchesShortcut(e, shortcuts.validate)) { e.preventDefault(); commitBuffer(); return; }
-      if (matchesShortcut(e, shortcuts.backspace)) { e.preventDefault(); setBuffer((b) => b.slice(0, -1)); return; }
-      if (matchesShortcut(e, shortcuts.clearBuffer)) { e.preventDefault(); setBuffer(''); return; }
-
-      // Caractère imprimable non utilisé par un raccourci : on l'ajoute au tampon.
-      if (e.key && e.key.length === 1) {
-        e.preventDefault();
-        if (bufferRef.current.length < 60) setBuffer((b) => b + e.key);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [
-    mode,
-    commitBuffer,
-    matchFinished,
-    shortcuts,
-    videoAction,
-    setMany,
-    arePanelsVisible,
-    showSync,
-    togglePlayback,
-    goToPoint,
-    markPointEnd,
-    undoPointEnd,
-  ]);
-
-  const handleTimeUpdate = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    resumeTimeRef.current = v.currentTime;
-    setCurrentTime(v.currentTime);
-
-    // Mode Consultation : la lecture enchaîne les points et saute les temps
-    // morts. Dès qu'on sort du segment du point courant, on va au point suivant.
-    if (mode !== 'consultation' || !consultSegments.length) return;
-    const t = v.currentTime;
-    const idx = pointIndexAt(consultSegments, t);
-    if (idx >= 0) {
-      const first = (consultSegments[idx].actions || [])[0];
-      if (first && first.action_index !== consultIndex) setConsultIndex(first.action_index);
-      return;
-    }
-    // Hors segment : on reprend au point suivant (ou on s'arrête à la fin).
-    const next = consultSegments.find((s) => s.segmentStart > t);
-    if (next) {
-      v.currentTime = next.segmentStart;
-      resumeTimeRef.current = next.segmentStart;
-      const first = (next.actions || [])[0];
-      if (first) setConsultIndex(first.action_index);
-    } else {
-      v.pause();
-      setPlaying(false);
-    }
-  };
-
   const seekTo = useCallback((t) => {
     const v = videoRef.current;
     if (v && typeof t === 'number') {
@@ -1179,19 +1002,6 @@ function DataVolleyDashboard({ user, onLogout }) {
       resumeTimeRef.current = target;
     }
   }, []);
-
-  /** Clic sur un point de la frise : on se place au début du point dans la vidéo. */
-  const seekToPoint = useCallback(
-    (pt) => {
-      const item = pointSegments.find((p) => p.pointNumber === pt?.point_number);
-      if (item && item.segmentStart != null) {
-        seekTo(item.segmentStart);
-        return;
-      }
-      if (pt && Number.isFinite(pt.timecode)) seekTo(pt.timecode + (sync.sync_offset || 0));
-    },
-    [pointSegments, seekTo, sync.sync_offset]
-  );
 
   // ---------------------------------------------------------------------------
   // MODES CONSULTATION · CORRECTION · ANALYSE : actions et lecture
@@ -1377,6 +1187,198 @@ function DataVolleyDashboard({ user, onLogout }) {
       flashTimer.current = setTimeout(() => setFlash(null), 3500);
     },
     [id, matchState.currentSet, matchState.score, team1, team2]
+  );
+
+
+  /** Lecture / pause de la vidéo (mode Consultation, touche Espace). */
+  const togglePlayback = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {});
+    else v.pause();
+  }, []);
+
+  /**
+   * Fin de point à la DataVolley : `[` pour l'équipe à domicile, `]` pour
+   * l'extérieure. Si la dernière action ne clôt pas le point, on lui donne
+   * l'évaluation qui convient (# pour l'équipe qui marque, = pour la faute de
+   * l'autre) — geste réversible par Ctrl+A.
+   */
+  const markPointEnd = useCallback(
+    (winner) => {
+      const notify = (ok, text) => {
+        setFlash({ ok, text });
+        if (flashTimer.current) clearTimeout(flashTimer.current);
+        flashTimer.current = setTimeout(() => setFlash(null), 3500);
+      };
+      if (matchFinished) return;
+      const list = actionsRef.current;
+      const last = list[list.length - 1];
+      if (!last) {
+        notify(false, 'Aucune action à clore.');
+        return;
+      }
+      if (isTerminalEvaluation(last.action, last.evaluation)) {
+        notify(false, `Le point est déjà terminé (${last.code}).`);
+        return;
+      }
+      const team = winner === 'away' ? 'away' : 'home';
+      const evaluation = last.team === team ? '#' : '=';
+      const code = formatCode({
+        teamKey: last.team === 'away' ? 'a' : '*',
+        player_number: last.player_number,
+        action: last.action,
+        type: last.type || '',
+        evaluation,
+        start_zone: last.start_zone || '',
+        end_zone: last.end_zone || '',
+        end_subzone: last.end_subzone || '',
+      });
+      applyActions(list.map((a) => (a.uid === last.uid ? { ...a, code, ...decomposeCode(code) } : a)));
+      notify(true, `Point pour ${team === 'away' ? team2 : team1} : ${last.code} → ${code}`);
+    },
+    [matchFinished, applyActions, team1, team2]
+  );
+
+  /** Ctrl+A : annule la dernière fin de point (le point reste ouvert). */
+  const undoPointEnd = useCallback(() => {
+    const notify = (ok, text) => {
+      setFlash({ ok, text });
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlash(null), 3500);
+    };
+    if (matchFinished) return;
+    const list = actionsRef.current;
+    const last = list[list.length - 1];
+    if (!last || !isTerminalEvaluation(last.action, last.evaluation)) {
+      notify(false, 'Aucune fin de point à annuler.');
+      return;
+    }
+    const code = formatCode({
+      teamKey: last.team === 'away' ? 'a' : '*',
+      player_number: last.player_number,
+      action: last.action,
+      type: last.type || '',
+      evaluation: '',
+      start_zone: last.start_zone || '',
+      end_zone: last.end_zone || '',
+      end_subzone: last.end_subzone || '',
+    });
+    applyActions(list.map((a) => (a.uid === last.uid ? { ...a, code, ...decomposeCode(code) } : a)));
+    notify(true, `Fin de point annulée : ${last.code} → ${code}`);
+  }, [matchFinished, applyActions]);
+
+  // Capture clavier : les raccourcis (modifiables) pilotent la vidéo et la console ;
+  // tout autre caractère imprimable alimente le tampon de codage.
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.altKey) return;
+
+      // Échap : fenêtre de commandes (temps morts, remplacements, code libre).
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (showSync) { setShowSync(false); return; }
+        setShowCommand((v) => !v);
+        return;
+      }
+
+      // En Consultation : Espace et flèches pour relire les points.
+      if (mode === 'consultation') {
+        if (e.key === ' ') { e.preventDefault(); togglePlayback(); return; }
+        if (e.key === 'ArrowRight') { e.preventDefault(); goToPoint(1); return; }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); goToPoint(-1); return; }
+        return;
+      }
+
+      // En Analyse et en Correction, on laisse la main aux boutons de l'écran.
+      if (mode !== 'saisie') return;
+      if (e.ctrlKey || e.metaKey) return;
+
+      // Raccourcis vidéo (désactivés si le match est terminé pour la saisie).
+      if (matchesShortcut(e, shortcuts.pause)) { e.preventDefault(); videoAction('pause'); return; }
+      if (matchesShortcut(e, shortcuts.seekBack)) { e.preventDefault(); videoAction('seekBack'); return; }
+      if (matchesShortcut(e, shortcuts.seekForward)) { e.preventDefault(); videoAction('seekForward'); return; }
+      if (matchesShortcut(e, shortcuts.speedDown)) { e.preventDefault(); videoAction('speedDown'); return; }
+      if (matchesShortcut(e, shortcuts.speedUp)) { e.preventDefault(); videoAction('speedUp'); return; }
+      if (matchesShortcut(e, shortcuts.speedReset)) { e.preventDefault(); videoAction('speedReset'); return; }
+      if (matchesShortcut(e, shortcuts.togglePanels)) { e.preventDefault(); setMany(['score', 'court', 'positions', 'actions', 'shortcuts'], !arePanelsVisible); return; }
+
+      if (matchFinished) return;
+
+      // Gestes de saisie de DataVolley : [ et ] terminent le point, Ctrl+A l'annule.
+      if (e.key === '[') { e.preventDefault(); markPointEnd('home'); return; }
+      if (e.key === ']') { e.preventDefault(); markPointEnd('away'); return; }
+      if (e.key === 'a' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoPointEnd(); return; }
+
+      if (matchesShortcut(e, shortcuts.validate)) { e.preventDefault(); commitBuffer(); return; }
+      if (matchesShortcut(e, shortcuts.backspace)) { e.preventDefault(); setBuffer((b) => b.slice(0, -1)); return; }
+      if (matchesShortcut(e, shortcuts.clearBuffer)) { e.preventDefault(); setBuffer(''); return; }
+
+      // Caractère imprimable non utilisé par un raccourci : on l'ajoute au tampon.
+      if (e.key && e.key.length === 1) {
+        e.preventDefault();
+        if (bufferRef.current.length < 60) setBuffer((b) => b + e.key);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [
+    mode,
+    commitBuffer,
+    matchFinished,
+    shortcuts,
+    videoAction,
+    setMany,
+    arePanelsVisible,
+    showSync,
+    togglePlayback,
+    goToPoint,
+    markPointEnd,
+    undoPointEnd,
+  ]);
+
+  const handleTimeUpdate = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    resumeTimeRef.current = v.currentTime;
+    setCurrentTime(v.currentTime);
+
+    // Mode Consultation : la lecture enchaîne les points et saute les temps
+    // morts. Dès qu'on sort du segment du point courant, on va au point suivant.
+    if (mode !== 'consultation' || !consultSegments.length) return;
+    const t = v.currentTime;
+    const idx = pointIndexAt(consultSegments, t);
+    if (idx >= 0) {
+      const first = (consultSegments[idx].actions || [])[0];
+      if (first && first.action_index !== consultIndex) setConsultIndex(first.action_index);
+      return;
+    }
+    // Hors segment : on reprend au point suivant (ou on s'arrête à la fin).
+    const next = consultSegments.find((s) => s.segmentStart > t);
+    if (next) {
+      v.currentTime = next.segmentStart;
+      resumeTimeRef.current = next.segmentStart;
+      const first = (next.actions || [])[0];
+      if (first) setConsultIndex(first.action_index);
+    } else {
+      v.pause();
+      setPlaying(false);
+    }
+  };
+
+  /** Clic sur un point de la frise : on se place au début du point dans la vidéo. */
+  const seekToPoint = useCallback(
+    (pt) => {
+      const item = pointSegments.find((p) => p.pointNumber === pt?.point_number);
+      if (item && item.segmentStart != null) {
+        seekTo(item.segmentStart);
+        return;
+      }
+      if (pt && Number.isFinite(pt.timecode)) seekTo(pt.timecode + (sync.sync_offset || 0));
+    },
+    [pointSegments, seekTo, sync.sync_offset]
   );
 
   const deleteRally = (rally) => {

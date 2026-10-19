@@ -182,7 +182,7 @@ db.serialize(() => {
     FOREIGN KEY (video_id) REFERENCES videos(id)
   )`);
 
-  // DataVolley sync settings per video (anchor/offset + playlist lead-in/out)
+  // Réglages de synchronisation vidéo par match (ancre + décalage + marges).
   db.run(`CREATE TABLE IF NOT EXISTS volley_sync (
     video_id INTEGER PRIMARY KEY,
     sync_offset REAL DEFAULT 0,
@@ -373,23 +373,12 @@ db.serialize(() => {
 
   db.run('CREATE INDEX IF NOT EXISTS idx_trajectory_shots_match ON trajectory_shots (match_id, team_side, kind)');
 
-  // Table conservée telle quelle (les playlists de séance ne sont plus proposées
-  // dans l'interface depuis la 3.0.0) : aucune donnée n'est effacée, la table
-  // reste en place au cas où.
-  db.run(`CREATE TABLE IF NOT EXISTS playlists (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    name TEXT NOT NULL,
-    description TEXT,
-    items TEXT NOT NULL DEFAULT '[]',
-    created_by TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    sync_uuid TEXT,
-    dirty INTEGER DEFAULT 1,
-    deleted INTEGER DEFAULT 0,
-    local_updated_at TEXT,
-    cloud_updated_at TEXT
-  )`);
+  // Les playlists de séance (versions 2.1 et 2.2) ont été retirées : le système
+  // n'existe plus dans l'application. La table est supprimée des postes qui
+  // l'auraient créée, pour ne pas laisser de données orphelines.
+  db.run('DROP TABLE IF EXISTS playlists', (err) => {
+    if (!err) console.log('[ASUL] Table « playlists » retirée (système supprimé en 3.0.1).');
+  });
 
   // Colonnes de partage des trajectoires : `created_by` (email du créateur) et
   // les UUID d'équipe (pour re-lier l'effectif quand l'équipe arrive après la
