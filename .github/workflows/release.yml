@@ -98,6 +98,15 @@ jobs:
           }
           $sync | ConvertTo-Json | Set-Content -Path "desktop/resources/sync.json" -Encoding utf8
 
+      - name: Cache de ffmpeg (téléchargé une seule fois)
+        if: steps.exists.outputs.exists == 'false'
+        uses: actions/cache@v4
+        with:
+          path: desktop/resources/ffmpeg
+          # Une clé versionnée : incrémenter le suffixe pour forcer un nouveau
+          # téléchargement (changement de miroir, mise à jour de ffmpeg).
+          key: ffmpeg-essentials-${{ runner.os }}-v1
+
       - name: Installer les dépendances
         if: steps.exists.outputs.exists == 'false'
         shell: pwsh
