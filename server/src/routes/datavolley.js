@@ -413,7 +413,7 @@ router.put('/:videoId/setups', authenticateToken, (req, res) => {
 
 // --- Événements de match : temps morts et remplacements --------------------
 
-const EVENT_KINDS = ['timeout', 'substitution'];
+const EVENT_KINDS = ['timeout', 'substitution', 'note'];
 const EVENT_TEAMS = ['home', 'away'];
 
 function safeParsePayload(raw) {
@@ -462,6 +462,11 @@ router.post('/:videoId/events', authenticateToken, (req, res) => {
     }
     if (out === inn) return res.status(400).json({ error: 'Le joueur entrant doit être différent du sortant.' });
     cleanPayload = { out, in: inn };
+  } else if (kind === 'note') {
+    // Code libre (façon DataVolley « >TEXTE ») : 5 caractères au maximum.
+    const text = String(payload?.text || '').trim().slice(0, 5).toUpperCase();
+    if (!text) return res.status(400).json({ error: 'Code libre vide.' });
+    cleanPayload = { text };
   }
 
   const setNumber = Number(set_number) > 0 ? Number(set_number) : null;

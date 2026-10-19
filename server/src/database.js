@@ -373,16 +373,9 @@ db.serialize(() => {
 
   db.run('CREATE INDEX IF NOT EXISTS idx_trajectory_shots_match ON trajectory_shots (match_id, team_side, kind)');
 
-  // Playlists de séance (mode « Playlists ») : une playlist = une ligne, ses
-  // entrées (actions choisies à la main, éventuellement issues de plusieurs
-  // matchs) sont embarquées en JSON — même principe que les flèches des
-  // trajectoires. Les entrées sont autoportantes : elles gardent la référence
-  // du match (video_id + video_uuid) ET un instantané lisible (libellés,
-  // timecodes), pour rester jouables même si un codage est retouché.
-  //
-  // Les colonnes de synchronisation cloud (sync_uuid, dirty, deleted,
-  // local_updated_at, cloud_updated_at) sont créées dès maintenant : le partage
-  // à distance des playlists n'exigera donc aucune migration.
+  // Table conservée telle quelle (les playlists de séance ne sont plus proposées
+  // dans l'interface depuis la 3.0.0) : aucune donnée n'est effacée, la table
+  // reste en place au cas où.
   db.run(`CREATE TABLE IF NOT EXISTS playlists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,

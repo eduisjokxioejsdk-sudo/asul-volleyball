@@ -1,8 +1,26 @@
 {
-  "version": "2.2.0",
+  "version": "3.0.0",
   "releasedAt": "2026-10-19",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.0.0",
+      "date": "2026-10-19",
+      "title": "Codage organisé comme DataVolley : Saisie, Consultation, Correction, Analyse",
+      "items": [
+        "Le codage d'un match se fait maintenant en quatre modes, comme DataVolley : Saisie, Consultation, Correction et Analyse, plus les Paramètres à part",
+        "Saisie : la disposition « DataVolley » range l'écran d'un clic (vidéo en haut à gauche, score et terrain de rotation en dessous, zone de code en bas, liste des codes à droite) ; la disposition libre reste disponible",
+        "Saisie : les gestes de DataVolley — [ et ] terminent le point pour l'équipe à domicile ou l'extérieure, Ctrl+A annule une fin de point mal attribuée, Échap ouvre la fenêtre de commandes",
+        "Fenêtre de commandes (Échap) : T et aT pour les temps morts, C5.12 et aC5.12 pour les remplacements, >TEXTE pour un code libre — enregistrés au point en cours",
+        "La fenêtre Score & rotation montre le terrain des deux équipes (6 + 6), la rotation de chacune (poste du passeur), le ballon de service, les temps morts et les remplacements utilisés",
+        "Consultation : le match se relit en enchaînant les points, la vidéo sautant les temps morts ; marges et vitesse réglables, compteur du temps mort évité",
+        "Consultation : à droite, en permanence, les filtres Action, Qualité (évaluation) et Position (zone) — complétés par équipe, joueur, set et recherche libre de code (ex. *7A#) — puis le déroulé cliquable et les actions du point en cours",
+        "Correction : calage de tout le match sur le premier service (« Caler ici »), contrôle automatique des codes avec la liste des anomalies et le bouton « Code suivant à corriger »",
+        "Correction : liste des codes modifiable — corriger le temps vidéo (± 0,1 s, ± 1 s, « = vidéo »), monter, descendre ou supprimer une action — et parcours « Compléter un match » pour ajouter les zones manquantes en cliquant le terrain",
+        "Analyse : menu des fenêtres (feuille de match, points, distribution), filtres communs, et descente d'un chiffre vers les actions (« Click to Rally ») : la liste des actions retenues s'affiche à droite et se relit d'un clic",
+        "Les onglets « Playlists » et « Relecture » sont retirés : la Consultation les remplace (lecture sans les temps morts, filtres, relecture des points). Les Trajectoires et l'accueil ne changent pas"
+      ]
+    },
     {
       "version": "2.2.0",
       "date": "2026-10-19",

@@ -8,21 +8,29 @@ Application d'analyse de vidéos de volleyball.
   sous-zones (A-D), **combinaisons d'attaque** (X1 « A Quick », XP « Pipe », CB « Slide »…),
   **appels passeur** (K) et **formules combinées** service·réception **et** attaque·contre/défense
   (`*23S.10-`, `*05V66.12#`).
-- **Saisie rapide** : code attendu prédit (action suivante + passeur), clavier virtuel, aide-mémoire.
+- **Quatre modes de travail, comme DataVolley** — le codage d'un match s'organise en **Saisie**,
+  **Consultation**, **Correction** et **Analyse**, plus les Paramètres à part.
+  - **Saisie** : la disposition « DataVolley » range l'écran d'un clic (vidéo en haut à gauche, score
+    et **terrain de rotation** — 6 + 6, poste du passeur, ballon de service — en dessous, zone de code
+    en bas, **liste des codes** à droite) ; la disposition libre reste disponible. Gestes de DataVolley :
+    `[` / `]` terminent le point pour le domicile ou l'extérieur, **Ctrl+A** annule une fin de point,
+    **Échap** ouvre la **fenêtre de commandes** (`T`, `aT` temps morts, `C5.12`, `aC5.12` remplacements,
+    `>TEXTE` code libre). Saisie rapide : code attendu prédit (action suivante + passeur), clavier
+    virtuel, aide-mémoire.
+  - **Consultation** : le match se relit **en enchaînant les points, sans les temps morts** (marges et
+    vitesse réglables, compteur du temps mort évité). À droite, en permanence : filtres **action**,
+    **qualité** (évaluation) et **position** (zone), complétés par équipe, joueur, set et recherche
+    libre de code (`*7A#`), puis le déroulé cliquable et les **actions du point en cours**.
+  - **Correction** : **calage de tout le match sur le premier service**, **contrôle automatique des
+    codes** (liste des anomalies, « code suivant à corriger »), liste des codes **modifiable** (temps
+    vidéo ± 0,1 s / ± 1 s / « = vidéo », monter, descendre, supprimer) et parcours **« Compléter un
+    match »** pour ajouter les zones manquantes en cliquant le terrain.
+  - **Analyse** : menu des fenêtres (feuille de match, points, distribution), filtres communs et
+    **descente d'un chiffre vers les actions** (« Click to Rally ») : les actions retenues s'affichent à
+    droite et se relisent d'un clic.
 - **Mode Entraînement** : jeux d'association (paires) et traduction chronométrée, pour apprendre les codes.
 - **Rapports** : bilan de match, ventilations par évaluation / type / zone, stats et efficacité par
   **combinaison**, **directions d'attaque**, synthèse **par set**, heatmaps, export **CSV**.
-- **Playlists de séance** : onglet dédié qui réunit des actions choisies à la main, **y compris issues de
-  plusieurs matchs**. On parcourt un match codé point par point ou **par joueur avec ses attaques triées
-  par poste de départ** (4, 3, 2, arrière), on ajoute chaque action d'un clic, puis la playlist se relit en
-  continu (la vidéo change de match toute seule) avec la liste des actions à côté du lecteur. Feuille de
-  séance exportable en **CSV** (timecodes) et en **EDL** pour le montage, et **export de clips MP4** :
-  un fichier par joueur, par poste, par joueur et poste ou la playlist entière (dossier ZIP, avec la
-  feuille de séance), en coupes rapides ou précises.
-- **Relecture** : relisez un match codé **en enchaînant les points, sans les temps morts** — la vidéo
-  saute d'un point au suivant (marges et vitesse réglables). À droite, en permanence : filtres
-  **action**, **qualité** et **position** (poste de départ 4, 3, 2, arrière), la liste des points qui suit
-  la lecture, et les **actions du point en cours**, ajoutables à une playlist d'un clic.
 - **Interopérabilité** : export / import du format **`.dvw`** (DataVolley), rotation point par point incluse.
 - **Match en direct** : caméra multi-appareils ; l'enregistrement est conservé et devient une **vidéo de
   replay** avec les points **ancrés**.
@@ -125,7 +133,7 @@ Asulv2/
 ├── client/          # Frontend React
 │   ├── src/
 │   │   ├── pages/   # Pages (Login, Dashboard, DataVolley, Live, Trajectoires, Entraînement…)
-│   │   ├── components/
+│   │   ├── components/  # dont les modes de codage (DvModeBar, DvCodeList, DvRotationWindow…)
 │   │   ├── services/
 │   │   └── contexts/
 │   └── package.json
@@ -156,8 +164,8 @@ le point avant de le revoir à l'écran.
    **« Caméra (filmer le terrain) »**.
 3. Appuyer sur **Démarrer la caméra** et poser le téléphone sur un support stable,
    caméra vers le terrain.
-4. Sur les PC, la vidéo apparaît dans les onglets **Codage** (au-dessus de la zone de
-   code) et **Rapport**. Le bandeau indique « 📹 Caméra … s ».
+4. Sur les PC, la vidéo apparaît dans le mode **Saisie** (au-dessus de la zone de
+   code) et dans la fenêtre de **Rapport**. Le bandeau indique « 📹 Caméra … s ».
 
 ### Réglages
 

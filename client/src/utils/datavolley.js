@@ -1306,10 +1306,11 @@ export function effectiveTime(action, syncOffset = 0) {
 }
 
 /**
- * Génère la playlist dynamique « point par point » (ignorant les temps morts),
- * à partir des points dérivés et des réglages lead-in/lead-out.
+ * Segments des points « sans les temps morts » : pour chaque point, la plage
+ * [début de la 1ʳᵉ action − lead-in ; fin de la dernière action + lead-out].
+ * Sert au mode Consultation (lecture enchaînée des points) et à la frise.
  */
-export function buildPlaylist(rallies, opts = {}) {
+export function buildPointSegments(rallies, opts = {}) {
   const { syncOffset = 0, leadIn = 4, leadOut = 3 } = opts;
   return (rallies || [])
     .map((r) => {

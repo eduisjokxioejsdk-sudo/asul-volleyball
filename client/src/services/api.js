@@ -145,25 +145,6 @@ export const trajectoryAPI = {
   saveSyncConfig: (payload) => api.put('/trajectories/sync/config', payload),
 };
 
-// Playlists de séance (mode « Playlists ») : actions choisies à la main,
-// éventuellement issues de plusieurs matchs. Le partage à distance viendra
-// ensuite (la table porte déjà les colonnes de synchronisation).
-export const playlistAPI = {
-  getAll: () => api.get('/playlists'),
-  getOne: (id) => api.get(`/playlists/${id}`),
-  create: (name, items = [], description = null) => api.post('/playlists', { name, items, description }),
-  update: (id, payload) => api.patch(`/playlists/${id}`, payload),
-  delete: (id) => api.delete(`/playlists/${id}`),
-  // Matchs proposés au parcours (vidéos ayant au moins une action codée).
-  sources: () => api.get('/playlists/sources'),
-  // Export de clips MP4 (tâche de fond) : lancement, avancement, abandon.
-  exportClips: (id, options) => api.post(`/playlists/${id}/export`, options),
-  getExport: (jobId) => api.get(`/playlists/exports/${jobId}`),
-  cancelExport: (jobId) => api.delete(`/playlists/exports/${jobId}`),
-  // Téléchargement du ZIP (lien direct : identifiant aléatoire, sans jeton).
-  getExportDownloadUrl: (jobId) => `${API_BASE}/playlists/exports/${jobId}/download`,
-};
-
 // État technique du serveur (base, stockage, ffmpeg disponible…)
 export const systemAPI = {
   getStatus: () => api.get('/system/status'),

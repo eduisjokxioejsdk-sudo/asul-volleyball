@@ -14,13 +14,20 @@ import { generateDemoActions } from '../utils/demo';
 import MatchBoard from '../components/MatchBoard';
 import VideoShortcuts from '../components/VideoShortcuts';
 import CodingConsole from '../components/CodingConsole';
-import CodedActionsList from '../components/CodedActionsList';
-import AddToPlaylistDialog from '../components/AddToPlaylistDialog';
+import DvModeBar from '../components/DvModeBar';
+import DvCodeList from '../components/DvCodeList';
+import DvFilterPanel from '../components/DvFilterPanel';
+import DvConsultationPane from '../components/DvConsultationPane';
+import DvCorrectionPane from '../components/DvCorrectionPane';
+import { DvAnalysisMenu, DvDrillDown } from '../components/DvAnalysisPane';
+import DvCommandWindow from '../components/DvCommandWindow';
+import DvRotationWindow from '../components/DvRotationWindow';
 import FloatingPanel from '../components/FloatingPanel';
 import PanelsMenu from '../components/PanelsMenu';
 import ShortcutSettings from '../components/ShortcutSettings';
 import SetClaimsBar from '../components/SetClaimsBar';
 import usePanelLayout from '../hooks/usePanelLayout';
+import { PANEL_GAP } from '../utils/panelLayout';
 import { loadShortcuts, matchesShortcut, saveShortcuts, stepSpeed } from '../utils/shortcuts';
 import MatchReportFull from '../components/MatchReportFull';
 import LineupEditor from '../components/LineupEditor';
@@ -29,36 +36,25 @@ import { DvKeyPad, DvSyntaxHelp } from '../components/DvKeypad';
 import { AttackCourtPicker, DistributionCourt } from '../components/AttackCourt';
 import { buildTimelineEvents, buildTimelinePoints } from '../utils/matchTimeline';
 import {
-  normalizePlaylistItems,
-  playlistItemFromRally,
-  posteOfAction,
-} from '../utils/playlists';
-import {
   AlertTriangle,
   ArrowDownUp,
   ChartColumn,
   Check,
   ChevronLeft,
   CircleHelp,
-  CirclePlay,
-  ClipboardList,
   Clock,
   Crosshair,
   Dices,
   Eye,
   EyeOff,
   FileDown,
-  FileText,
   Grid3x3,
   House,
   Keyboard,
   ListChecks,
-  Film,
   MonitorPlay,
   Pencil,
   Plane,
-  Play,
-  Plus,
   RotateCcw,
   RotateCw,
   Save,
@@ -73,7 +69,26 @@ import {
   X,
 } from '../components/icons';
 import {
-  buildPlaylist,
+  EMPTY_FILTERS,
+  codeIssues,
+  firstServeAnchor,
+  hasUsableSegments,
+  moveAction,
+  commandToEvent,
+  pointIndexAt,
+  removeAction,
+  rotationAt,
+  searchCodes,
+  setActionTimecode,
+  shiftTimecode,
+  stepPoint,
+} from '../utils/codingTools';
+import {
+  DV_ACTIONS,
+  DV_EVAL_KEYS,
+  DV_ZONE_KEYS,
+  appendSequence,
+  buildPointSegments,
   completeBufferAfterTyping,
   decomposeCode,
   describeCode,
@@ -183,13 +198,25 @@ function DataVolleyDashboard({ user, onLogout }) {
     lead_out: 3,
   });
 
-  const [tab, setTab] = useState('codage');
+  // Modes de travail (organisation DataVolley) : Saisie, Consultation,
+  // Correction, Analyse — plus les Paramètres, ouverts à part.
+  const [mode, setMode] = useState('saisie');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Fenêtre d'analyse affichée dans le mode Analyse, et son affichage plein écran.
+  const [tab, setTab] = useState('bilan');
+  const [reportFullScreen, setReportFullScreen] = useState(false);
+  // Consultation : filtres du déroulé, point lu et état de lecture.
+  const [consultFilters, setConsultFilters] = useState(EMPTY_FILTERS);
+  const [consultIndex, setConsultIndex] = useState(-1);
+  const [playing, setPlaying] = useState(false);
+  // Correction : action sélectionnée dans la liste (outils de temps).
+  const [correctUid, setCorrectUid] = useState(null);
+  const [showCommand, setShowCommand] = useState(false);
   const [buffer, setBuffer] = useState('');
   const [flash, setFlash] = useState(null);
   const [saving, setSaving] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-
-  // Lecture point par point (playlist dynamique)
+  const [videoDuration, setVideoDuration] = useState(0);
 
   // Édition de la séquence complète d'un point
   const [editingRallyUid, setEditingRallyUid] = useState(null); // uid de la 1re action du point, ou 'NEW'
@@ -314,9 +341,6 @@ function DataVolleyDashboard({ user, onLogout }) {
     const mine = claims.find((c) => !c.deleted && c.claimed_by_email === user?.email);
     return mine ? Number(mine.set_number) : null;
   }, [claims, user]);
-
-  // Sélection envoyée vers une playlist de séance (boîte « Ajouter à une playlist »).
-  const [addTarget, setAddTarget] = useState(null);
 
   // Confort de saisie : pré-remplissage du serveur
   const [autoServe, setAutoServe] = useState(true);
@@ -489,21 +513,152 @@ function DataVolleyDashboard({ user, onLogout }) {
   const SECONDARY_PANELS = ['score', 'court', 'positions', 'actions', 'shortcuts'];
   const arePanelsVisible = SECONDARY_PANELS.every((pid) => isOpen(pid));
 
+  /**
+   * Disposition « DataVolley » de l'écran de saisie : vidéo en haut à gauche,
+   * score et terrain en dessous, zone de code en bas, liste des codes à droite
+   * sur toute la hauteur.
+   */
+  const applyDvLayout = useCallback(() => {
+    const W = Math.max(1100, canvasSize.width || 1280);
+    const H = Math.max(700, canvasSize.height || 780);
+    const rightW = Math.min(400, Math.round(W * 0.28));
+    const leftW = Math.max(420, W - rightW - PANEL_GAP * 3);
+    const videoH = Math.round(H * 0.44);
+    const consoleH = Math.round(H * 0.26);
+    const midH = Math.max(160, H - videoH - consoleH - PANEL_GAP * 4);
+    setRect('video', { x: PANEL_GAP, y: PANEL_GAP, w: leftW, h: videoH, open: true });
+    setRect('score', { x: PANEL_GAP, y: videoH + PANEL_GAP * 2, w: Math.round(leftW * 0.42), h: midH, open: true });
+    setRect('court', {
+      x: PANEL_GAP * 2 + Math.round(leftW * 0.42),
+      y: videoH + PANEL_GAP * 2,
+      w: Math.round(leftW * 0.58),
+      h: midH,
+      open: true,
+    });
+    setRect('console', { x: PANEL_GAP, y: videoH + midH + PANEL_GAP * 3, w: leftW, h: consoleH, open: true });
+    setRect('actions', { x: leftW + PANEL_GAP * 2, y: PANEL_GAP, w: rightW, h: H - PANEL_GAP * 2, open: true });
+    setMany(['positions', 'shortcuts', 'aide', 'keypad'], false);
+  }, [canvasSize, setRect, setMany]);
+
+  /** Disposition libre : on rend la main à l'utilisateur (fenêtres réaffichées). */
+  const applyFreeLayout = useCallback(() => {
+    setMany(['score', 'court', 'positions', 'actions', 'shortcuts'], true);
+  }, [setMany]);
+
   // Mode Aide : ouvre les fenêtres pédagogiques (aide-mémoire + clavier virtuel).
   useEffect(() => { setMany(['aide', 'keypad'], modeAide); }, [modeAide, setMany]);
 
   const rallies = useMemo(() => groupActionsIntoRallies(actions, rallyOpts), [actions, rallyOpts]);
-  const playlist = useMemo(
-    () => buildPlaylist(rallies, { syncOffset: sync.sync_offset || 0, leadIn: sync.lead_in ?? 4, leadOut: sync.lead_out ?? 3 }),
+  // Segments des points (sans les temps morts) : sert à placer la vidéo au début
+  // d'un point depuis la frise chronologique.
+  const pointSegments = useMemo(
+    () => buildPointSegments(rallies, { syncOffset: sync.sync_offset || 0, leadIn: sync.lead_in ?? 4, leadOut: sync.lead_out ?? 3 }),
     [rallies, sync]
   );
 
   // Les remplacements enregistrés modifient les six pendant le rejeu du match.
   const matchState = useMemo(() => computeMatchState(rallies, setups, {}, events), [rallies, setups, events]);
 
+  // ---------------------------------------------------------------------------
+  // MODES CONSULTATION / CORRECTION / ANALYSE
+  // ---------------------------------------------------------------------------
+  // Numéro de set de chaque action (toutes actions, notées ou non).
+  const allSetMap = useMemo(() => indexActionSets(rallies, matchState), [rallies, matchState]);
+  const setOfAction = useCallback(
+    (a) => {
+      if (!a) return null;
+      const key = a.uid ?? a.id ?? a.action_index;
+      return allSetMap.get(key) ?? a.set_number ?? null;
+    },
+    [allSetMap]
+  );
+
+  // Consultation : actions retenues par les filtres, puis points complets qui
+  // les contiennent (on relit le point entier, pas seulement l'action filtrée).
+  const consultMatched = useMemo(
+    () => searchCodes(actions, consultFilters, { setOf: setOfAction }),
+    [actions, consultFilters, setOfAction]
+  );
+  const consultMatchedUids = useMemo(() => new Set(consultMatched.map((a) => a.uid)), [consultMatched]);
+  const consultFiltered = useMemo(() => {
+    const active = Object.keys(EMPTY_FILTERS).some(
+      (k) => String(consultFilters[k] ?? '') !== String(EMPTY_FILTERS[k])
+    );
+    if (!active) return rallies;
+    return rallies.filter((r) => (r.actions || []).some((a) => consultMatchedUids.has(a.uid)));
+  }, [rallies, consultFilters, consultMatchedUids]);
+  const consultSegments = useMemo(
+    () =>
+      buildPointSegments(consultFiltered, {
+        syncOffset: sync.sync_offset || 0,
+        leadIn: sync.lead_in ?? 4,
+        leadOut: sync.lead_out ?? 3,
+      }),
+    [consultFiltered, sync]
+  );
+  const consultReady = hasUsableSegments(consultSegments);
+
+  // Terrains affichés : état courant (Saisie) et état au point lu (Consultation).
+  const liveRotation = useMemo(
+    () => ({
+      setNumber: matchState.currentSet,
+      score: matchState.score,
+      server: matchState.server,
+      homeLineup: matchState.homeLineup,
+      awayLineup: matchState.awayLineup,
+      homeSetterPos: matchState.homeSetterPos,
+      awaySetterPos: matchState.awaySetterPos,
+    }),
+    [matchState]
+  );
+  const consultRotation = useMemo(() => {
+    if (consultIndex < 0) return liveRotation;
+    return rotationAt(consultFiltered, matchState, consultIndex) || liveRotation;
+  }, [consultIndex, consultFiltered, matchState, liveRotation]);
+
+  // Anomalies du codage (mode Correction) : le match doit être synchronisé pour
+  // que l'absence de temps vidéo soit signalée.
+  const issues = useMemo(
+    () =>
+      codeIssues(actions, {
+        roster: {
+          home: (homeConfig?.roster || []).map((p) => p.number),
+          away: (awayConfig?.roster || []).map((p) => p.number),
+        },
+        requireTimecode: Number(sync.anchor_timecode || 0) > 0 || Number(sync.sync_offset || 0) !== 0,
+      }),
+    [actions, homeConfig, awayConfig, sync.anchor_timecode, sync.sync_offset]
+  );
+
+  // Choix proposés par les filtres (Consultation et Analyse).
+  const filterOptions = useMemo(() => {
+    const players = new Map();
+    for (const a of actions) {
+      if (a?.player_number == null) continue;
+      const team = a.team === 'away' ? team2 : team1;
+      const key = `${a.team}-${a.player_number}`;
+      if (!players.has(key)) players.set(key, { value: String(a.player_number), label: `n°${a.player_number} — ${team}` });
+    }
+    const sets = [...new Set(actions.map((a) => setOfAction(a)).filter((s) => s != null))].sort((x, y) => x - y);
+    return {
+      players: [...players.values()],
+      sets,
+      zones: DV_ZONE_KEYS.map((z) => ({ value: z, label: `Zone ${z}` })),
+      actions: DV_ACTIONS,
+      evaluations: DV_EVAL_KEYS,
+    };
+  }, [actions, setOfAction, team1, team2]);
+
+  const hasConsultFilters = useMemo(
+    () => Object.keys(EMPTY_FILTERS).some((k) => String(consultFilters[k] ?? '') !== String(EMPTY_FILTERS[k])),
+    [consultFilters]
+  );
+
+  const patchConsultFilters = useCallback((patch) => setConsultFilters((prev) => ({ ...prev, ...patch })), []);
+
   // Actions « notées » (avec évaluation) : seules elles alimentent les stats,
   // le rapport et la distribution. Les actions sans notation (mode consultation)
-  // restent visibles dans les séquences et les playlists, mais sont exclues des
+  // restent visibles dans les séquences, mais sont exclues des
   // tableaux de statistiques.
   const statsActions = useMemo(() => actions.filter((a) => a && a.evaluation), [actions]);
   const statsRallies = useMemo(() => groupActionsIntoRallies(statsActions), [statsActions]);
@@ -710,32 +865,6 @@ function DataVolleyDashboard({ user, onLogout }) {
     [awayConfig, homeConfig]
   );
 
-  /**
-   * Prépare une entrée de playlist depuis le codage (action seule ou point
-   * entier) et ouvre la boîte « Ajouter à une playlist ».
-   */
-  const openAddToPlaylist = useCallback(
-    (rally, action, scope) => {
-      if (!video) return;
-      const team = action?.team || rally?.actions?.[0]?.team || 'home';
-      const item = playlistItemFromRally(rally, action, {
-        video,
-        sync,
-        scope,
-        teamLabel: team === 'away' ? team2 : team1,
-        playerName: playerNameOf(team, action?.player_number),
-      });
-      if (!item) {
-        setFlash({ ok: false, text: 'Action sans timecode : synchronisez la vidéo avant de l’ajouter.' });
-        if (flashTimer.current) clearTimeout(flashTimer.current);
-        flashTimer.current = setTimeout(() => setFlash(null), 4000);
-        return;
-      }
-      setAddTarget({ items: normalizePlaylistItems([item]) });
-    },
-    [video, sync, team1, team2, playerNameOf]
-  );
-
   // Chargement initial : vidéo + actions + synchronisation + état du match + positions.
   useEffect(() => {
     let cancelled = false;
@@ -864,14 +993,111 @@ function DataVolleyDashboard({ user, onLogout }) {
     }
   }, [matchFinished, autoServe, lightMode, setups, codeOpts, rallyOpts, myClaimedSet, matchState.currentSet]);
 
+  /** Lecture / pause de la vidéo (mode Consultation, touche Espace). */
+  const togglePlayback = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {});
+    else v.pause();
+  }, []);
+
+  /**
+   * Fin de point à la DataVolley : `[` pour l'équipe à domicile, `]` pour
+   * l'extérieure. Si la dernière action ne clôt pas le point, on lui donne
+   * l'évaluation qui convient (# pour l'équipe qui marque, = pour la faute de
+   * l'autre) — geste réversible par Ctrl+A.
+   */
+  const markPointEnd = useCallback(
+    (winner) => {
+      const notify = (ok, text) => {
+        setFlash({ ok, text });
+        if (flashTimer.current) clearTimeout(flashTimer.current);
+        flashTimer.current = setTimeout(() => setFlash(null), 3500);
+      };
+      if (matchFinished) return;
+      const list = actionsRef.current;
+      const last = list[list.length - 1];
+      if (!last) {
+        notify(false, 'Aucune action à clore.');
+        return;
+      }
+      if (isTerminalEvaluation(last.action, last.evaluation)) {
+        notify(false, `Le point est déjà terminé (${last.code}).`);
+        return;
+      }
+      const team = winner === 'away' ? 'away' : 'home';
+      const evaluation = last.team === team ? '#' : '=';
+      const code = formatCode({
+        teamKey: last.team === 'away' ? 'a' : '*',
+        player_number: last.player_number,
+        action: last.action,
+        type: last.type || '',
+        evaluation,
+        start_zone: last.start_zone || '',
+        end_zone: last.end_zone || '',
+        end_subzone: last.end_subzone || '',
+      });
+      applyActions(list.map((a) => (a.uid === last.uid ? { ...a, code, ...decomposeCode(code) } : a)));
+      notify(true, `Point pour ${team === 'away' ? team2 : team1} : ${last.code} → ${code}`);
+    },
+    [matchFinished, applyActions, team1, team2]
+  );
+
+  /** Ctrl+A : annule la dernière fin de point (le point reste ouvert). */
+  const undoPointEnd = useCallback(() => {
+    const notify = (ok, text) => {
+      setFlash({ ok, text });
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlash(null), 3500);
+    };
+    if (matchFinished) return;
+    const list = actionsRef.current;
+    const last = list[list.length - 1];
+    if (!last || !isTerminalEvaluation(last.action, last.evaluation)) {
+      notify(false, 'Aucune fin de point à annuler.');
+      return;
+    }
+    const code = formatCode({
+      teamKey: last.team === 'away' ? 'a' : '*',
+      player_number: last.player_number,
+      action: last.action,
+      type: last.type || '',
+      evaluation: '',
+      start_zone: last.start_zone || '',
+      end_zone: last.end_zone || '',
+      end_subzone: last.end_subzone || '',
+    });
+    applyActions(list.map((a) => (a.uid === last.uid ? { ...a, code, ...decomposeCode(code) } : a)));
+    notify(true, `Fin de point annulée : ${last.code} → ${code}`);
+  }, [matchFinished, applyActions]);
+
   // Capture clavier : les raccourcis (modifiables) pilotent la vidéo et la console ;
   // tout autre caractère imprimable alimente le tampon de codage.
   useEffect(() => {
     const onKey = (e) => {
-      if (tab !== 'codage') return;
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.altKey) return;
+
+      // Échap : fenêtre de commandes (temps morts, remplacements, code libre).
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (showSync) { setShowSync(false); return; }
+        setShowCommand((v) => !v);
+        return;
+      }
+
+      // En Consultation : Espace et flèches pour relire les points.
+      if (mode === 'consultation') {
+        if (e.key === ' ') { e.preventDefault(); togglePlayback(); return; }
+        if (e.key === 'ArrowRight') { e.preventDefault(); goToPoint(1); return; }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); goToPoint(-1); return; }
+        return;
+      }
+
+      // En Analyse et en Correction, on laisse la main aux boutons de l'écran.
+      if (mode !== 'saisie') return;
+      if (e.ctrlKey || e.metaKey) return;
 
       // Raccourcis vidéo (désactivés si le match est terminé pour la saisie).
       if (matchesShortcut(e, shortcuts.pause)) { e.preventDefault(); videoAction('pause'); return; }
@@ -883,6 +1109,11 @@ function DataVolleyDashboard({ user, onLogout }) {
       if (matchesShortcut(e, shortcuts.togglePanels)) { e.preventDefault(); setMany(['score', 'court', 'positions', 'actions', 'shortcuts'], !arePanelsVisible); return; }
 
       if (matchFinished) return;
+
+      // Gestes de saisie de DataVolley : [ et ] terminent le point, Ctrl+A l'annule.
+      if (e.key === '[') { e.preventDefault(); markPointEnd('home'); return; }
+      if (e.key === ']') { e.preventDefault(); markPointEnd('away'); return; }
+      if (e.key === 'a' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoPointEnd(); return; }
 
       if (matchesShortcut(e, shortcuts.validate)) { e.preventDefault(); commitBuffer(); return; }
       if (matchesShortcut(e, shortcuts.backspace)) { e.preventDefault(); setBuffer((b) => b.slice(0, -1)); return; }
@@ -896,13 +1127,48 @@ function DataVolleyDashboard({ user, onLogout }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tab, commitBuffer, matchFinished, shortcuts, videoAction, setMany, arePanelsVisible]);
+  }, [
+    mode,
+    commitBuffer,
+    matchFinished,
+    shortcuts,
+    videoAction,
+    setMany,
+    arePanelsVisible,
+    showSync,
+    togglePlayback,
+    goToPoint,
+    markPointEnd,
+    undoPointEnd,
+  ]);
 
   const handleTimeUpdate = () => {
     const v = videoRef.current;
     if (!v) return;
     resumeTimeRef.current = v.currentTime;
     setCurrentTime(v.currentTime);
+
+    // Mode Consultation : la lecture enchaîne les points et saute les temps
+    // morts. Dès qu'on sort du segment du point courant, on va au point suivant.
+    if (mode !== 'consultation' || !consultSegments.length) return;
+    const t = v.currentTime;
+    const idx = pointIndexAt(consultSegments, t);
+    if (idx >= 0) {
+      const first = (consultSegments[idx].actions || [])[0];
+      if (first && first.action_index !== consultIndex) setConsultIndex(first.action_index);
+      return;
+    }
+    // Hors segment : on reprend au point suivant (ou on s'arrête à la fin).
+    const next = consultSegments.find((s) => s.segmentStart > t);
+    if (next) {
+      v.currentTime = next.segmentStart;
+      resumeTimeRef.current = next.segmentStart;
+      const first = (next.actions || [])[0];
+      if (first) setConsultIndex(first.action_index);
+    } else {
+      v.pause();
+      setPlaying(false);
+    }
   };
 
   const seekTo = useCallback((t) => {
@@ -917,14 +1183,200 @@ function DataVolleyDashboard({ user, onLogout }) {
   /** Clic sur un point de la frise : on se place au début du point dans la vidéo. */
   const seekToPoint = useCallback(
     (pt) => {
-      const item = playlist.find((p) => p.pointNumber === pt?.point_number);
+      const item = pointSegments.find((p) => p.pointNumber === pt?.point_number);
       if (item && item.segmentStart != null) {
         seekTo(item.segmentStart);
         return;
       }
       if (pt && Number.isFinite(pt.timecode)) seekTo(pt.timecode + (sync.sync_offset || 0));
     },
-    [playlist, seekTo, sync.sync_offset]
+    [pointSegments, seekTo, sync.sync_offset]
+  );
+
+  // ---------------------------------------------------------------------------
+  // MODES CONSULTATION · CORRECTION · ANALYSE : actions et lecture
+  // ---------------------------------------------------------------------------
+
+  /** Applique une nouvelle liste d'actions (état + référence + sauvegarde auto). */
+  const applyActions = useCallback((next) => {
+    actionsRef.current = next;
+    setActions(next);
+  }, []);
+
+  /** Temps vidéo effectif d'une action (timecode + décalage de synchronisation). */
+  const videoTimeOf = useCallback(
+    (a) => (a?.timecode == null ? null : Number(a.timecode) + Number(sync.sync_offset || 0)),
+    [sync.sync_offset]
+  );
+
+  /** Va sur une action (Consultation, Correction, Analyse). */
+  const seekToAction = useCallback(
+    (a) => {
+      const t = videoTimeOf(a);
+      if (t == null) {
+        setFlash({ ok: false, text: 'Cette action n’a pas de temps vidéo : calez d’abord la vidéo (mode Correction).' });
+        if (flashTimer.current) clearTimeout(flashTimer.current);
+        flashTimer.current = setTimeout(() => setFlash(null), 4000);
+        return;
+      }
+      seekTo(t);
+      if (mode === 'consultation') setConsultIndex(a.action_index);
+      if (mode === 'correction') setCorrectUid(a.uid);
+    },
+    [videoTimeOf, seekTo, mode]
+  );
+
+  /** Point suivant / précédent en Consultation (le lecteur saute les temps morts). */
+  const goToPoint = useCallback(
+    (dir) => {
+      const idx = stepPoint(consultSegments, consultIndex, dir);
+      if (idx < 0) return;
+      const seg = consultSegments[idx];
+      setConsultIndex((seg.actions || [])[0]?.action_index ?? -1);
+      seekTo(seg.segmentStart);
+    },
+    [consultSegments, consultIndex, seekTo]
+  );
+
+  /** Changement de mode : on reprend la lecture au point lu, sans perdre le temps. */
+  const changeMode = useCallback(
+    (next) => {
+      setMode(next);
+      if (next !== 'parametres') setSettingsOpen(false);
+      const v = videoRef.current;
+      if (next === 'consultation' && v) {
+        // On se place sur le premier point (ou celui en cours) pour démarrer proprement.
+        const idx = consultIndex >= 0 ? consultIndex : 0;
+        const seg = consultSegments.find((s) => (s.actions || []).some((a) => a.action_index === idx)) || consultSegments[0];
+        if (seg) {
+          setConsultIndex((seg.actions || [])[0]?.action_index ?? -1);
+          seekTo(seg.segmentStart);
+        }
+      }
+    },
+    [consultIndex, consultSegments, seekTo]
+  );
+
+  /** Calage sur le premier service (mode Correction). */
+  const anchorFirstServe = useCallback(async () => {
+    const v = videoRef.current;
+    const res = firstServeAnchor(actionsRef.current, v ? v.currentTime : 0, sync);
+    if (res.error) {
+      setFlash({ ok: false, text: res.error });
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlash(null), 4000);
+      return;
+    }
+    setSync(res.sync);
+    try {
+      await datavolleyAPI.saveSync(id, res.sync);
+      setFlash({ ok: true, text: `Vidéo calée sur le premier service — décalage ${res.offset.toFixed(2)} s.` });
+    } catch (err) {
+      setFlash({ ok: false, text: 'Calage enregistré localement, mais non sauvegardé.' });
+    }
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 4000);
+  }, [sync, id]);
+
+  const patchSync = useCallback(
+    (patch) => {
+      if (patch.open) {
+        setShowSync(true);
+        return;
+      }
+      const next = { ...sync, ...patch };
+      setSync(next);
+      datavolleyAPI.saveSync(id, next).catch(() => {});
+    },
+    [sync, id]
+  );
+
+  // Numéro de point de chaque action (Consultation, Analyse, Correction).
+  const actionPointMap = useMemo(() => {
+    const map = new Map();
+    for (const r of rallies) {
+      for (const a of r.actions || []) {
+        const key = a.uid ?? a.id ?? a.action_index;
+        map.set(key, r.pointNumber);
+      }
+    }
+    return map;
+  }, [rallies]);
+  const pointOfAction = useCallback(
+    (a) => {
+      if (!a) return null;
+      const key = a.uid ?? a.id ?? a.action_index;
+      return actionPointMap.get(key) ?? null;
+    },
+    [actionPointMap]
+  );
+
+  /** Correction : décale le temps vidéo d'une action. */
+  const shiftActionTime = useCallback(
+    (a, delta) => {
+      applyActions(shiftTimecode(actionsRef.current, a.uid, delta));
+    },
+    [applyActions]
+  );
+
+  /** Correction : prend la position actuelle de la vidéo comme temps de l'action. */
+  const setActionTimeToVideo = useCallback(
+    (a) => {
+      const v = videoRef.current;
+      const videoTime = v ? v.currentTime : 0;
+      const sourceTime = Math.max(0, videoTime - Number(sync.sync_offset || 0));
+      applyActions(setActionTimecode(actionsRef.current, a.uid, sourceTime));
+      setFlash({ ok: true, text: `${a.code} : temps fixé à ${formatTimecode(videoTime)}.` });
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlash(null), 3000);
+    },
+    [applyActions, sync.sync_offset]
+  );
+
+  /** Correction : supprime une action (avec confirmation). */
+  const removeActionByUid = useCallback(
+    (a) => {
+      if (!window.confirm(`Supprimer l’action ${a.code} ?`)) return;
+      applyActions(removeAction(actionsRef.current, a.uid));
+      setCorrectUid(null);
+    },
+    [applyActions]
+  );
+
+  /** Correction : déplace une action d'un cran. */
+  const moveActionByUid = useCallback(
+    (a, dir) => {
+      applyActions(moveAction(actionsRef.current, a.uid, dir));
+    },
+    [applyActions]
+  );
+
+  /** Fenêtre de commandes (Échap) : temps mort, remplacement, code libre. */
+  const submitCommand = useCallback(
+    async (command) => {
+      const body = commandToEvent(command, {
+        setNumber: matchState.currentSet,
+        pointNumber: matchState.score.team1 + matchState.score.team2,
+      });
+      if (!body) return;
+      try {
+        const res = await datavolleyAPI.saveEvent(id, body);
+        setEvents((prev) => sortEvents([...prev, res.data.event]));
+        const who = body.team === 'away' ? team2 : team1;
+        const text =
+          command.kind === 'timeout'
+            ? `Temps mort ${who} (set ${body.set_number}).`
+            : command.kind === 'substitution'
+            ? `Remplacement ${who} : n°${command.out} → n°${command.in}.`
+            : `Code libre « ${command.text} » enregistré.`;
+        setFlash({ ok: true, text });
+      } catch (err) {
+        setFlash({ ok: false, text: err?.response?.data?.error || 'Commande non enregistrée.' });
+      }
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlash(null), 3500);
+    },
+    [id, matchState.currentSet, matchState.score, team1, team2]
   );
 
   const deleteRally = (rally) => {
@@ -1021,6 +1473,7 @@ function DataVolleyDashboard({ user, onLogout }) {
     actionsRef.current = demo;
     setActions(demo);
     loadedRef.current = true;
+    changeMode('analyse');
     setTab('bilan');
     setFlash({ ok: true, text: `Match de démo généré (${demo.length} actions).` });
     if (flashTimer.current) clearTimeout(flashTimer.current);
@@ -1234,13 +1687,12 @@ function DataVolleyDashboard({ user, onLogout }) {
     }
   };
 
-  const tabs = [
-    { key: 'codage', label: 'Codage', icon: Keyboard },
-    { key: 'sequences', label: 'Séquences', icon: ClipboardList },
-    { key: 'frise', label: 'Frise', icon: ChartColumn },
-    { key: 'bilan', label: 'Rapport', icon: Table },
-    { key: 'distribution', label: 'Distribution', icon: Target },
-    { key: 'parametres', label: 'Paramètres', icon: Settings },
+  // Fenêtres d'analyse (mode Analyse) : elles reprennent les vues existantes
+  // (feuille de match, frise des points, distribution du passeur).
+  const analysisWindows = [
+    { key: 'bilan', label: 'Feuille de match', icon: Table, hint: 'Synthèse et ventilations par compétence, zones, rotations' },
+    { key: 'frise', label: 'Points', icon: ChartColumn, hint: 'Frise chronologique des points et des événements' },
+    { key: 'distribution', label: 'Distribution', icon: Target, hint: 'Distribution du passeur par rotation' },
   ];
 
   if (loading) {
@@ -1262,12 +1714,12 @@ function DataVolleyDashboard({ user, onLogout }) {
   }
 
   // Page plein écran : rapport complet (synthèse + compétences + zones…).
-  if (tab === 'bilan') {
+  if (reportFullScreen) {
     return (
       <div className="dv-fullpage">
         <div className="dv-fullpage-bar">
-          <button className="btn btn-secondary btn-sm" onClick={() => setTab('codage')}>
-            <ChevronLeft size={14} /> Retour au codage
+          <button className="btn btn-secondary btn-sm" onClick={() => setReportFullScreen(false)}>
+            <ChevronLeft size={14} /> Retour à l’analyse
           </button>
           <div className="dv-fullpage-title">
             <Table size={16} />
@@ -1354,6 +1806,40 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   const bufferChunks = parseSequence(stripSpaces(buffer), codeOpts);
 
+  // Le lecteur vidéo est rendu une seule fois : dans la fenêtre « Vidéo » du mode
+  // Saisie, ou dans la scène du mode affiché (Consultation, Correction, Analyse).
+  const videoNode = (
+    <>
+      <div className="video-player-wrapper">
+        <video
+          ref={videoRef}
+          src={playbackUrl}
+          controls
+          preload="auto"
+          className="trimmed-player"
+          onTimeUpdate={handleTimeUpdate}
+          onPlay={() => { wasPlayingRef.current = true; setPlaying(true); }}
+          onPause={() => { wasPlayingRef.current = false; setPlaying(false); }}
+          onLoadedMetadata={(e) => {
+            // Changement de mode : on reprend au timecode quitté (et on relance
+            // la lecture si la vidéo jouait avant).
+            const el = e.currentTarget;
+            setVideoDuration(Number.isFinite(el.duration) ? el.duration : 0);
+            const t = resumeTimeRef.current;
+            if (t > 0) {
+              try { el.currentTime = t; } catch { /* média pas encore accessible */ }
+            }
+            if (wasPlayingRef.current) el.play().catch(() => {});
+          }}
+          onError={(e) => { const el = e.currentTarget; if (el.dataset.fb !== '1' && videoUrl) { el.dataset.fb = '1'; el.src = videoUrl; } }}
+        />
+      </div>
+      <div className="dv-timecode">
+        <Clock size={12} /> {formatTimecode(currentTime)}
+      </div>
+    </>
+  );
+
   return (
     <div className="video-dashboard dv-page">
       <div className="vd-workspace">
@@ -1379,30 +1865,13 @@ function DataVolleyDashboard({ user, onLogout }) {
               <House size={12} /> {team1} &nbsp;·&nbsp; <Plane size={12} /> {team2}
             </span>
           </div>
-          <div className="video-tabs-group">
-            {tabs.map((t) => {
-              const TabIcon = t.icon;
-              return (
-                <button key={t.key} className={`video-tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
-                  <TabIcon size={13} /> {t.label}
-                </button>
-              );
-            })}
-          </div>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => navigate(`/relecture/${id}`)}
-            title="Relire ce match en enchaînant les points, sans les temps morts (mode Relecture)"
-          >
-            <CirclePlay size={14} /> Relecture
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => navigate('/playlists')}
-            title="Séances : réunir des actions de plusieurs matchs dans une playlist"
-          >
-            <Film size={14} /> Playlists
-          </button>
+          <DvModeBar
+            mode={mode === 'parametres' ? 'saisie' : mode}
+            onMode={changeMode}
+            onSettings={() => setMode((m) => (m === 'parametres' ? 'saisie' : 'parametres'))}
+            settingsOpen={mode === 'parametres'}
+            issuesBadge={issues.filter((i) => i.severity === 'error').length}
+          />
           <button className="btn btn-secondary btn-sm" onClick={generateDemo} title="Générer un match de démonstration">
             <Dices size={14} /> Démo
           </button>
@@ -1439,10 +1908,10 @@ function DataVolleyDashboard({ user, onLogout }) {
             type="button"
             className={`btn btn-sm ${lightMode ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setLightMode((v) => !v)}
-            title="Mode Consultation : coder sans évaluation (ex. *02S a10A) — les points se découpent par service"
+            title="Coder sans évaluation (ex. *02S a10A) — les points se découpent par service"
             aria-pressed={lightMode}
           >
-            {lightMode ? <ListChecks size={14} /> : <Volleyball size={14} />} Consultation
+            {lightMode ? <ListChecks size={14} /> : <Volleyball size={14} />} Sans évaluation
           </button>
           <div className="dv-save-state">
             {saving ? (
@@ -1458,7 +1927,7 @@ function DataVolleyDashboard({ user, onLogout }) {
         </nav>
 
         <div className="vd-main">
-          {tab === 'codage' ? (
+          {mode === 'saisie' ? (
             <div className="dv-canvas" ref={setCanvasEl} style={{ minHeight: canvasHeight, minWidth: canvasWidth ? `${canvasWidth}px` : undefined }}>
               {/* Vidéo — ancre : déplaçable et redimensionnable, jamais fermée. */}
               {isOpen('video') && (
@@ -1477,32 +1946,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                     </span>
                   }
                 >
-                  <div className="video-player-wrapper">
-                    <video
-                      ref={videoRef}
-                      src={playbackUrl}
-                      controls
-                      preload="auto"
-                      className="trimmed-player"
-                      onTimeUpdate={handleTimeUpdate}
-                      onPlay={() => { wasPlayingRef.current = true; }}
-                      onPause={() => { wasPlayingRef.current = false; }}
-                      onLoadedMetadata={(e) => {
-                        // Retour sur l'onglet Codage : on reprend au timecode quitté
-                        // (et on relance la lecture si la vidéo jouait avant).
-                        const el = e.currentTarget;
-                        const t = resumeTimeRef.current;
-                        if (t > 0) {
-                          try { el.currentTime = t; } catch { /* média pas encore accessible */ }
-                        }
-                        if (wasPlayingRef.current) el.play().catch(() => {});
-                      }}
-                      onError={(e) => { const el = e.currentTarget; if (el.dataset.fb !== '1' && videoUrl) { el.dataset.fb = '1'; el.src = videoUrl; } }}
-                    />
-                  </div>
-                  <div className="dv-timecode">
-                    <Clock size={12} /> {formatTimecode(currentTime)}
-                  </div>
+                  {videoNode}
                 </FloatingPanel>
               )}
 
@@ -1534,8 +1978,6 @@ function DataVolleyDashboard({ user, onLogout }) {
                             Entrée (espace et flèches contrôlent la vidéo). Les blocs non compris s’affichent en rouge.
                           </>
                         )}
-                        <br />
-                        <span style={{ opacity: 0.8 }}>F3 : ajouter la dernière action à une playlist.</span>
                       </p>
                     }
                     bufferChunks={bufferChunks}
@@ -1591,39 +2033,39 @@ function DataVolleyDashboard({ user, onLogout }) {
                   onClose={() => close('actions')}
                   size={canvasSize}
                 >
-                  <CodedActionsList
-                    title="Points du match"
+                  <DvCodeList
                     rallies={rallies}
-                    headTitle={(r) => `Point ${r.pointNumber}`}
-                    headTime={(r) => formatTimecode(r.actions[0]?.timecode)}
-                    itemKey={(r, a) => a.action_index}
-                    itemClassFor={(a) => (isTerminalEvaluation(a.action, a.evaluation) ? 'terminal' : '')}
-                    itemTitle={(a) => `${describeCode(a.code, codeOpts)} — cliquer pour corriger la zone`}
-                    onPickItem={(a) => setZoneActionUid(a.uid)}
-                    onAddToPlaylist={(a) => {
-                      const rally = rallies.find((r) => r.actions.includes(a));
-                      if (rally) openAddToPlaylist(rally, a, 'action');
-                    }}
-                    onAddRallyToPlaylist={(r) =>
-                      openAddToPlaylist(r, r.actions[r.actions.length - 1] || r.actions[0], 'rally')
-                    }
-                    disabled={matchFinished}
+                    activeIndex={rallies.flatMap((r) => r.actions || []).slice(-1)[0]?.action_index ?? null}
+                    onSeek={seekToAction}
+                    issues={issues}
+                    actionSet={setOfAction}
+                    autoScroll
                   />
                 </FloatingPanel>
               )}
 
-              {/* Fenêtre « score ». */}
+              {/* Fenêtre « score » : le terrain de rotation façon DataVolley
+                  (6 + 6, score, set, ballon de service) puis les réglages. */}
               {isOpen('score') && (
                 <FloatingPanel
                   id="score"
-                  title="Score"
+                  title="Score &amp; rotation"
                   icon={Trophy}
                   rect={rect('score')}
                   onRectChange={(patch) => setRect('score', patch)}
                   onClose={() => close('score')}
                   size={canvasSize}
                 >
-                  <MatchBoard state={boardState} team1={team1} team2={team2} showScore showCourt={false} />
+                  <DvRotationWindow
+                    state={{ ...boardState, setNumber: boardState.currentSet }}
+                    team1={team1}
+                    team2={team2}
+                    homeConfig={homeConfig}
+                    awayConfig={awayConfig}
+                    events={events}
+                    setsWon1={boardState.setsWon?.team1 || 0}
+                    setsWon2={boardState.setsWon?.team2 || 0}
+                  />
 
                   <SetClaimsBar
                     claims={claims}
@@ -1786,14 +2228,120 @@ function DataVolleyDashboard({ user, onLogout }) {
               )}
             </div>
           ) : (
-            <div className="dv-main-col">
+            <div className={`dv-main-col ${mode === 'analyse' ? 'dv-main-analyse' : ''} ${mode === 'consultation' || mode === 'correction' ? 'dv-main-wide' : ''}`}>
               {flash && (
                 <div className={`dv-flash ${flash.ok ? 'ok' : 'err'}`}>{flash.text}</div>
               )}
+
+              {/* Mode Consultation : relire les points, sans les temps morts. */}
+              {mode === 'consultation' && (
+                <DvConsultationPane
+                  videoNode={videoNode}
+                  points={consultFiltered}
+                  segments={consultSegments}
+                  duration={videoDuration}
+                  activeIndex={consultIndex}
+                  playing={playing}
+                  rate={playbackRate}
+                  matchedUids={consultMatchedUids}
+                  filters={consultFilters}
+                  onFilters={patchConsultFilters}
+                  onResetFilters={() => setConsultFilters(EMPTY_FILTERS)}
+                  options={filterOptions}
+                  resultCount={consultMatched.length}
+                  onSeekAction={seekToAction}
+                  onTogglePlay={togglePlayback}
+                  onRate={setPlaybackRate}
+                  onStep={goToPoint}
+                  rotationView={consultRotation}
+                  team1={team1}
+                  team2={team2}
+                  homeConfig={homeConfig}
+                  awayConfig={awayConfig}
+                  events={events}
+                  setsWon1={matchState.setsWon.team1}
+                  setsWon2={matchState.setsWon.team2}
+                  issues={issues}
+                  actionSet={setOfAction}
+                />
+              )}
+
+              {/* Mode Correction : calage de la vidéo, contrôle des codes. */}
+              {mode === 'correction' && (
+                <DvCorrectionPane
+                  videoNode={videoNode}
+                  actions={actions}
+                  rallies={rallies}
+                  issues={issues}
+                  sync={sync}
+                  videoTime={currentTime}
+                  onAnchorHere={anchorFirstServe}
+                  onSyncPatch={patchSync}
+                  onSeekAction={seekToAction}
+                  onPickZone={(a) => setZoneActionUid(a.uid)}
+                  onTimeShift={shiftActionTime}
+                  onSetTime={setActionTimeToVideo}
+                  onRemove={removeActionByUid}
+                  onMove={moveActionByUid}
+                  selectedUid={correctUid}
+                  onSelect={(a) => setCorrectUid(a.uid)}
+                  actionSet={setOfAction}
+                  disabled={matchFinished}
+                />
+              )}
+
+              {/* Mode Analyse : menu des fenêtres, filtres et descente vers les
+                  actions (« Click to Rally »), autour des fenêtres elles-mêmes. */}
+              {mode === 'analyse' && (
+                <>
+                  <DvAnalysisMenu
+                    windows={analysisWindows}
+                    windowKey={tab}
+                    onWindow={setTab}
+                    onFullScreen={() => setReportFullScreen(true)}
+                  />
+                  <div className="dvx-analysis-head">
+                    <DvFilterPanel
+                      filters={consultFilters}
+                      onFilters={patchConsultFilters}
+                      onResetFilters={() => setConsultFilters(EMPTY_FILTERS)}
+                      options={filterOptions}
+                      team1={team1}
+                      team2={team2}
+                      resultCount={consultMatched.length}
+                      hasFilters={hasConsultFilters}
+                    />
+                  </div>
+                  <DvDrillDown matches={consultMatched} onSeekAction={seekToAction} pointOf={pointOfAction} />
+                </>
+              )}
+
               <AnimatePresence mode="wait">
 
-{tab === 'frise' && (
-                  <motion.div key="frise" className="dv-panel" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
+{mode === 'analyse' && tab === 'bilan' && (
+                  <motion.div key="bilan" className="dv-panel dv-analysis-window" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
+                    <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Table size={15} /> Feuille de match
+                    </h4>
+                    <p className="dv-hint">
+                      Synthèse par joueur, puis ventilations par compétence, combinaisons, zones, situations,
+                      rotations et classements. Filtrez les sets ici, ou les actions dans le bandeau à droite
+                      (« Click to Rally »).
+                    </p>
+                    <MatchReportFull
+                      report={scouting}
+                      context="coding"
+                      sets={reportSetsAvailable}
+                      activeSets={reportSets}
+                      onToggleSet={toggleReportSet}
+                      rawActions={actions}
+                      events={events}
+                    />
+                  </motion.div>
+                )}
+
+{mode === 'analyse' && tab === 'frise' && (
+                  <motion.div key="frise" className="dv-panel dv-analysis-window" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
                     <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <ChartColumn size={15} /> Frise chronologique
                     </h4>
@@ -1824,9 +2372,15 @@ function DataVolleyDashboard({ user, onLogout }) {
                           {events.map((ev) => (
                             <li key={ev.id}>
                               <span>
-                                {ev.kind === 'timeout' ? 'Temps mort' : 'Remplacement'} · set {ev.set_number || 1} · après{' '}
+                                {ev.kind === 'timeout'
+                                  ? 'Temps mort'
+                                  : ev.kind === 'note'
+                                  ? 'Code libre'
+                                  : 'Remplacement'}{' '}
+                                · set {ev.set_number || 1} · après{' '}
                                 {Number(ev.point_number) || 0} point(s) · {ev.team === 'away' ? team2 : team1}
                                 {ev.kind === 'substitution' ? ` (n°${ev.payload?.out} → n°${ev.payload?.in})` : ''}
+                                {ev.kind === 'note' ? ` (${ev.payload?.text || ''})` : ''}
                               </span>
                               <button
                                 type="button"
@@ -1843,7 +2397,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                     )}
                   </motion.div>
                 )}
-                {tab === 'sequences' && (
+                {mode === 'correction' && (
                   <motion.div key="sequences" className="dv-panel" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
                     <h4>Séquences (point par point)</h4>
                     <p className="dv-hint">Cliquez sur <Pencil size={11} /> pour éditer la séquence complète d'un point (ajouter, modifier ou retirer des actions). Le n° de joueur peut être sur 1 ou 2 chiffres.</p>
@@ -1942,8 +2496,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                     )}
                   </motion.div>
                 )}
-                {tab === 'distribution' && (
-                  <motion.div key="distribution" className="dv-panel" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
+                {mode === 'analyse' && tab === 'distribution' && (
+                  <motion.div key="distribution" className="dv-panel dv-analysis-window" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
                     <h4>Distribution du passeur</h4>
                     <p className="dv-hint">Attaques après réception, par position du passeur dans la rotation. Cliquez la zone de l'attaquant après chaque attaque pour alimenter l'analyse.</p>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -1964,9 +2518,25 @@ function DataVolleyDashboard({ user, onLogout }) {
                   </motion.div>
                 )}
 
-                {tab === 'parametres' && (
+                {mode === 'parametres' && (
                   <motion.div key="parametres" className="dv-panel" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
                     <h4><Settings size={14} /> Paramètres</h4>
+
+                    <h5 style={{ marginTop: 12 }}>Disposition de l’écran de saisie</h5>
+                    <p className="dv-hint">
+                      <strong>Disposition DataVolley</strong> range les fenêtres comme le logiciel de référence :
+                      vidéo en haut à gauche, score et terrain en dessous, zone de code en bas, liste des codes à
+                      droite. <strong>Disposition libre</strong> laisse tout en place pour organiser l’écran à votre
+                      façon (chaque fenêtre se déplace par sa barre de titre et se redimensionne par ses bords).
+                    </p>
+                    <div className="dv-panels-actions">
+                      <button type="button" className="btn btn-primary btn-sm" onClick={applyDvLayout}>
+                        <Grid3x3 size={13} /> Disposition DataVolley
+                      </button>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={applyFreeLayout}>
+                        Disposition libre
+                      </button>
+                    </div>
 
                     <h5 style={{ marginTop: 12 }}>Raccourcis clavier</h5>
                     <ShortcutSettings shortcuts={shortcuts} onChange={setShortcuts} />
@@ -2006,17 +2576,16 @@ function DataVolleyDashboard({ user, onLogout }) {
         </div>{/* /.vd-main */}
       </div>{/* /.vd-workspace */}
 
-      {/* Boîte « Ajouter à une playlist » (playlists de séance, multi-matchs). */}
+      {/* Fenêtre de commandes (Échap) : temps morts, remplacements, code libre. */}
       <AnimatePresence>
-        {addTarget && (
-          <AddToPlaylistDialog
-            items={addTarget.items}
-            onClose={() => setAddTarget(null)}
-            onDone={(ok, text) => {
-              setFlash({ ok, text });
-              if (flashTimer.current) clearTimeout(flashTimer.current);
-              flashTimer.current = setTimeout(() => setFlash(null), 4000);
-            }}
+        {showCommand && (
+          <DvCommandWindow
+            open={showCommand}
+            onClose={() => setShowCommand(false)}
+            onSubmit={submitCommand}
+            team1={team1}
+            team2={team2}
+            disabled={matchFinished}
           />
         )}
       </AnimatePresence>

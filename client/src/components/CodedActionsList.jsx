@@ -4,7 +4,6 @@
 // ============================================================================
 
 import { Fragment } from 'react';
-import { Plus } from './icons';
 
 /**
  * @param {Object} props
@@ -17,8 +16,6 @@ import { Plus } from './icons';
  * @param {Function} [props.itemClassFor] - (action) => classe du chip
  * @param {Function} [props.itemTitle] - (action) => infobulle du chip
  * @param {Function} props.onPickItem - (action) => void (correction de zone)
- * @param {Function} [props.onAddToPlaylist] - (action) => void (ajout d'une action)
- * @param {Function} [props.onAddRallyToPlaylist] - (rallye) => void (ajout du point entier)
  * @param {boolean} [props.disabled]
  */
 export default function CodedActionsList({
@@ -31,26 +28,9 @@ export default function CodedActionsList({
   itemClassFor = () => '',
   itemTitle = () => '',
   onPickItem,
-  onAddToPlaylist,
-  onAddRallyToPlaylist,
   disabled,
 }) {
   const list = rallies || [];
-
-  const addBtnStyle = {
-    border: '1px solid var(--border-subtle)',
-    background: 'transparent',
-    color: 'var(--text-muted)',
-    borderRadius: 999,
-    width: 18,
-    height: 18,
-    lineHeight: 1,
-    padding: 0,
-    cursor: disabled ? 'default' : 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  };
 
   return (
     <>
@@ -65,17 +45,6 @@ export default function CodedActionsList({
                 <span>{headTitle(r)}</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span className="dv-rally-time">{headTime(r)}</span>
-                  {onAddRallyToPlaylist && (
-                    <button
-                      type="button"
-                      title="Ajouter tout le point à une playlist"
-                      disabled={disabled}
-                      onClick={() => onAddRallyToPlaylist(r)}
-                      style={{ ...addBtnStyle, width: 'auto', padding: '0 6px', gap: 3, fontSize: 11 }}
-                    >
-                      <Plus size={11} /> Point
-                    </button>
-                  )}
                 </span>
               </div>
               <div className="dv-rally-codes">
@@ -92,17 +61,6 @@ export default function CodedActionsList({
                     >
                       {a.code}
                     </span>
-                    {onAddToPlaylist && (
-                      <button
-                        type="button"
-                        title="Ajouter cette action à une playlist"
-                        disabled={disabled}
-                        onClick={() => onAddToPlaylist(a)}
-                        style={addBtnStyle}
-                      >
-                        <Plus size={11} />
-                      </button>
-                    )}
                   </Fragment>
                 ))}
               </div>
