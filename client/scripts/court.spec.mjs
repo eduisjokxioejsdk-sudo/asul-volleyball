@@ -16,6 +16,8 @@ import {
   insideCourt,
   spotXY,
   distanceToNet,
+  zoneCenter,
+  zoneFromPoint,
 } from '../src/utils/courtGeometry.js';
 
 let failures = 0;
@@ -94,6 +96,17 @@ check(
   'toutes les zones sont dans le terrain',
   Object.keys(ZONE_CELLS).every((z) => insideCourt(xyFrom(ZONE_CELLS[z][0], ZONE_CELLS[z][1], 'left')))
 );
+
+console.log('\n== Direction d’attaque : du clic à la zone ==');
+for (const side of ['home', 'away']) {
+  check(
+    `${side} : chaque centre de zone redonne sa zone`,
+    Object.keys(ZONE_CELLS).every((zone) => zoneFromPoint(zoneCenter(zone, side), side) === zone)
+  );
+}
+check('clic hors des lignes ramené sur une zone', !!zoneFromPoint({ x: 0, y: 0 }, 'home'));
+check('point illisible → aucune zone', zoneFromPoint(null, 'home') === null);
+check('zone inconnue → aucun centre', zoneCenter('X', 'home') === null);
 
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);
 process.exit(failures === 0 ? 0 : 1);

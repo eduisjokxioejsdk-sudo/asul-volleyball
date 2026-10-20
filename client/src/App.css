@@ -6621,6 +6621,71 @@ body {
   color: var(--text-primary);
 }
 
+/* --- Terrain de direction d'attaque (fenêtre séparée, 2 clics) ----------- */
+.adc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.adc-court {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  cursor: crosshair;
+  touch-action: manipulation;
+}
+
+.adc.disabled .adc-court {
+  cursor: default;
+}
+
+.adc-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.adc-hint {
+  flex: 1 1 160px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.adc-hint strong {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.adc-history {
+  margin: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.adc-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.adc-picker span {
+  flex: none;
+}
+
+.adc-picker select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .dirc-table {
   width: 100%;
   border-collapse: collapse;

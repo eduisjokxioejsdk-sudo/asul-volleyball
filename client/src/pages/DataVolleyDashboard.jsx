@@ -30,7 +30,7 @@ import usePanelLayout from '../hooks/usePanelLayout';
 import { PANEL_GAP } from '../utils/panelLayout';
 import { loadShortcuts, matchesShortcut, saveShortcuts, stepSpeed } from '../utils/shortcuts';
 import MatchReportFull, { REPORT_TABS } from '../components/MatchReportFull';
-import DirectionCourt from '../components/DirectionCourt';
+import AttackDirectionCourt from '../components/AttackDirectionCourt';
 import LineupEditor from '../components/LineupEditor';
 import PointTimeline from '../components/PointTimeline';
 import { DvKeyPad, DvSyntaxHelp } from '../components/DvKeypad';
@@ -216,6 +216,8 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [playing, setPlaying] = useState(false);
   // Correction : action sélectionnée dans la liste (outils de temps).
   const [correctUid, setCorrectUid] = useState(null);
+  // Attaque choisie dans la fenêtre « Direction d'attaque » (null = la dernière).
+  const [directionUid, setDirectionUid] = useState(null);
   const [showCommand, setShowCommand] = useState(false);
   const [buffer, setBuffer] = useState('');
   const [flash, setFlash] = useState(null);
@@ -359,7 +361,7 @@ function DataVolleyDashboard({ user, onLogout }) {
   // Fenêtres de la page de codage : déplaçables, redimensionnables, fermables.
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const panelsKey = useMemo(() => `dv.panels.video.${id}`, [id]);
-  const { layout, setRect, toggle: togglePanelById, close, setMany, reset: resetPanels, minHeight, minWidth } = usePanelLayout(panelsKey, canvasSize);
+  const { layout, setRect, toggle: togglePanelById, open: openPanelById, close, setMany, reset: resetPanels, minHeight, minWidth } = usePanelLayout(panelsKey, canvasSize);
   const rect = useCallback((pid) => layout[pid] || { x: 0, y: 0, w: 300, h: 200 }, [layout]);
   const isOpen = useCallback((pid) => !!layout?.[pid]?.open, [layout]);
 
@@ -541,13 +543,21 @@ function DataVolleyDashboard({ user, onLogout }) {
       open: true,
     });
     setRect('console', { x: PANEL_GAP, y: videoH + midH + PANEL_GAP * 3, w: leftW, h: consoleH, open: true });
-    setRect('actions', { x: leftW + PANEL_GAP * 2, y: PANEL_GAP, w: rightW, h: H - PANEL_GAP * 2, open: true });
+    const directionH = Math.min(320, Math.max(200, Math.round(rightW / 2.2)));
+    setRect('direction', { x: leftW + PANEL_GAP * 2, y: PANEL_GAP, w: rightW, h: directionH, open: true });
+    setRect('actions', {
+      x: leftW + PANEL_GAP * 2,
+      y: directionH + PANEL_GAP * 2,
+      w: rightW,
+      h: H - directionH - PANEL_GAP * 3,
+      open: true,
+    });
     setMany(['positions', 'shortcuts', 'aide', 'keypad'], false);
   }, [canvasSize, setRect, setMany]);
 
   /** Disposition libre : on rend la main à l'utilisateur (fenêtres réaffichées). */
   const applyFreeLayout = useCallback(() => {
-    setMany(['score', 'court', 'positions', 'actions', 'shortcuts'], true);
+    setMany(['score', 'court', 'positions', 'actions', 'direction', 'shortcuts'], true);
   }, [setMany]);
 
   // Mode Aide : ouvre les fenêtres pédagogiques (aide-mémoire + clavier virtuel).
@@ -583,6 +593,40 @@ function DataVolleyDashboard({ user, onLogout }) {
   // Rotation au moment de l'action et situation de réception (3.1.0).
   const rotationMap = useMemo(() => rotationByAction(rallies, matchState), [rallies, matchState]);
   const situationMap = useMemo(() => situationByAction(actions), [actions]);
+
+  // Fenêtre « Direction d'attaque » : elle trace la direction de l'attaque
+  // choisie (par défaut la dernière codée) et rappelle en transparence les
+  // attaques du même joueur.
+  const lastAttack = useMemo(() => {
+    for (let i = actions.length - 1; i >= 0; i -= 1) {
+      if (actions[i]?.action === 'A') return actions[i];
+    }
+    return null;
+  }, [actions]);
+  const attackOptions = useMemo(() => {
+    const list = actions.filter((a) => a?.action === 'A').slice(-12).reverse();
+    return list;
+  }, [actions]);
+  const directionTarget = useMemo(
+    () => (directionUid ? actions.find((a) => a.uid === directionUid) || lastAttack : lastAttack),
+    [actions, directionUid, lastAttack]
+  );
+  const directionHistory = useMemo(() => {
+    if (!directionTarget) return [];
+    return actions
+      .filter(
+        (a) =>
+          a?.action === 'A' &&
+          a.team === directionTarget.team &&
+          Number(a.player_number) === Number(directionTarget.player_number) &&
+          a.uid !== directionTarget.uid &&
+          a.start_zone &&
+          a.end_zone
+      )
+      .map((a) => ({ start: String(a.start_zone), end: String(a.end_zone) }));
+  }, [actions, directionTarget]);
+  const directionTeam = directionTarget?.team === 'away' ? team2 : team1;
+  const directionOpponent = directionTarget?.team === 'away' ? team1 : team2;
   const consultMatched = useMemo(
     () =>
       searchCodes(actions, consultFilters, {
@@ -1085,12 +1129,17 @@ function DataVolleyDashboard({ user, onLogout }) {
     [applyActions, notifyEvent]
   );
 
-  /** Compteur « attaques sans direction » : va à la première à compléter. */
+  /** Compteur « attaques sans direction » : ouvre la fenêtre sur la première. */
   const goToAttackWithoutDirection = useCallback(() => {
     const first = attacksWithoutDirection(actionsRef.current)[0];
-    if (first) seekToAction(first);
-    else notifyEvent(true, 'Toutes les attaques ont une direction.');
-  }, [seekToAction, notifyEvent]);
+    if (first) {
+      setDirectionUid(first.uid);
+      openPanelById('direction');
+      seekToAction(first);
+    } else {
+      notifyEvent(true, 'Toutes les attaques ont une direction.');
+    }
+  }, [seekToAction, notifyEvent, openPanelById]);
 
   /** Clic sur une cellule de la fenêtre « Directions » : filtre la liste. */
   const filterByDirection = useCallback((row) => {
@@ -2116,21 +2165,6 @@ function DataVolleyDashboard({ user, onLogout }) {
                   onClose={() => close('actions')}
                   size={canvasSize}
                 >
-                  {actions.length > 0 && (
-                    <div className="dvc-direction">
-                      <div className="dvc-direction-head">
-                        Direction · <code>{actions[actions.length - 1].code}</code>
-                      </div>
-                      <DirectionCourt
-                        key={actions[actions.length - 1].uid}
-                        compact
-                        disabled={matchFinished}
-                        startZone={actions[actions.length - 1].start_zone}
-                        endZone={actions[actions.length - 1].end_zone}
-                        onChange={({ start, end }) => setDirection(actions[actions.length - 1], start, end)}
-                      />
-                    </div>
-                  )}
                   <DvCodeList
                     rallies={rallies}
                     mode="saisie"
@@ -2142,6 +2176,64 @@ function DataVolleyDashboard({ user, onLogout }) {
                     directionMissing={attacksWithoutDirection(actions).length}
                     onDirectionMissing={goToAttackWithoutDirection}
                   />
+                </FloatingPanel>
+              )}
+
+              {/* Fenêtre « direction d'attaque » — terrain complet façon
+                  Trajectoires : clic de départ, clic d'arrivée, et les attaques
+                  précédentes du joueur en transparence. */}
+              {isOpen('direction') && (
+                <FloatingPanel
+                  id="direction"
+                  title="Direction d’attaque"
+                  icon={Target}
+                  rect={rect('direction')}
+                  onRectChange={(patch) => setRect('direction', patch)}
+                  onClose={() => close('direction')}
+                  size={canvasSize}
+                >
+                  {directionTarget ? (
+                    <>
+                      <div className="dvc-direction-head">
+                        <code>{directionTarget.code}</code> · set {setOfAction(directionTarget) ?? '—'} ·{' '}
+                        {formatTimecode(directionTarget.timecode)}
+                      </div>
+                      <label className="adc-picker">
+                        <span>Attaque</span>
+                        <select
+                          value={directionTarget.uid || ''}
+                          onChange={(e) => setDirectionUid(e.target.value || null)}
+                        >
+                          {!attackOptions.some((a) => a.uid === directionTarget.uid) && (
+                            <option value={directionTarget.uid}>{directionTarget.code}</option>
+                          )}
+                          {attackOptions.map((a) => (
+                            <option key={a.uid} value={a.uid}>
+                              {a.code} · n°{String(a.player_number || 0).padStart(2, '0')} ·{' '}
+                              {formatTimecode(a.timecode)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <AttackDirectionCourt
+                        key={directionTarget.uid}
+                        side={directionTarget.team === 'away' ? 'away' : 'home'}
+                        startZone={directionTarget.start_zone}
+                        endZone={directionTarget.end_zone}
+                        history={directionHistory}
+                        playerLabel={`n°${String(directionTarget.player_number || 0).padStart(2, '0')}`}
+                        teamName={directionTeam}
+                        opponentName={directionOpponent}
+                        disabled={matchFinished}
+                        onChange={({ start, end }) => setDirection(directionTarget, start, end)}
+                      />
+                    </>
+                  ) : (
+                    <p className="dv-hint">
+                      Codez d’abord une attaque (<code>A</code>) : sa direction se trace ici, d’un clic de départ puis
+                      d’un clic d’arrivée.
+                    </p>
+                  )}
                 </FloatingPanel>
               )}
 
@@ -2391,6 +2483,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   selectedUid={correctUid}
                   onSelect={(a) => setCorrectUid(a.uid)}
                   actionSet={setOfAction}
+                  team1={team1}
+                  team2={team2}
                   disabled={matchFinished}
                 />
               )}

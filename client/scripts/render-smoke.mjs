@@ -183,6 +183,29 @@ console.log('\n== Directions d’attaque ==');
   } catch (err) {
     check('DirectionCourt se rend', false, `${err.name}: ${err.message}`);
   }
+
+  // Fenêtre séparée : terrain complet, trajectoire + historique transparent.
+  const Full = (await vite.ssrLoadModule('/src/components/AttackDirectionCourt.jsx')).default;
+  try {
+    const html = renderToString(
+      React.createElement(Full, {
+        startZone: '4',
+        endZone: '5',
+        side: 'home',
+        playerLabel: 'n°07',
+        history: [
+          { start: '4', end: '5' },
+          { start: '2', end: '1' },
+        ],
+        onChange: noop,
+      })
+    );
+    check('AttackDirectionCourt se rend', /adc-court/.test(html) && /DIRECTION D’ATTAQUE/.test(html));
+    check('la trajectoire et l’historique sont dessinés', /markerEnd|marker-end/.test(html) && /4/.test(html));
+    check('aucun type d’attaque demandé', !/feinte|continuité|faute/i.test(html));
+  } catch (err) {
+    check('AttackDirectionCourt se rend', false, `${err.name}: ${err.message}`);
+  }
 }
 
 // --- Menu d'analyse : toutes les fenêtres ----------------------------------

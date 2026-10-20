@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Clock, Crosshair, Settings, Target } from './icons';
 import DvCodeList from './DvCodeList';
-import DirectionCourt from './DirectionCourt';
+import AttackDirectionCourt from './AttackDirectionCourt';
 import { DV_ACTIONS, formatTimecode } from '../utils/datavolley';
 import { codeIssues, countIssuesByType, filterIssues, nextIssue } from '../utils/codingTools';
 
@@ -53,6 +53,8 @@ export default function DvCorrectionPane({
   selectedUid = null,
   onSelect,
   actionSet,
+  team1 = 'Domicile',
+  team2 = 'Extérieur',
 }) {
   const [reviewSkill, setReviewSkill] = useState('A');
   const [reviewIndex, setReviewIndex] = useState(0);
@@ -78,6 +80,21 @@ export default function DvCorrectionPane({
     () => (actions || []).find((a) => a.uid === selectedUid) || current || null,
     [actions, selectedUid, current]
   );
+  // Attaques précédentes du même joueur : uniquement les trajectoires.
+  const directionHistory = useMemo(() => {
+    if (!directionAction) return [];
+    return (actions || [])
+      .filter(
+        (a) =>
+          a?.action === 'A' &&
+          a.team === directionAction.team &&
+          Number(a.player_number) === Number(directionAction.player_number) &&
+          a.uid !== directionAction.uid &&
+          a.start_zone &&
+          a.end_zone
+      )
+      .map((a) => ({ start: String(a.start_zone), end: String(a.end_zone) }));
+  }, [actions, directionAction]);
 
   return (
     <div className="dvx-correct">
@@ -124,12 +141,16 @@ export default function DvCorrectionPane({
             <h5>
               Direction de l’action <code>{directionAction.code}</code>
             </h5>
-            <DirectionCourt
+            <AttackDirectionCourt
               key={directionAction.uid}
+              side={directionAction.team === 'away' ? 'away' : 'home'}
               startZone={directionAction.start_zone}
               endZone={directionAction.end_zone}
+              history={directionHistory}
+              playerLabel={`n°${String(directionAction.player_number || 0).padStart(2, '0')}`}
+              teamName={directionAction.team === 'away' ? team2 : team1}
+              opponentName={directionAction.team === 'away' ? team1 : team2}
               disabled={disabled}
-              compact
               onChange={({ start, end }) => onDirection?.(directionAction, start, end)}
             />
           </div>

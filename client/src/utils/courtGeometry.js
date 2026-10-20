@@ -91,3 +91,29 @@ export function spotXY(spot, side) {
 export function insideCourt(p) {
   return p.x >= LEFT_X && p.x <= RIGHT_X && p.y >= FREE && p.y <= FREE + M * U;
 }
+
+/**
+ * Zone DataVolley (1-9) d'un point du terrain, dans le repère de l'équipe
+ * (`side` = 'home' → moitié gauche, 'away' → moitié droite).
+ * Grille officielle, du filet vers le fond : 4 3 2 / 7 8 9 / 5 6 1.
+ * Un clic hors des lignes est ramené sur la ligne la plus proche.
+ */
+export function zoneFromPoint(point, side = 'home') {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const depth = side === 'away' ? (RIGHT_X - point.x) / U : (point.x - LEFT_X) / U;
+  const width = side === 'away' ? M - (point.y - FREE) / U : (point.y - FREE) / U;
+  const d = Math.min(M, Math.max(0, depth));
+  const w = Math.min(M, Math.max(0, width));
+  const col = w < M / 3 ? 0 : w < (2 * M) / 3 ? 1 : 2;
+  if (d >= M - ATTACK_M) return ['4', '3', '2'][col];
+  if (d >= ATTACK_M) return ['7', '8', '9'][col];
+  return ['5', '6', '1'][col];
+}
+
+/** Centre SVG de la zone 1-9 pour le côté de l'équipe donnée. */
+export function zoneCenter(zone, side = 'home') {
+  const cell = ZONE_CELLS[String(zone || '')];
+  if (!cell) return null;
+  return xyFrom(cell[0], cell[1], side === 'away' ? 'right' : 'left');
+}
+

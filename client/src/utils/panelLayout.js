@@ -10,7 +10,7 @@
 export const ANCHOR_PANELS = ['video', 'console'];
 
 /** Toutes les fenêtres de la page codage, dans l'ordre du menu « Fenêtres ». */
-export const PANEL_IDS = ['video', 'console', 'score', 'court', 'positions', 'actions', 'shortcuts', 'aide', 'keypad'];
+export const PANEL_IDS = ['video', 'console', 'score', 'court', 'positions', 'actions', 'direction', 'shortcuts', 'aide', 'keypad'];
 
 /** Titres + icônes (noms d'icônes de components/icons) de chaque fenêtre. */
 export const PANEL_META = {
@@ -20,6 +20,7 @@ export const PANEL_META = {
   court: { title: 'Terrain', icon: 'Crosshair' },
   positions: { title: 'Positions', icon: 'Users' },
   actions: { title: 'Actions codées', icon: 'ListChecks' },
+  direction: { title: 'Direction d’attaque', icon: 'Target' },
   shortcuts: { title: 'Raccourcis', icon: 'Keyboard' },
   aide: { title: 'Aide-mémoire', icon: 'CircleHelp' },
   keypad: { title: 'Clavier virtuel', icon: 'Grid3x3' },
@@ -33,6 +34,7 @@ export const PANEL_MIN = {
   court: { minW: 220, minH: 160 },
   positions: { minW: 220, minH: 110 },
   actions: { minW: 220, minH: 120 },
+  direction: { minW: 260, minH: 180 },
   shortcuts: { minW: 220, minH: 52 },
   aide: { minW: 240, minH: 160 },
   keypad: { minW: 240, minH: 140 },
@@ -96,6 +98,7 @@ export function defaultPanelLayout(width = 1200, height = 800, skip = []) {
   const videoH = clamp(Math.round(((leftW - 2) * 9) / 16) + HEADER_H + 30, 240, Math.max(260, Math.round(H * 0.62)));
   const consoleH = clamp(Math.round(H * 0.34), 240, 380);
   const actionsH = clamp(Math.round(H * 0.28), 200, 340);
+  const directionH = clamp(Math.round(leftW / 2.4) + HEADER_H + 40, 220, 360);
   const shortcutsH = 60;
   const courtH = clamp(Math.round(railW / 1.9) + HEADER_H + 40, 200, 420);
   const scoreH = 92;
@@ -119,6 +122,7 @@ export function defaultPanelLayout(width = 1200, height = 800, skip = []) {
     push('court', courtH);
     push('positions', positionsH);
     push('actions', actionsH);
+    push('direction', directionH);
     push('shortcuts', shortcutsH);
     if (!skip.includes('aide')) {
       layout.aide = { x: 0, y, w: W, h: Math.min(aideH, H), open: false };
@@ -137,6 +141,10 @@ export function defaultPanelLayout(width = 1200, height = 800, skip = []) {
   ly += consoleH + gap;
   layout.actions = { x: 0, y: ly, w: leftW, h: actionsH, open: true };
   ly += actionsH + gap;
+  if (!skip.includes('direction')) {
+    layout.direction = { x: 0, y: ly, w: leftW, h: directionH, open: true };
+    ly += directionH + gap;
+  }
   if (!skip.includes('keypad')) layout.keypad = { x: 0, y: ly, w: leftW, h: keypadH, open: false };
 
   let ry = 0;

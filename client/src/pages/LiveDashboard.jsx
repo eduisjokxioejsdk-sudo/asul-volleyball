@@ -203,7 +203,7 @@ function LiveDashboard({ user, onLogout }) {
 
   // Fenêtres de la page de codage : déplaçables, redimensionnables, fermables.
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-  const panelSkip = useMemo(() => ['video'], []);
+  const panelSkip = useMemo(() => ['video', 'direction'], []);
   const { layout, setRect, toggle: togglePanelById, close, setMany, reset: resetPanels, minHeight, minWidth } = usePanelLayout(`dv.panels.live.${sessionId}`, canvasSize, panelSkip);
   const rect = useCallback((pid) => layout[pid] || { x: 0, y: 0, w: 300, h: 200 }, [layout]);
   const isOpen = useCallback((pid) => !!layout?.[pid]?.open, [layout]);
