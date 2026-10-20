@@ -29,7 +29,8 @@ import SetClaimsBar from '../components/SetClaimsBar';
 import usePanelLayout from '../hooks/usePanelLayout';
 import { PANEL_GAP } from '../utils/panelLayout';
 import { loadShortcuts, matchesShortcut, saveShortcuts, stepSpeed } from '../utils/shortcuts';
-import MatchReportFull from '../components/MatchReportFull';
+import MatchReportFull, { REPORT_TABS } from '../components/MatchReportFull';
+import DirectionCourt from '../components/DirectionCourt';
 import LineupEditor from '../components/LineupEditor';
 import PointTimeline from '../components/PointTimeline';
 import { DvKeyPad, DvSyntaxHelp } from '../components/DvKeypad';
@@ -70,6 +71,8 @@ import {
 } from '../components/icons';
 import {
   EMPTY_FILTERS,
+  applyDirection,
+  attacksWithoutDirection,
   codeIssues,
   firstServeAnchor,
   hasUsableSegments,
@@ -78,9 +81,11 @@ import {
   pointIndexAt,
   removeAction,
   rotationAt,
+  rotationByAction,
   searchCodes,
   setActionTimecode,
   shiftTimecode,
+  situationByAction,
   stepPoint,
 } from '../utils/codingTools';
 import {
@@ -203,7 +208,7 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [mode, setMode] = useState('saisie');
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Fenêtre d'analyse affichée dans le mode Analyse, et son affichage plein écran.
-  const [tab, setTab] = useState('bilan');
+  const [tab, setTab] = useState('synthese');
   const [reportFullScreen, setReportFullScreen] = useState(false);
   // Consultation : filtres du déroulé, point lu et état de lecture.
   const [consultFilters, setConsultFilters] = useState(EMPTY_FILTERS);
@@ -575,9 +580,17 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   // Consultation : actions retenues par les filtres, puis points complets qui
   // les contiennent (on relit le point entier, pas seulement l'action filtrée).
+  // Rotation au moment de l'action et situation de réception (3.1.0).
+  const rotationMap = useMemo(() => rotationByAction(rallies, matchState), [rallies, matchState]);
+  const situationMap = useMemo(() => situationByAction(actions), [actions]);
   const consultMatched = useMemo(
-    () => searchCodes(actions, consultFilters, { setOf: setOfAction }),
-    [actions, consultFilters, setOfAction]
+    () =>
+      searchCodes(actions, consultFilters, {
+        setOf: setOfAction,
+        rotationOf: (a) => rotationMap.get(a?.uid ?? a?.id ?? a?.action_index) ?? null,
+        situationOf: (a) => situationMap.get(a?.uid ?? a?.id ?? a?.action_index) ?? null,
+      }),
+    [actions, consultFilters, setOfAction, rotationMap, situationMap]
   );
   const consultMatchedUids = useMemo(() => new Set(consultMatched.map((a) => a.uid)), [consultMatched]);
   const consultFiltered = useMemo(() => {
@@ -632,6 +645,12 @@ function DataVolleyDashboard({ user, onLogout }) {
       zones: DV_ZONE_KEYS.map((z) => ({ value: z, label: `Zone ${z}` })),
       actions: DV_ACTIONS,
       evaluations: DV_EVAL_KEYS,
+      rotation: [1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `Rotation ${n}` })),
+      situations: [
+        { value: '+', label: '+ réception positive' },
+        { value: '0', label: '0 réception neutre' },
+        { value: '-', label: '− réception négative' },
+      ],
     };
   }, [actions, setOfAction, team1, team2]);
 
@@ -672,8 +691,14 @@ function DataVolleyDashboard({ user, onLogout }) {
           away: (awayConfig?.roster || []).map((p) => p.number),
         },
         requireTimecode: Number(sync.anchor_timecode || 0) > 0 || Number(sync.sync_offset || 0) !== 0,
+        // Contrôles enrichis 3.1.0 : six, serveur attendu, remplacements,
+        // directions, fin de set — tous des avertissements.
+        enriched: true,
+        matchState,
+        events,
+        liberos: { home: homeConfig?.libero, away: awayConfig?.libero },
       }),
-    [actions, homeConfig, awayConfig, sync.anchor_timecode, sync.sync_offset]
+    [actions, homeConfig, awayConfig, sync.anchor_timecode, sync.sync_offset, matchState, events]
   );
 
   const hasAnyPosition = (l) => !!l && Object.values(l).some((v) => Number(v) > 0);
@@ -1035,6 +1060,43 @@ function DataVolleyDashboard({ user, onLogout }) {
     },
     [videoTimeOf, seekTo, mode]
   );
+
+  /** Va au début d'un point (en-tête déplié de la liste des codes). */
+  const seekToRally = useCallback(
+    (rally) => {
+      const seg = consultSegments.find((s) => Number(s.pointNumber) === Number(rally?.pointNumber));
+      if (seg && seg.segmentStart != null) {
+        seekTo(seg.segmentStart);
+        return;
+      }
+      const first = (rally?.actions || [])[0];
+      if (first) seekToAction(first);
+    },
+    [consultSegments, seekTo, seekToAction]
+  );
+
+  /** Écrit une direction (2 zones) dans l'action visée, sans changer de format. */
+  const setDirection = useCallback(
+    (action, start, end) => {
+      if (!action?.uid) return;
+      applyActions(applyDirection(actionsRef.current, action.uid, start, end));
+      notifyEvent(true, `Direction ${start || '—'} → ${end || '—'} enregistrée.`);
+    },
+    [applyActions, notifyEvent]
+  );
+
+  /** Compteur « attaques sans direction » : va à la première à compléter. */
+  const goToAttackWithoutDirection = useCallback(() => {
+    const first = attacksWithoutDirection(actionsRef.current)[0];
+    if (first) seekToAction(first);
+    else notifyEvent(true, 'Toutes les attaques ont une direction.');
+  }, [seekToAction, notifyEvent]);
+
+  /** Clic sur une cellule de la fenêtre « Directions » : filtre la liste. */
+  const filterByDirection = useCallback((row) => {
+    if (!row?.start || !row?.end) return;
+    setConsultFilters((prev) => ({ ...prev, action: 'A', query: `*${row.start}${row.end}*` }));
+  }, []);
 
   /** Point suivant / précédent en Consultation (le lecteur saute les temps morts). */
   const goToPoint = useCallback(
@@ -1476,7 +1538,7 @@ function DataVolleyDashboard({ user, onLogout }) {
     setActions(demo);
     loadedRef.current = true;
     changeMode('analyse');
-    setTab('bilan');
+    setTab('synthese');
     setFlash({ ok: true, text: `Match de démo généré (${demo.length} actions).` });
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 3000);
@@ -1689,10 +1751,32 @@ function DataVolleyDashboard({ user, onLogout }) {
     }
   };
 
-  // Fenêtres d'analyse (mode Analyse) : elles reprennent les vues existantes
-  // (feuille de match, frise des points, distribution du passeur).
+  // Fenêtres d'analyse (mode Analyse) : TOUTES les feuilles du rapport
+  // (synthèse, compétences, combinaisons, zones, situations, rotations,
+  // classements, par set, joueurs, directions) + points + distribution.
+  const reportIcons = {
+    synthese: Table,
+    service: Volleyball,
+    reception: Users,
+    attaque: Target,
+    combinaisons: Grid3x3,
+    contre: Trophy,
+    defense: Keyboard,
+    zones: Grid3x3,
+    situations: ChartColumn,
+    rotations: RotateCcw,
+    classements: Trophy,
+    parette: ListChecks,
+    joueurs: Users,
+    directions: Target,
+  };
   const analysisWindows = [
-    { key: 'bilan', label: 'Feuille de match', icon: Table, hint: 'Synthèse et ventilations par compétence, zones, rotations' },
+    ...REPORT_TABS.map((t) => ({
+      key: t.key,
+      label: t.label,
+      icon: reportIcons[t.key] || ChartColumn,
+      hint: `Fenêtre ${t.label}`,
+    })),
     { key: 'frise', label: 'Points', icon: ChartColumn, hint: 'Frise chronologique des points et des événements' },
     { key: 'distribution', label: 'Distribution', icon: Target, hint: 'Distribution du passeur par rotation' },
   ];
@@ -1880,9 +1964,6 @@ function DataVolleyDashboard({ user, onLogout }) {
           <button className="btn btn-secondary btn-sm" onClick={openTeamsModal} title="Six de départ, rôles et libéro">
             <Users size={14} /> Six &amp; rôles
           </button>
-          <button className="btn btn-secondary btn-sm" onClick={() => setShowSync(true)} title="Synchronisation vidéo / codage">
-            <Settings size={14} /> Sync
-          </button>
           <button
             className={`btn btn-sm ${isOpen('aide') ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => togglePanelById('aide')}
@@ -2035,13 +2116,31 @@ function DataVolleyDashboard({ user, onLogout }) {
                   onClose={() => close('actions')}
                   size={canvasSize}
                 >
+                  {actions.length > 0 && (
+                    <div className="dvc-direction">
+                      <div className="dvc-direction-head">
+                        Direction · <code>{actions[actions.length - 1].code}</code>
+                      </div>
+                      <DirectionCourt
+                        key={actions[actions.length - 1].uid}
+                        compact
+                        disabled={matchFinished}
+                        startZone={actions[actions.length - 1].start_zone}
+                        endZone={actions[actions.length - 1].end_zone}
+                        onChange={({ start, end }) => setDirection(actions[actions.length - 1], start, end)}
+                      />
+                    </div>
+                  )}
                   <DvCodeList
                     rallies={rallies}
+                    mode="saisie"
                     activeIndex={rallies.flatMap((r) => r.actions || []).slice(-1)[0]?.action_index ?? null}
                     onSeek={seekToAction}
                     issues={issues}
                     actionSet={setOfAction}
                     autoScroll
+                    directionMissing={attacksWithoutDirection(actions).length}
+                    onDirectionMissing={goToAttackWithoutDirection}
                   />
                 </FloatingPanel>
               )}
@@ -2252,6 +2351,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                   options={filterOptions}
                   resultCount={consultMatched.length}
                   onSeekAction={seekToAction}
+                  onSeekPoint={seekToRally}
                   onTogglePlay={togglePlayback}
                   onRate={setPlaybackRate}
                   onStep={goToPoint}
@@ -2281,6 +2381,9 @@ function DataVolleyDashboard({ user, onLogout }) {
                   onSyncPatch={patchSync}
                   onSeekAction={seekToAction}
                   onPickZone={(a) => setZoneActionUid(a.uid)}
+                  onDirection={setDirection}
+                  directionMissing={attacksWithoutDirection(actions).length}
+                  onDirectionMissing={goToAttackWithoutDirection}
                   onTimeShift={shiftActionTime}
                   onSetTime={setActionTimeToVideo}
                   onRemove={removeActionByUid}
@@ -2320,16 +2423,8 @@ function DataVolleyDashboard({ user, onLogout }) {
 
               <AnimatePresence mode="wait">
 
-{mode === 'analyse' && tab === 'bilan' && (
-                  <motion.div key="bilan" className="dv-panel dv-analysis-window" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
-                    <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Table size={15} /> Feuille de match
-                    </h4>
-                    <p className="dv-hint">
-                      Synthèse par joueur, puis ventilations par compétence, combinaisons, zones, situations,
-                      rotations et classements. Filtrez les sets ici, ou les actions dans le bandeau à droite
-                      (« Click to Rally »).
-                    </p>
+{mode === 'analyse' && REPORT_TABS.some((t) => t.key === tab) && (
+                  <motion.div key="report" className="dv-panel dv-analysis-window" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
                     <MatchReportFull
                       report={scouting}
                       context="coding"
@@ -2338,6 +2433,10 @@ function DataVolleyDashboard({ user, onLogout }) {
                       onToggleSet={toggleReportSet}
                       rawActions={actions}
                       events={events}
+                      tab={tab}
+                      onTab={setTab}
+                      hideTabs
+                      onDirectionCell={filterByDirection}
                     />
                   </motion.div>
                 )}

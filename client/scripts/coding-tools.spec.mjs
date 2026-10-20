@@ -4,18 +4,28 @@
 // descente d'un chiffre d'analyse vers les actions.
 // Exécution : node client/scripts/coding-tools.spec.mjs
 import {
+  ACCORDION_CLOSED,
+  accordionReduce,
   actionShortLabel,
+  applyDirection,
+  attackDirectionRows,
+  attacksWithoutDirection,
+  autoOpenPoint,
   buildPointSegments,
   codeIssues,
   commandToEvent,
   countByAction,
+  countIssuesByType,
   deadTimeGaps,
+  directionOf,
   drillDown,
+  filterIssues,
   findAction,
   firstServeAnchor,
   groupByPoint,
   hasUsableSegments,
   insertCodeAt,
+  isPointOpen,
   issuesByUid,
   matchCodePattern,
   moveAction,
@@ -26,15 +36,18 @@ import {
   removeAction,
   reviewTotals,
   rotationAt,
+  rotationByAction,
   rotationNumber,
   searchCodes,
   setActionTimecode,
   shiftTimecode,
+  situationByAction,
   skippedTime,
   stepPoint,
   FUNCTION_EVALUATIONS,
 } from '../src/utils/codingTools.js';
 import { groupActionsIntoRallies, makeAction } from '../src/utils/datavolley.js';
+import { buildScoutLine } from '../src/utils/dvw.js';
 import { computeMatchState } from '../src/utils/rotation.js';
 
 let failures = 0;
@@ -301,7 +314,154 @@ eq(
   [1, 4, 1]
 );
 
+console.log('\n== Liste des actions en accordéon (3.1.0) ==');
+let acc = ACCORDION_CLOSED;
+check('départ : aucun point ouvert', !isPointOpen(acc, 1) && !acc.all);
+acc = accordionReduce(acc, { type: 'toggle', pointNumber: 2 });
+eq('un clic ouvre le point', acc.open, 2);
+acc = accordionReduce(acc, { type: 'toggle', pointNumber: 3 });
+eq('ouvrir un point referme le précédent', acc.open, 3);
+check('l’ancien point est replié', !isPointOpen(acc, 2) && isPointOpen(acc, 3));
+acc = accordionReduce(acc, { type: 'toggle', pointNumber: 3 });
+eq('re-cliquer referme', acc.open, null);
+acc = accordionReduce(acc, { type: 'expandAll' });
+check('« tout déplier » ouvre tous les points', isPointOpen(acc, 1) && isPointOpen(acc, 42) && acc.all);
+acc = accordionReduce(acc, { type: 'toggle', pointNumber: 5 });
+check('un clic après « tout déplier » isole le point', acc.open === 5 && acc.all === false && !isPointOpen(acc, 1));
+acc = accordionReduce(acc, { type: 'collapseAll' });
+check('« tout replier » referme tout', acc.open === null && !acc.all && !isPointOpen(acc, 5));
+eq(
+  'ouverture auto en Consultation : point lu',
+  accordionReduce(ACCORDION_CLOSED, { type: 'auto', pointNumber: 7, follow: true }).open,
+  7
+);
+eq(
+  'suivi désactivé : l’accordéon ne bouge pas',
+  accordionReduce({ open: 1, all: false }, { type: 'auto', pointNumber: 7, follow: false }).open,
+  1
+);
+eq('mode Saisie : dernier point codé', autoOpenPoint('saisie', { lastPointNumber: 12 }), 12);
+eq('mode Correction : point de l’action sélectionnée', autoOpenPoint('correction', { selectedPointNumber: 4 }), 4);
+eq('mode Consultation : point en cours de lecture', autoOpenPoint('consultation', { activePointNumber: 9 }), 9);
+
+console.log('\n== Filtres rotation et situation (3.1.0) ==');
+const ROT_BY_ACTION = rotationByAction(RALLIES, MATCH_STATE);
+eq('rotation de la 1re action (domicile en P1)', ROT_BY_ACTION.get(ACTIONS[0].uid), 1);
+eq('rotation de l’attaque extérieure du point 2', ROT_BY_ACTION.get(ACTIONS[4].uid), 4);
+eq('rotation du service domicile du point 3', ROT_BY_ACTION.get(ACTIONS[5].uid), 1);
+
+const SIT_ACTIONS = [
+  mk('*01S#', 10, 1),
+  mk('a03R-', 12, 2),
+  mk('a04A#', 14, 3),
+  mk('a05A45#', 16, 4),
+];
+const SIT_MAP = situationByAction(SIT_ACTIONS);
+eq('réception négative classée « − »', SIT_MAP.get(SIT_ACTIONS[1].uid), '-');
+eq('attaque après réception négative classée « − »', SIT_MAP.get(SIT_ACTIONS[2].uid), '-');
+eq(
+  'filtre Situation « − » : réception + attaque',
+  searchCodes(SIT_ACTIONS, { situation: '-' }, { situationOf: (a) => SIT_MAP.get(a.uid) }).length,
+  2
+);
+eq(
+  'filtre Rotation 4',
+  searchCodes(SIT_ACTIONS, { rotation: 4 }, { rotationOf: (a) => (a.action === 'A' ? 4 : 1) }).length,
+  2
+);
+eq(
+  'filtre Rotation : aucune action en rotation 6',
+  searchCodes(SIT_ACTIONS, { rotation: 6 }, { rotationOf: () => 1 }).length,
+  0
+);
+const POS_R_ACTIONS = [mk('*01S#', 10, 1), mk('a03R+', 12, 2), mk('a04A#', 14, 3)];
+const POS_R_MAP = situationByAction(POS_R_ACTIONS);
+eq('réception positive → attaque classée « + »', POS_R_MAP.get(POS_R_ACTIONS[2].uid), '+');
+
+console.log('\n== Contrôles enrichis (3.1.0) ==');
+// 1. Joueur absent du six : l'action porte un numéro hors du six enregistré.
+const SIX_ACTIONS = [mk('*09S5#', 10, 1)];
+const SIX_STATE = computeMatchState(groupActionsIntoRallies(SIX_ACTIONS), SETUPS);
+check(
+  '1. joueur absent du six signalé',
+  codeIssues(SIX_ACTIONS, { enriched: true, matchState: SIX_STATE }).some((i) => i.issue === 'player_not_in_six')
+);
+check(
+  '1. contrôle désactivé sans six enregistré',
+  !codeIssues(SIX_ACTIONS, { enriched: true }).some((i) => i.issue === 'player_not_in_six')
+);
+
+// 2. Serveur attendu : le visiteur sert alors que la rotation désigne le domicile.
+const SERVER_ACTIONS = [mk('*01S5#', 10, 1), mk('a03S1#', 30, 2)];
+const SERVER_STATE = computeMatchState(groupActionsIntoRallies(SERVER_ACTIONS), SETUPS);
+check(
+  '2. service par une équipe qui n’avait pas le service',
+  codeIssues(SERVER_ACTIONS, { enriched: true, matchState: SERVER_STATE }).some((i) => i.issue === 'wrong_server')
+);
+
+// 3. Remplacement sans sortant sur le terrain.
+const SUB_STATE = computeMatchState(groupActionsIntoRallies(SIX_ACTIONS), SETUPS);
+const SUB_EVENTS = [{ kind: 'substitution', set_number: 1, point_number: 0, team: 'home', payload: { out: 9, in: 12 } }];
+check(
+  '3. remplacement sans sortant signalé',
+  codeIssues(SIX_ACTIONS, { enriched: true, matchState: SUB_STATE, events: SUB_EVENTS }).some(
+    (i) => i.issue === 'sub_without_out'
+  )
+);
+
+// 4. Attaque sans direction.
+check(
+  '4. attaque sans direction signalée',
+  codeIssues([mk('*04A#', 10, 1)], { enriched: true }).some((i) => i.issue === 'attack_without_direction')
+);
+// 5. Service sans direction.
+check(
+  '5. service sans direction signalé',
+  codeIssues([mk('*01S#', 10, 1)], { enriched: true }).some((i) => i.issue === 'serve_without_direction')
+);
+// 6. Point non clos en fin de set (le set change au point suivant).
+const SET_END_ACTIONS = [mk('*01S', 10, 1, 1), mk('a03S1#', 30, 2, 2)];
+check(
+  '6. point non clos en fin de set',
+  codeIssues(SET_END_ACTIONS, { enriched: true }).some((i) => i.issue === 'point_not_closed')
+);
+// 7. Set manquant : le set 2 n'existe pas.
+const MISSING_SET_ACTIONS = [mk('*01S5#', 10, 1, 1), mk('a03S1#', 30, 2, 3)];
+check(
+  '7. set manquant signalé',
+  codeIssues(MISSING_SET_ACTIONS, { enriched: true }).some((i) => i.issue === 'missing_set')
+);
+const ENRICHED = codeIssues([mk('*01S#', 10, 1), mk('a02S1#', 12, 2)], { enriched: true });
+check(
+  'les contrôles enrichis sont des avertissements',
+  ENRICHED.length > 0 && ENRICHED.every((i) => i.severity === 'warning')
+);
+eq(
+  'compteurs par type d’anomalie',
+  countIssuesByType([{ issue: 'a' }, { issue: 'a' }, { issue: 'b' }]),
+  { a: 2, b: 1 }
+);
+eq('filtre « erreurs »', filterIssues([{ severity: 'error' }, { severity: 'warning' }], 'error').length, 1);
+
+console.log('\n== Directions d’attaque (3.1.0) ==');
+const DIR_TARGET = mk('*04A#', 10, 1);
+const WITH_DIR = applyDirection([DIR_TARGET], DIR_TARGET.uid, '4', '5');
+eq('code réécrit avec les 2 zones', WITH_DIR[0].code, '*04A45#');
+eq('zone de départ conservée', WITH_DIR[0].start_zone, '4');
+eq('zone d’arrivée conservée', WITH_DIR[0].end_zone, '5');
+check('aucune action perdue', WITH_DIR.length === 1 && WITH_DIR[0].uid === DIR_TARGET.uid);
+eq('direction lisible', directionOf(WITH_DIR[0]).key, '4 → 5');
+eq('export .dvw : code avec les 2 zones', buildScoutLine(WITH_DIR[0]).split(';')[0], '*04A45#');
+const DIR_ACTIONS = [mk('*04A45#', 10, 1), mk('*05A45#', 12, 2), mk('*06A54#', 14, 3), mk('*08A12#', 18, 5), mk('*07A#', 16, 4)];
+const DIR_ROWS = attackDirectionRows(DIR_ACTIONS);
+eq('agrégat « 4 → 5 » : volume', DIR_ROWS.find((r) => r.key === '4 → 5')?.total, 2);
+eq('agrégat « 4 → 5 » : libellé', DIR_ROWS[0].key, '4 → 5');
+eq('attaques sans direction', attacksWithoutDirection(DIR_ACTIONS).length, 1);
+eq('pas de perte : une ligne par direction', DIR_ROWS.length, 3);
+
 console.log('\n== Divers ==');
+
+
 eq('six évaluations par les touches F', FUNCTION_EVALUATIONS.length, 6);
 eq('F1 = faute', FUNCTION_EVALUATIONS[0], { key: 'F1', sym: '=' });
 eq('F6 = point gagnant', FUNCTION_EVALUATIONS[5], { key: 'F6', sym: '#' });

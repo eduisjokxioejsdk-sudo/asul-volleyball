@@ -31,6 +31,7 @@ const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
  * @param {Object} [props.options] - { players, sets, zones, actions, evaluations }
  * @param {number} [props.resultCount] - nombre d'actions retenues
  * @param {Function} props.onSeekAction - (action) => void
+ * @param {Function} [props.onSeekPoint] - (rally) => void (début du point)
  * @param {Function} props.onTogglePlay
  * @param {Function} props.onRate - (rate) => void
  * @param {Function} props.onStep - (dir) => void
@@ -51,6 +52,7 @@ export default function DvConsultationPane({
   options = {},
   resultCount = 0,
   onSeekAction,
+  onSeekPoint,
   onTogglePlay,
   onRate,
   onStep,
@@ -192,8 +194,10 @@ export default function DvConsultationPane({
 
         <DvCodeList
           rallies={points}
+          mode="consultation"
           activeIndex={activeIndex}
           onSeek={onSeekAction}
+          onSeekPoint={onSeekPoint}
           issues={issues}
           actionSet={actionSet}
           emptyText="Aucun point ne correspond aux filtres."

@@ -3,7 +3,7 @@
 // position, joueur, équipe, set et recherche libre de code.
 // ============================================================================
 
-import { ChartColumn, RotateCcw, Target, Users, Volleyball, X } from './icons';
+import { ChartColumn, RotateCcw, RotateCw, Target, Users, Volleyball, X } from './icons';
 
 /**
  * @param {Object} props
@@ -16,6 +16,8 @@ import { ChartColumn, RotateCcw, Target, Users, Volleyball, X } from './icons';
  * @param {number} [props.pointCount] - points retenus
  * @param {boolean} [props.hasFilters]
  * @param {boolean} [props.withSet] - afficher le filtre de set (défaut : oui)
+ * @param {boolean} [props.withRotation] - afficher le filtre de rotation (défaut : oui)
+ * @param {boolean} [props.withSituation] - afficher le filtre de situation (défaut : oui)
  */
 export default function DvFilterPanel({
   filters,
@@ -28,8 +30,18 @@ export default function DvFilterPanel({
   pointCount = null,
   hasFilters = false,
   withSet = true,
+  withRotation = true,
+  withSituation = true,
 }) {
   const setFilter = (key) => (e) => onFilters?.({ [key]: e.target.value });
+  // Rotation de l'équipe qui joue l'action (1 à 6), situation de réception (+/0/−).
+  const rotationOptions =
+    options.rotation || [1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `Rotation ${n}` }));
+  const situationOptions = options.situations || [
+    { value: '+', label: '+ réception positive' },
+    { value: '0', label: '0 réception neutre' },
+    { value: '-', label: '− réception négative' },
+  ];
 
   return (
     <div className="dvx-filters">
@@ -89,6 +101,30 @@ export default function DvFilterPanel({
             <option value="all">Tous</option>
             {(options.sets || []).map((s) => (
               <option key={s} value={s}>Set {s}</option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {withRotation && (
+        <label className="dvx-filter">
+          <span><RotateCw size={11} /> Rotation</span>
+          <select value={filters.rotation ?? 'all'} onChange={setFilter('rotation')}>
+            <option value="all">Toutes</option>
+            {rotationOptions.map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {withSituation && (
+        <label className="dvx-filter">
+          <span><Target size={11} /> Situation</span>
+          <select value={filters.situation ?? 'all'} onChange={setFilter('situation')}>
+            <option value="all">Toutes</option>
+            {situationOptions.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
         </label>

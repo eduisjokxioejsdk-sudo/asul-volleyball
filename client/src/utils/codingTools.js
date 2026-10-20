@@ -13,6 +13,7 @@ import {
   buildPointSegments,
   decomposeCode,
   evaluationAllowed,
+  formatCode,
   getPointWinner,
   groupActionsIntoRallies,
   isTerminalEvaluation,
@@ -20,7 +21,8 @@ import {
   reindexActions,
   validateAction,
 } from './datavolley.js';
-import { COURT_POSITIONS, POSITION_LABELS } from './rotation.js';
+import { COURT_POSITIONS, POSITION_LABELS, computeMatchState } from './rotation.js';
+import { receptionToSituation } from './distribution.js';
 
 // ---------------------------------------------------------------------------
 // 1. ROTATION AU MOMENT D'UNE ACTION (mode Consultation / Analyse)
@@ -78,6 +80,65 @@ export function positionLabel(pos) {
   return label ? `${pos} — ${label}` : pos;
 }
 
+/**
+ * Rotation (1 à 6) de l'équipe qui joue CHAQUE action du match.
+ *
+ * C'est le filtre « Rotation » de la Consultation et de l'Analyse : la rotation
+ * affichée par DataVolley est celle de l'équipe qui exécute l'action, au moment
+ * du point (et non la rotation courante du match).
+ *
+ * @param {Array} rallies - rallyes (groupActionsIntoRallies)
+ * @param {Object} matchState - état rejoué (computeMatchState)
+ * @returns {Map<string|number, number|null>} clé d'action (uid) → rotation 1-6
+ */
+export function rotationByAction(rallies, matchState) {
+  const map = new Map();
+  const states = matchState?.states || [];
+  for (const rally of rallies || []) {
+    const snapshot = states.find((s) => Number(s.pointNumber) === Number(rally.pointNumber));
+    if (!snapshot) continue;
+    const homeRotation = rotationNumber(snapshot.homeSetterPos);
+    const awayRotation = rotationNumber(snapshot.awaySetterPos);
+    for (const a of rally.actions || []) {
+      const key = a?.uid ?? a?.id ?? a?.action_index;
+      if (key == null) continue;
+      map.set(key, a.team === 'away' ? awayRotation : homeRotation);
+    }
+  }
+  return map;
+}
+
+/**
+ * Situation (+ / 0 / −) de chaque action, déduite de la réception :
+ *   • la réception prend sa propre qualité (`#`/`+` → +, `!` → 0, `-` → −) ;
+ *   • l'attaque qui suit une réception de la même équipe prend cette qualité
+ *     (une attaque après une réception négative est donc classée « − »).
+ *
+ * @param {Array} actions
+ * @returns {Map<string|number, '+'|0|'-'>} clé d'action (uid) → situation
+ */
+export function situationByAction(actions) {
+  const map = new Map();
+  const list = actions || [];
+  for (const rally of groupActionsIntoRallies(list)) {
+    const acts = rally.actions || [];
+    for (let i = 0; i < acts.length; i += 1) {
+      const a = acts[i];
+      if (!a) continue;
+      const key = a.uid ?? a.id ?? a.action_index;
+      const prev = i > 0 ? acts[i - 1] : null;
+      let situation = null;
+      if (a.action === 'R') {
+        situation = receptionToSituation(a.evaluation);
+      } else if (a.action === 'A' && prev && prev.action === 'R' && prev.team === a.team) {
+        situation = receptionToSituation(prev.evaluation);
+      }
+      if (situation != null && key != null) map.set(key, situation);
+    }
+  }
+  return map;
+}
+
 
 // ---------------------------------------------------------------------------
 // 2. RECHERCHE DANS LES CODES (mode Consultation)
@@ -93,6 +154,9 @@ export const EMPTY_FILTERS = {
   combo: 'all',
   type: 'all',
   query: '',
+  // Filtres DataVolley ajoutés en 3.1.0 : rotation (1-6) et situation (+ / 0 / −).
+  rotation: 'all',
+  situation: 'all',
 };
 
 /**
@@ -121,6 +185,8 @@ export function matchCodePattern(code, pattern) {
  * @param {Function} [opts.setOf] - (action) => numéro de set (indexActionSets)
  * @param {Function} [opts.comboOf] - (action) => code de combinaison
  * @param {Function} [opts.typeOf] - (action) => symbole de type
+ * @param {Function} [opts.rotationOf] - (action) => rotation 1-6 (rotationByAction)
+ * @param {Function} [opts.situationOf] - (action) => '+' | 0 | '-'
  * @returns {Array}
  */
 export function searchCodes(actions, filters = {}, opts = {}) {
@@ -128,9 +194,15 @@ export function searchCodes(actions, filters = {}, opts = {}) {
   const setOf = opts.setOf || ((a) => a?.set_number ?? null);
   const comboOf = opts.comboOf || ((a) => a?.combo ?? null);
   const typeOf = opts.typeOf || ((a) => a?.type ?? null);
+  const rotationOf = opts.rotationOf || (() => null);
+  const situationOf = opts.situationOf || (() => null);
 
   const wantPlayer = f.player === '' || f.player == null ? null : Number(f.player);
   const wantZone = f.zone === 'all' || f.zone === '' ? null : String(f.zone);
+  const wantRotation =
+    f.rotation === 'all' || f.rotation === '' || f.rotation == null ? null : Number(f.rotation);
+  const wantSituation =
+    f.situation === 'all' || f.situation === '' || f.situation == null ? null : String(f.situation);
 
   return (actions || []).filter((a) => {
     if (!a) return false;
@@ -148,6 +220,8 @@ export function searchCodes(actions, filters = {}, opts = {}) {
     }
     if (f.combo !== 'all' && f.combo && String(comboOf(a) || '') !== String(f.combo)) return false;
     if (f.type !== 'all' && f.type && String(typeOf(a) || '') !== String(f.type)) return false;
+    if (wantRotation != null && Number(rotationOf(a)) !== wantRotation) return false;
+    if (wantSituation != null && String(situationOf(a) ?? '') !== wantSituation) return false;
     if (f.query && !matchCodePattern(a.code, f.query)) return false;
     return true;
   });
@@ -177,6 +251,14 @@ export const CODE_ISSUE_LABELS = {
   missing_serve: 'le point ne commence pas par un service',
   reception_without_serve: 'réception qui ne suit pas un service',
   unknown_player: 'numéro de joueur absent de la fiche équipe',
+  // Contrôles enrichis de la 3.1.0 — toujours des AVERTISSEMENTS, jamais bloquants.
+  player_not_in_six: 'joueur absent du six',
+  wrong_server: 'service par une équipe qui n’avait pas le service',
+  sub_without_out: 'remplacement sans sortant sur le terrain',
+  attack_without_direction: 'attaque sans direction',
+  serve_without_direction: 'service sans direction',
+  point_not_closed: 'point non clos en fin de set',
+  missing_set: 'set manquant',
 };
 
 /**
@@ -188,12 +270,17 @@ export const CODE_ISSUE_LABELS = {
  * @param {Object} [opts.roster] - { home: [numéros], away: [numéros] }
  * @param {boolean} [opts.requireTimecode] - signale les actions non calées
  * @param {boolean} [opts.requireEvaluation] - signale les actions non notées
+ * @param {boolean} [opts.enriched] - active les sept contrôles enrichis (3.1.0)
+ * @param {Object} [opts.matchState] - état rejoué (computeMatchState)
+ * @param {Object} [opts.setups] - six de départ (si matchState absent)
+ * @param {Array} [opts.events] - temps morts / remplacements enregistrés
+ * @param {{home?:number,away?:number}} [opts.liberos] - numéros de libéro
  * @returns {Array<{uid, action_index, code, issue, severity, label}>}
  */
 export function codeIssues(actions, opts = {}) {
   const list = actions || [];
   const out = [];
-  const push = (action, issue, severity = 'error') => {
+  const push = (action, issue, severity = 'error', extra = {}) => {
     out.push({
       uid: action?.uid ?? null,
       action_index: action?.action_index ?? null,
@@ -201,6 +288,7 @@ export function codeIssues(actions, opts = {}) {
       issue,
       severity,
       label: CODE_ISSUE_LABELS[issue] || issue,
+      ...extra,
     });
   };
 
@@ -226,6 +314,10 @@ export function codeIssues(actions, opts = {}) {
   }
 
   const rallies = groupActionsIntoRallies(list);
+  const matchState =
+    opts.matchState ||
+    (opts.enriched ? computeMatchState(rallies, opts.setups || {}, {}, opts.events || []) : null);
+  const states = matchState?.states || [];
   rallies.forEach((rally, i) => {
     const acts = rally.actions || [];
     if (!acts.length) return;
@@ -243,7 +335,112 @@ export function codeIssues(actions, opts = {}) {
     if (!closed && !isLast) push(last, 'point_open');
   });
 
+  // -------------------------------------------------------------------------
+  // Contrôles enrichis (3.1.0) — tous des avertissements.
+  // -------------------------------------------------------------------------
+  if (opts.enriched) {
+    const events = opts.events || [];
+    const hasAny = (lineup) => !!lineup && Object.values(lineup).some((v) => Number(v) > 0);
+    const contains = (lineup, number) => !!lineup && Object.values(lineup).some((v) => Number(v) === Number(number));
+    const snapshotAt = (pointNumber) =>
+      states.find((s) => Number(s.pointNumber) === Number(pointNumber)) || null;
+    const setOfRally = (rally) => {
+      const snap = snapshotAt(rally.pointNumber);
+      const first = (rally.actions || [])[0];
+      return Number(first?.set_number ?? snap?.setNumber ?? 0) || null;
+    };
+    const firstActionOfPoint = (pointNumber) =>
+      (rallies.find((r) => Number(r.pointNumber) === Number(pointNumber))?.actions || [])[0] || null;
+
+    // 1. Joueur absent du six (désactivé si aucun six n'est enregistré).
+    for (const rally of rallies) {
+      const snap = snapshotAt(rally.pointNumber);
+      if (!snap) continue;
+      for (const a of rally.actions || []) {
+        if (a?.player_number == null) continue;
+        const team = a.team === 'away' ? 'away' : 'home';
+        const lineup = team === 'away' ? snap.awayLineup : snap.homeLineup;
+        if (!hasAny(lineup)) continue;
+        if (Number(opts.liberos?.[team]) === Number(a.player_number)) continue;
+        if (!contains(lineup, a.player_number)) push(a, 'player_not_in_six', 'warning');
+      }
+    }
+
+    // 2. Serveur attendu : la rotation désigne l'équipe qui doit servir.
+    for (const warning of matchState?.warnings || []) {
+      if (warning?.type !== 'wrong_server') continue;
+      const first = firstActionOfPoint(warning.pointNumber);
+      if (first) push(first, 'wrong_server', 'warning', { detail: `attendu : ${warning.expected || '—'}` });
+    }
+
+    // 3. Remplacement sans sortant sur le terrain.
+    for (const ev of events) {
+      if (ev?.kind !== 'substitution') continue;
+      const outNumber = Number(ev.payload?.out);
+      if (!outNumber) continue;
+      const target = Number(ev.point_number) || 0;
+      const snap =
+        states.find((s) => Number(s.pointNumber) === target + 1) ||
+        [...states].reverse().find((s) => Number(s.pointNumber) <= target + 1) ||
+        states[0];
+      if (!snap) continue;
+      const lineup = ev.team === 'away' ? snap.awayLineup : snap.homeLineup;
+      if (!hasAny(lineup)) continue;
+      if (!contains(lineup, outNumber)) {
+        push(firstActionOfPoint(snap.pointNumber), 'sub_without_out', 'warning', { detail: `n°${outNumber}` });
+      }
+    }
+
+    // 4 & 5. Directions : une attaque ou un service sans aucune zone.
+    for (const a of list) {
+      if (!a) continue;
+      if (a.action === 'A' && !a.start_zone && !a.end_zone) push(a, 'attack_without_direction', 'warning');
+      if (a.action === 'S' && !a.end_zone) push(a, 'serve_without_direction', 'warning');
+    }
+
+    // 6. Point non clos au moment où le set change.
+    for (let i = 0; i < rallies.length - 1; i += 1) {
+      const curSet = setOfRally(rallies[i]);
+      const nextSet = setOfRally(rallies[i + 1]);
+      if (curSet == null || nextSet == null || curSet === nextSet) continue;
+      const acts = rallies[i].actions || [];
+      const last = acts[acts.length - 1];
+      const closed = last && (isTerminalEvaluation(last.action, last.evaluation) || !!getPointWinner(rallies[i]));
+      if (!closed) push(last, 'point_not_closed', 'warning');
+    }
+
+    // 7. Set manquant (la numérotation saute un set).
+    const setNumbers = [...new Set(rallies.map(setOfRally).filter((n) => n != null))].sort((a, b) => a - b);
+    for (let i = 1; i < setNumbers.length; i += 1) {
+      const prev = setNumbers[i - 1];
+      const cur = setNumbers[i];
+      if (cur <= prev + 1) continue;
+      const rally = rallies.find((r) => setOfRally(r) === cur);
+      const first = (rally?.actions || [])[0] || null;
+      for (let missing = prev + 1; missing < cur; missing += 1) {
+        push(first, 'missing_set', 'warning', { set: missing });
+      }
+    }
+  }
+
   return out;
+}
+
+/** Compteurs d'anomalies par type (« invalid_code » → nombre). */
+export function countIssuesByType(issues) {
+  const counts = {};
+  for (const it of issues || []) {
+    if (!it?.issue) continue;
+    counts[it.issue] = (counts[it.issue] || 0) + 1;
+  }
+  return counts;
+}
+
+/** Filtre les anomalies par gravité : 'all' | 'error' | 'warning'. */
+export function filterIssues(issues, severity = 'all') {
+  const list = issues || [];
+  if (severity === 'all') return list;
+  return list.filter((it) => it?.severity === severity);
 }
 
 /** Index rapide des anomalies par uid d'action. */
@@ -486,6 +683,151 @@ export function insertCodeAt(actions, index, code, opts = {}) {
   });
   list.splice(at, 0, action);
   return { actions: reindexActions(list), action };
+}
+
+
+// ---------------------------------------------------------------------------
+// 6 bis. LISTE DES ACTIONS EN ACCORDÉON (3.1.0)
+// ---------------------------------------------------------------------------
+
+/** État initial de l'accordéon : aucun point ouvert, pas de « tout déplier ». */
+export const ACCORDION_CLOSED = { open: null, all: false };
+
+/** Un point est-il visible (déplié) ? */
+export function isPointOpen(state, pointNumber) {
+  const s = state || ACCORDION_CLOSED;
+  if (s.all) return true;
+  return s.open != null && Number(s.open) === Number(pointNumber);
+}
+
+/**
+ * Point à ouvrir automatiquement selon le mode :
+ *   • Consultation / Analyse → le point en cours de lecture ;
+ *   • Correction            → le point de l'action sélectionnée ;
+ *   • Saisie                → le dernier point codé.
+ */
+export function autoOpenPoint(mode, opts = {}) {
+  if (mode === 'consultation' || mode === 'analyse') return opts.activePointNumber ?? null;
+  if (mode === 'correction') return opts.selectedPointNumber ?? null;
+  return opts.lastPointNumber ?? null;
+}
+
+/**
+ * Logique PURE de l'accordéon : un seul point ouvert à la fois, sauf en mode
+ * « tout déplier ». Ouvrir un point referme le précédent.
+ *
+ * @param {{open:number|null, all:boolean}} state
+ * @param {{type:string, pointNumber?:number, follow?:boolean}} event
+ *        type = 'toggle' | 'collapseAll' | 'expandAll' | 'auto'
+ * @returns {{open:number|null, all:boolean}}
+ */
+export function accordionReduce(state, event = {}) {
+  const s = { open: state?.open ?? null, all: !!state?.all };
+  switch (event.type) {
+    case 'toggle': {
+      const n = Number(event.pointNumber);
+      if (!Number.isFinite(n)) return s;
+      // « Tout déplier » actif : le clic reprend la main et isole ce point.
+      if (s.all) return { open: n, all: false };
+      if (s.open != null && Number(s.open) === n) return { open: null, all: false };
+      return { open: n, all: false };
+    }
+    case 'collapseAll':
+      return { open: null, all: false };
+    case 'expandAll':
+      return { open: null, all: true };
+    case 'auto': {
+      if (event.follow === false) return s;
+      if (s.all) return s; // « tout déplier » reste prioritaire
+      const n = event.pointNumber == null ? null : Number(event.pointNumber);
+      if (n == null || !Number.isFinite(n)) return s;
+      if (s.open != null && Number(s.open) === n) return s;
+      return { open: n, all: false };
+    }
+    default:
+      return s;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 6 ter. DIRECTIONS D'ATTAQUE (3.1.0)
+// ---------------------------------------------------------------------------
+
+/** Direction d'une action : zones de départ et d'arrivée, et clé lisible. */
+export function directionOf(action) {
+  if (!action) return null;
+  const start = String(action.start_zone || action.attack_zone || '');
+  const end = String(action.end_zone || '');
+  if (!start && !end) return null;
+  return { start, end, key: `${start || '?'} → ${end || '?'}` };
+}
+
+/** Attaque sans aucune direction (ni départ, ni arrivée). */
+export function attacksWithoutDirection(actions) {
+  return (actions || []).filter((a) => a?.action === 'A' && !a.start_zone && !a.end_zone);
+}
+
+/**
+ * Code réécrit avec les deux zones, sans changer de format : les directions
+ * restent dans les champs start_zone / end_zone (les matchs déjà codés restent
+ * valides et l'export .dvw écrit le code complet).
+ */
+export function codeWithDirection(action, startZone, endZone) {
+  if (!action) return '';
+  return formatCode({
+    team: action.team,
+    player_number: action.player_number,
+    action: action.action,
+    type: action.type,
+    combo: action.combo,
+    call: action.call,
+    end_subzone: action.end_subzone,
+    evaluation: action.evaluation,
+    start_zone: String(startZone || ''),
+    end_zone: String(endZone || ''),
+  });
+}
+
+/** Applique une direction à une action (uid) : code + champs start/end zone. */
+export function applyDirection(actions, uid, startZone, endZone) {
+  return (actions || []).map((a) => {
+    if (a?.uid !== uid) return a;
+    const code = codeWithDirection(a, startZone, endZone);
+    const fields = decomposeCode(code);
+    return {
+      ...a,
+      ...fields,
+      code,
+      start_zone: fields.start_zone || '',
+      end_zone: fields.end_zone || '',
+    };
+  });
+}
+
+/**
+ * Agrégat des directions d'attaque : une ligne par couple départ → arrivée.
+ * Exemple : les attaques codées « 4 → 5 » sont regroupées sous la clé
+ * « 4 → 5 » (total, points, fautes, contrées, efficacité).
+ */
+export function attackDirectionRows(actions) {
+  const map = new Map();
+  for (const a of actions || []) {
+    if (a?.action !== 'A') continue;
+    const d = directionOf(a);
+    if (!d) continue;
+    const row = map.get(d.key) || { key: d.key, start: d.start, end: d.end, total: 0, points: 0, errors: 0, blocked: 0 };
+    row.total += 1;
+    if (a.evaluation === '#') row.points += 1;
+    if (a.evaluation === '=') row.errors += 1;
+    if (a.evaluation === '/') row.blocked += 1;
+    map.set(d.key, row);
+  }
+  return [...map.values()]
+    .map((r) => ({
+      ...r,
+      efficiency: r.total ? Math.round(((r.points - r.errors - r.blocked) / r.total) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.total - a.total || a.key.localeCompare(b.key));
 }
 
 

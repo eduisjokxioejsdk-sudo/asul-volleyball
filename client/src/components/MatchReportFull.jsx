@@ -11,6 +11,7 @@
 import { useMemo, useState } from 'react';
 import MatchReportTable from './MatchReportTable';
 import ZoneHeatmap from './ZoneHeatmap';
+import { DirectionMap } from './DirectionCourt';
 import { DV_EVAL_KEYS, DV_EVALUATIONS, DV_ZONE_LABELS } from '../utils/datavolley';
 import {
   RANKING_LABELS,
@@ -40,12 +41,105 @@ const TABS = [
   { key: 'rotations', label: 'Rotations' },
   { key: 'classements', label: 'Classements' },
   { key: 'parette', label: 'Par set' },
+  { key: 'joueurs', label: 'Joueurs' },
+  { key: 'directions', label: 'Directions' },
 ];
+
+/** Clés des fenêtres portées par le rapport (le menu de gauche les pilote). */
+export const REPORT_TAB_KEYS = TABS.map((t) => t.key);
+export const REPORT_TABS = TABS;
 
 /** Nom affiché d'un joueur (ou total d'équipe). */
 function playerLabel(p, teamName) {
   if (p.number === 0) return `TOTAL ${teamName}`;
   return `n°${String(p.number).padStart(2, '0')}${p.name ? ` ${p.name}` : ''}`;
+}
+
+/** Fenêtre « Joueurs » : effectif des deux équipes, actions et rendement. */
+function PlayersTable({ report }) {
+  const rows = [];
+  for (const key of ['home', 'away']) {
+    const team = report[key];
+    for (const p of team.players || []) {
+      rows.push({ team: team.name, ...p });
+    }
+  }
+  if (!rows.length) return <p className="dv-hint">Aucun joueur enregistré.</p>;
+  return (
+    <table className="report report-compact">
+      <thead>
+        <tr>
+          <th className="name">Équipe</th>
+          <th className="name">Joueur</th>
+          <th>Rôle</th>
+          <th>Actions</th>
+          <th>Pts</th>
+          <th>Fautes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((p, i) => (
+          <tr key={`${p.team}-${p.number}-${i}`}>
+            <td className="name">{p.team}</td>
+            <td className="name">{playerLabel(p, p.team)}</td>
+            <td>{p.roleLabel || '—'}</td>
+            <td>{p.total}</td>
+            <td>{p.points}</td>
+            <td>{p.faults}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Zones de la grille DataVolley (lignes du tableau croisé des directions). */
+const DIRECTION_ZONES = ['4', '3', '2', '7', '8', '9', '5', '6', '1'];
+
+/**
+ * Tableau croisé des directions : zone de départ × zone d'arrivée.
+ * Chaque cellule est l'agrégat « 4 → 5 » ; un clic filtre la liste des actions.
+ */
+function DirectionCrossTable({ rows = [], onPick }) {
+  const map = new Map();
+  for (const r of rows) map.set(`${r.start}|${r.end}`, r);
+  return (
+    <table className="dirc-table">
+      <thead>
+        <tr>
+          <th>Départ \ Arrivée</th>
+          {DIRECTION_ZONES.map((z) => (
+            <th key={z}>{z}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {DIRECTION_ZONES.map((start) => (
+          <tr key={start}>
+            <th>{start}</th>
+            {DIRECTION_ZONES.map((end) => {
+              const row = map.get(`${start}|${end}`);
+              return (
+                <td key={end}>
+                  {row ? (
+                    <button
+                      type="button"
+                      onClick={() => onPick?.(row)}
+                      title={`${row.key} · ${row.total} attaque(s)`}
+                    >
+                      {row.total}
+                    </button>
+                  ) : (
+                    ''
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 /** Table « ventilation par évaluation » d'une compétence. */
@@ -381,6 +475,10 @@ function SetTable({ report }) {
  * @param {Array} [props.rawActions] - actions brutes (types observés)
  * @param {Array} [props.events] - temps morts / remplacements (impression)
  * @param {string} [props.initialTab] - sous-onglet ouvert au départ
+ * @param {string} [props.tab] - onglet piloté par le menu (sans remontage)
+ * @param {Function} [props.onTab] - (key) => void (menu / barre d'onglets)
+ * @param {boolean} [props.hideTabs] - masque la barre d'onglets (menu à gauche)
+ * @param {Function} [props.onDirectionCell] - (row) => void (filtre la liste)
  * @param {string} [props.initialSide] - équipe affichée au départ
  */
 export default function MatchReportFull({
@@ -393,11 +491,22 @@ export default function MatchReportFull({
   rawActions = [],
   events = [],
   initialTab = 'synthese',
+  tab: controlledTab = null,
+  onTab,
+  hideTabs = false,
+  onDirectionCell,
   initialSide = 'home',
 }) {
-  const [tab, setTab] = useState(initialTab);
+  const [internalTab, setInternalTab] = useState(initialTab);
   const [side, setSide] = useState(initialSide);
   const [printAll, setPrintAll] = useState(false);
+  // Onglet piloté par le menu de gauche : pas de remontage du composant, on
+  // garde `initialTab` en secours quand l'onglet n'est pas contrôlé.
+  const tab = controlledTab ?? internalTab;
+  const setTab = (key) => {
+    setInternalTab(key);
+    onTab?.(key);
+  };
 
   const current = useMemo(() => TABS.find((t) => t.key === tab) || TABS[0], [tab]);
   const sides = useMemo(
@@ -428,16 +537,17 @@ export default function MatchReportFull({
       {/* Barre : sous-onglets, choix d'équipe, export */}
       <div className="report-bar">
         <div className="dv-stat-tabs report-tabs">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              className={`video-tab ${tab === t.key ? 'active' : ''}`}
-              onClick={() => setTab(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
+          {!hideTabs &&
+            TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className={`video-tab ${tab === t.key ? 'active' : ''}`}
+                onClick={() => setTab(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
         </div>
         <div className="report-bar-right">
           <div className="dv-stat-tabs">
@@ -497,6 +607,37 @@ export default function MatchReportFull({
         )}
 
         {tab === 'parette' && <SetTable report={report} />}
+
+        {tab === 'joueurs' && <PlayersTable report={report} />}
+
+        {tab === 'directions' && (
+          <>
+            <h5>Directions d’attaque — {sideName}</h5>
+            <p className="dv-hint">
+              Zone de départ × zone d’arrivée : chaque chiffre du tableau est l’agrégat d’un couple
+              (« 4 → 5 »). Cliquez une cellule ou une flèche pour filtrer la liste des actions.
+            </p>
+            <div className="dirc-grid">
+              <DirectionMap rows={directionTableRows(report[side], 'attack')} onPick={onDirectionCell} />
+              <div>
+                <DirectionCrossTable rows={directionTableRows(report[side], 'attack')} onPick={onDirectionCell} />
+                <div className="dirc-aggregates">
+                  {directionTableRows(report[side], 'attack').map((row) => (
+                    <button
+                      key={row.key}
+                      type="button"
+                      className="dvc-missing"
+                      onClick={() => onDirectionCell?.(row)}
+                      title={`${row.total} attaque(s) · ${row.efficiency}% d’efficacité`}
+                    >
+                      {row.key} · {row.total}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         {current.skill && (
           <>

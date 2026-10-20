@@ -2,6 +2,36 @@
 
 Application d'analyse de vidéos de volleyball.
 
+## 🆕 Quoi de neuf — version 3.1.0
+
+- **Liste des actions en accordéon** : un seul point ouvert à la fois, en-tête compact
+  (« Point 12 · set 2 · 0:42.5 · 3 actions · ✓/anomalie »), boutons **Tout replier** /
+  **Tout déplier**, compteur « N points · N anomalies » et interrupteur **suivre la lecture**.
+  Le point lu s'ouvre seul en Consultation, celui de l'action sélectionnée en Correction,
+  le dernier point codé en Saisie. Une seule zone de défilement par écran : la liste ne
+  s'écrase plus, même avec un match entier.
+- **Directions d'attaque à 2 clics** : nouveau terrain de saisie (zone de départ puis zone
+  d'arrivée, flèche d'aperçu), en Saisie et en Correction. Les directions restent écrites
+  dans les champs **start_zone / end_zone** existants : **aucun match déjà codé n'est
+  modifié** et l'export `.dvw` contient le code avec les deux zones.
+- **Fenêtre d'analyse « Directions »** : tableau croisé départ × arrivée (agrégat
+  « 4 → 5 ») et terrain à flèches ; un clic sur une cellule filtre la liste des actions.
+- **Filtres Rotation (1–6) et Situation (+ / 0 / −)** en Consultation et en Analyse.
+  Une attaque après une réception négative est classée « − ».
+- **Contrôles de codes enrichis** (avertissements, jamais bloquants) : joueur absent du six,
+  serveur attendu, remplacement sans sortant, attaque / service sans direction, point non
+  clos en fin de set, set manquant — avec compteurs par type et filtre
+  **erreurs / avertissements / tout**.
+- **Toutes les feuilles d'analyse dans le menu de gauche** : Synthèse, Service, Réception,
+  Attaque, Combinaisons, Contre, Défense/Passe, Zones, Situations, Rotations, Classements,
+  Par set, Joueurs, Directions, Points et Distribution. L'onglet suit le menu sans
+  remonter le composant.
+- **Bouton « Sync » retiré** de la barre de codage : la synchronisation reste accessible
+  en Correction (« Caler ici », « Synchronisation… », marges) et la fenêtre se ferme par
+  **Échap**.
+
+---
+
 ## ✨ Fonctions principales
 
 - **Codage DataVolley** : actions `S R A B D E F`, évaluations (`# + ! − / =`), types, zones (1-9) et
@@ -19,13 +49,18 @@ Application d'analyse de vidéos de volleyball.
     virtuel, aide-mémoire.
   - **Consultation** : le match se relit **en enchaînant les points, sans les temps morts** (marges et
     vitesse réglables, compteur du temps mort évité). À droite, en permanence : filtres **action**,
-    **qualité** (évaluation) et **position** (zone), complétés par équipe, joueur, set et recherche
-    libre de code (`*7A#`), puis le déroulé cliquable et les **actions du point en cours**.
-  - **Correction** : **calage de tout le match sur le premier service**, **contrôle automatique des
-    codes** (liste des anomalies, « code suivant à corriger »), liste des codes **modifiable** (temps
-    vidéo ± 0,1 s / ± 1 s / « = vidéo », monter, descendre, supprimer) et parcours **« Compléter un
-    match »** pour ajouter les zones manquantes en cliquant le terrain.
-  - **Analyse** : menu des fenêtres (feuille de match, points, distribution), filtres communs et
+    **qualité** (évaluation), **position** (zone), **rotation** (1-6) et **situation** (+ / 0 / −),
+    complétés par équipe, joueur, set et recherche libre de code (`*7A#`), puis le déroulé cliquable
+    (points repliables) et les **actions du point en cours**.
+  - **Correction** : **calage de tout le match sur le premier service** (fenêtre « Synchronisation… »
+    comprise, fermée par **Échap**), **contrôle automatique des codes** enrichi (joueur hors du six,
+    serveur attendu, remplacement sans sortant, directions, fin de set, set manquant — tous en
+    avertissement, avec compteurs et filtre), liste des codes **modifiable** (temps vidéo ± 0,1 s /
+    ± 1 s / « = vidéo », monter, descendre, supprimer), **directions à 2 clics** sur le terrain et
+    parcours **« Compléter un match »** pour ajouter les zones manquantes.
+  - **Analyse** : menu des fenêtres (toutes les feuilles du rapport : synthèse, compétences,
+    combinaisons, zones, situations, rotations, classements, par set, joueurs, directions, plus
+    points et distribution), filtres communs (dont **rotation** et **situation**) et
     **descente d'un chiffre vers les actions** (« Click to Rally ») : les actions retenues s'affichent à
     droite et se relisent d'un clic.
 - **Mode Entraînement** : jeux d'association (paires) et traduction chronométrée, pour apprendre les codes.

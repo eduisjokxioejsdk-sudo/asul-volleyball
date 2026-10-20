@@ -121,6 +121,127 @@ for (const [file, name, props] of [
   }
 }
 
+// --- Liste des codes en accordéon : 60 points / 200 actions -----------------
+console.log('\n== Liste des codes : 60 points, 200 actions ==');
+const { makeAction, groupActionsIntoRallies } = await vite.ssrLoadModule('/src/utils/datavolley.js');
+const pad = (n) => String(n).padStart(2, '0');
+const listActions = [];
+for (let p = 1; p <= 60; p += 1) {
+  const long = p <= 20; // 20 points à 4 actions + 40 points à 3 actions = 200
+  const codes = long
+    ? ['*01S5', 'a02R1+', 'a03D6', `a04A${(p % 9) + 1}${((p + 1) % 9) + 1}#`]
+    : ['*01S5', 'a02R1+', `a03A${(p % 9) + 1}${((p + 1) % 9) + 1}#`];
+  for (const code of codes) {
+    const a = makeAction(code.replace('01', pad((p % 20) + 1)), p * 10 + listActions.length);
+    listActions.push(a);
+  }
+}
+const smokeRallies = groupActionsIntoRallies(listActions);
+check('200 actions construites', listActions.length === 200, `${listActions.length}`);
+check('60 points construits', smokeRallies.length === 60, `${smokeRallies.length}`);
+{
+  const mod = await vite.ssrLoadModule('/src/components/DvCodeList.jsx');
+  const Comp = mod.default;
+  try {
+    const html = renderToString(
+      React.createElement(Comp, {
+        rallies: smokeRallies,
+        mode: 'consultation',
+        activeIndex: listActions[150].action_index,
+        issues: [],
+      })
+    );
+    check('DvCodeList (60 points) se rend', html.length > 0 && (html.match(/dvc-point\b/g) || []).length >= 60);
+    check('l’en-tête résume le point (actions + badge)', /Point/.test(html) && /action/.test(html) && /dvc-badge/.test(html));
+    check('la barre d’outils est présente', /Tout replier/.test(html) && /Tout déplier/.test(html));
+  } catch (err) {
+    check('DvCodeList (60 points) se rend', false, `${err.name}: ${err.message}`);
+  }
+}
+
+// --- Directions : terrain à 2 clics -----------------------------------------
+console.log('\n== Directions d’attaque ==');
+{
+  const mod = await vite.ssrLoadModule('/src/components/DirectionCourt.jsx');
+  const Picker = mod.default;
+  const Map = mod.DirectionMap;
+  try {
+    const html = renderToString(
+      React.createElement(Picker, { startZone: '4', endZone: '5', onChange: noop })
+    );
+    check('DirectionCourt se rend', /dirc-court/.test(html) && /FILET/.test(html));
+    check('les 2 zones sont affichées', /Départ/.test(html) && /Arrivée/.test(html));
+    const mapHtml = renderToString(
+      React.createElement(Map, {
+        rows: [
+          { key: '4 → 5', start: '4', end: '5', total: 3 },
+          { key: '2 → 1', start: '2', end: '1', total: 1 },
+        ],
+      })
+    );
+    check('DirectionMap se rend', /4 → 5|direction/.test(mapHtml) && /FILET/.test(mapHtml));
+  } catch (err) {
+    check('DirectionCourt se rend', false, `${err.name}: ${err.message}`);
+  }
+}
+
+// --- Menu d'analyse : toutes les fenêtres ----------------------------------
+console.log('\n== Menu des fenêtres d’analyse ==');
+{
+  const mod = await vite.ssrLoadModule('/src/components/DvAnalysisPane.jsx');
+  const windows = [
+    ...['Synthèse', 'Service', 'Réception', 'Attaque', 'Combinaisons', 'Contre', 'Défense / Passe', 'Zones', 'Situations', 'Rotations', 'Classements', 'Par set', 'Joueurs', 'Directions'].map(
+      (label, i) => ({ key: `w${i}`, label })
+    ),
+    { key: 'points', label: 'Points' },
+    { key: 'distribution', label: 'Distribution' },
+  ];
+  try {
+    const html = renderToString(React.createElement(mod.DvAnalysisMenu, { windows, windowKey: 'w0', onWindow: noop }));
+    check('DvAnalysisMenu expose toutes les fenêtres', windows.every((w) => html.includes(w.label)));
+  } catch (err) {
+    check('DvAnalysisMenu expose toutes les fenêtres', false, `${err.name}: ${err.message}`);
+  }
+}
+
+// --- Rapport complet : CHAQUE fenêtre (ce qui manquait en 3.0.0) -------------
+console.log('\n== Rapport : chaque fenêtre d’analyse ==');
+{
+  const { computeScouting } = await vite.ssrLoadModule('/src/utils/scouting.js');
+  const mod = await vite.ssrLoadModule('/src/components/MatchReportFull.jsx');
+  const Report = mod.default;
+  const report = computeScouting({
+    actions: listActions,
+    homeConfig: { roster: [1, 2, 3, 4, 5, 6].map((n) => ({ number: n, name: `Joueur ${n}`, role: 'universal' })), libero: 6 },
+    awayConfig: { roster: [1, 2, 3, 4, 5, 6].map((n) => ({ number: n, name: `Visiteur ${n}`, role: 'universal' })), libero: 6 },
+    homeName: 'ASUL',
+    awayName: 'Nantes',
+  });
+  check('le rapport se calcule', report.actionCount > 0, `${report.actionCount}`);
+  for (const t of mod.REPORT_TABS) {
+    try {
+      const html = renderToString(
+        React.createElement(Report, {
+          report,
+          tab: t.key,
+          onTab: noop,
+          hideTabs: true,
+          rawActions: listActions,
+        })
+      );
+      check(`fenêtre « ${t.label} » se rend`, html.length > 0, `${html.length} caractères`);
+    } catch (err) {
+      check(`fenêtre « ${t.label} » se rend`, false, `${err.name}: ${err.message}`);
+    }
+  }
+  check('la fenêtre Directions affiche un agrégat « → »', (() => {
+    const html = renderToString(
+      React.createElement(Report, { report, tab: 'directions', onTab: noop, hideTabs: true, rawActions: listActions })
+    );
+    return html.includes('→') && html.includes('dirc-table');
+  })());
+}
+
 await vite.close();
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);
 process.exit(failures === 0 ? 0 : 1);

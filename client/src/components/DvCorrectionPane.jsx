@@ -7,8 +7,9 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Clock, Crosshair, Settings, Target } from './icons';
 import DvCodeList from './DvCodeList';
+import DirectionCourt from './DirectionCourt';
 import { DV_ACTIONS, formatTimecode } from '../utils/datavolley';
-import { codeIssues, nextIssue } from '../utils/codingTools';
+import { codeIssues, countIssuesByType, filterIssues, nextIssue } from '../utils/codingTools';
 
 /**
  * @param {Object} props
@@ -40,6 +41,9 @@ export default function DvCorrectionPane({
   onSyncPatch,
   onSeekAction,
   onPickZone,
+  onDirection,
+  directionMissing = 0,
+  onDirectionMissing,
   onTimeShift,
   onSetTime,
   onRemove,
@@ -52,18 +56,28 @@ export default function DvCorrectionPane({
 }) {
   const [reviewSkill, setReviewSkill] = useState('A');
   const [reviewIndex, setReviewIndex] = useState(0);
+  // Filtre des anomalies : erreurs / avertissements / tout.
+  const [severity, setSeverity] = useState('all');
 
   const issueList = useMemo(
-    () => issues || codeIssues(actions, { roster, requireTimecode: false }),
+    () => issues || codeIssues(actions, { roster, requireTimecode: false, enriched: true }),
     [issues, actions, roster]
   );
   const errors = issueList.filter((i) => i.severity === 'error').length;
   const warnings = issueList.length - errors;
+  const visibleIssues = useMemo(() => filterIssues(issueList, severity), [issueList, severity]);
+  const issueCounts = useMemo(() => countIssuesByType(issueList), [issueList]);
 
   // Parcours « compléter un match » : les actions de la compétence choisie,
   // une par une, pour ajouter la zone en cliquant le terrain.
   const reviewList = useMemo(() => (actions || []).filter((a) => a.action === reviewSkill), [actions, reviewSkill]);
   const current = reviewList[Math.min(reviewIndex, Math.max(0, reviewList.length - 1))] || null;
+  // Action dont on édite la direction : celle sélectionnée dans la liste, sinon
+  // l'action en cours du parcours « Compléter un match ».
+  const directionAction = useMemo(
+    () => (actions || []).find((a) => a.uid === selectedUid) || current || null,
+    [actions, selectedUid, current]
+  );
 
   return (
     <div className="dvx-correct">
@@ -93,9 +107,36 @@ export default function DvCorrectionPane({
       </div>
 
       <aside className="dvx-side">
-        <IssuePanel issueList={issueList} errors={errors} warnings={warnings} actions={actions} onSeekAction={onSeekAction} current={current} />
+        <IssuePanel
+          issueList={visibleIssues}
+          allIssues={issueList}
+          errors={errors}
+          warnings={warnings}
+          counts={issueCounts}
+          severity={severity}
+          onSeverity={setSeverity}
+          actions={actions}
+          onSeekAction={onSeekAction}
+          current={current}
+        />
+        {directionAction && (
+          <div className="dvx-direction">
+            <h5>
+              Direction de l’action <code>{directionAction.code}</code>
+            </h5>
+            <DirectionCourt
+              key={directionAction.uid}
+              startZone={directionAction.start_zone}
+              endZone={directionAction.end_zone}
+              disabled={disabled}
+              compact
+              onChange={({ start, end }) => onDirection?.(directionAction, start, end)}
+            />
+          </div>
+        )}
         <DvCodeList
           rallies={rallies}
+          mode="correction"
           onSeek={onSeekAction}
           issues={issueList}
           editable
@@ -107,6 +148,8 @@ export default function DvCorrectionPane({
           onMove={onMove}
           actionSet={actionSet}
           autoScroll={false}
+          directionMissing={directionMissing}
+          onDirectionMissing={onDirectionMissing}
         />
       </aside>
     </div>
@@ -220,17 +263,61 @@ function ReviewTools({ reviewSkill, setReviewSkill, reviewIndex, setReviewIndex,
 }
 
 /** Anomalies relevées dans le codage (contrôle façon DataVolley). */
-function IssuePanel({ issueList, errors, warnings, actions, onSeekAction, current }) {
+function IssuePanel({
+  issueList,
+  allIssues = issueList,
+  errors,
+  warnings,
+  counts = {},
+  severity = 'all',
+  onSeverity,
+  actions,
+  onSeekAction,
+  current,
+}) {
+  const types = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const labelOf = (key) => (allIssues || []).find((i) => i.issue === key)?.label || key;
   return (
     <div className={`dvx-issues ${errors ? 'has-errors' : warnings ? 'has-warnings' : 'clean'}`}>
       <h5 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {issueList.length ? <AlertTriangle size={14} /> : <Check size={14} />} Contrôle des codes
+        {allIssues.length ? <AlertTriangle size={14} /> : <Check size={14} />} Contrôle des codes
       </h5>
       <p className="dvx-issue-count">
-        {issueList.length === 0
+        {allIssues.length === 0
           ? 'Aucune anomalie relevée : le codage est cohérent.'
           : `${errors} erreur(s) · ${warnings} avertissement(s)`}
       </p>
+      {allIssues.length > 0 && (
+        <div className="dvx-issue-filter">
+          {[
+            ['all', 'Tout', allIssues.length],
+            ['error', 'Erreurs', errors],
+            ['warning', 'Avertissements', warnings],
+          ].map(([key, label, total]) => (
+            <button
+              key={key}
+              type="button"
+              className={`dvm-btn dvm-mini ${severity === key ? 'active' : ''}`}
+              onClick={() => onSeverity?.(key)}
+              aria-pressed={severity === key}
+            >
+              {label} ({total})
+            </button>
+          ))}
+        </div>
+      )}
+      {types.length > 0 && (
+        <div className="dvx-issue-types">
+          {types.map(([key, total]) => (
+            <span key={key} className="dvx-issue-type" title={labelOf(key)}>
+              {labelOf(key)} · {total}
+            </span>
+          ))}
+        </div>
+      )}
+      {allIssues.length > 0 && issueList.length === 0 && (
+        <p className="dv-hint">Aucune anomalie pour ce filtre.</p>
+      )}
       {issueList.length > 0 && (
         <>
           <button

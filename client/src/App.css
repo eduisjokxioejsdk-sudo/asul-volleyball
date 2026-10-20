@@ -3027,6 +3027,7 @@ html, body, #root, .app, .page-shell {
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  flex: none;
 }
 
 .dv-rally {
@@ -6299,16 +6300,23 @@ body {
 
 
 /* --- Liste des codes (colonne de droite de l'écran de saisie) ------------- */
+/* UNE SEULE zone de défilement par écran : ici c'est .dvc qui défile
+   (Consultation / Correction ; en Saisie, c'est .fp-body). */
 .dvc {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
-  max-height: 100%;
+  overflow-x: hidden;
   padding-right: 2px;
+  scrollbar-width: thin;
 }
 
 .dvc-point {
+  flex: none;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   background: var(--bg-tertiary);
@@ -6324,10 +6332,27 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   padding: 4px 6px;
-  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: var(--bg-tertiary);
+  font-family: inherit;
   font-size: 11px;
   color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.dvc-head:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dvc-head.open {
+  border-bottom-color: var(--border-subtle);
 }
 
 .dvc-point-num {
@@ -6430,9 +6455,217 @@ body {
   padding: 4px 6px 6px;
 }
 
+/* Barre d'outils de la liste : replier / déplier, compteurs, suivi de lecture.
+   Elle reste collée en bas de la zone de défilement. */
+.dvc-toolbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  align-items: center;
+  padding: 6px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.dvc-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.dvc-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.dvc-follow input {
+  accent-color: var(--accent);
+}
+
+.dvc-missing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid rgba(251, 188, 4, 0.5);
+  border-radius: 999px;
+  background: rgba(251, 188, 4, 0.1);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dvc-missing:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dvc-actions-count {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.dvc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 15px;
+}
+
+.dvc-badge.ok {
+  color: var(--ok, #4caf7d);
+}
+
+.dvc-badge.warning {
+  color: #fbbc04;
+  background: rgba(251, 188, 4, 0.16);
+}
+
+.dvc-badge.error {
+  color: var(--danger, #e05252);
+  background: rgba(224, 82, 82, 0.16);
+}
+
+/* En Saisie, la liste vit dans .fp-body : c'est LUI qui défile, pas .dvc. */
+.fp-body .dvc {
+  flex: none;
+  overflow: visible;
+  max-height: none;
+  padding-right: 0;
+}
+
+.fp-body .dvc-head,
+.fp-body .dvc-toolbar {
+  position: static;
+}
+
 .dvc-tools .btn {
   padding: 2px 6px;
   font-size: 11px;
+}
+
+
+/* --- Directions d'attaque (terrain à 2 zones, flèches) -------------------- */
+.dirc {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dirc-court {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 10px;
+}
+
+.dirc.compact .dirc-court {
+  max-height: 210px;
+}
+
+.dirc-hint {
+  margin: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.dirc-hint strong {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.dvx-direction {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  padding: 8px;
+  flex: none;
+}
+
+.dvx-direction h5 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dvc-direction {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: rgba(32, 30, 27, 0.5);
+  padding: 8px;
+  margin-bottom: 8px;
+  flex: none;
+}
+
+.dvc-direction-head {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.dvc-direction-head code {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.dirc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.dirc-table th,
+.dirc-table td {
+  border: 1px solid var(--border-subtle);
+  padding: 3px 6px;
+  text-align: center;
+}
+
+.dirc-table th {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.dirc-table td button {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.dirc-table td button:hover {
+  color: var(--accent);
+}
+
+.dirc-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.dirc-aggregates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
 }
 
 
@@ -6645,8 +6878,18 @@ body {
   gap: 10px;
   min-width: 0;
   max-height: calc(100vh - 150px);
-  overflow-y: auto;
+  /* Une seule zone de défilement : c'est .dvc (la liste des codes) qui défile. */
+  overflow: hidden;
   padding-right: 2px;
+}
+
+.dvx-side > * {
+  flex: none;
+}
+
+.dvx-side > .dvc {
+  flex: 1 1 auto;
+  min-height: 140px;
 }
 
 .dvx-transport {
@@ -6849,6 +7092,28 @@ body {
   margin: 0 0 6px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.dvx-issue-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.dvx-issue-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.dvx-issue-type {
+  font-size: 10px;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 1px 7px;
 }
 
 .dvx-issue-list {

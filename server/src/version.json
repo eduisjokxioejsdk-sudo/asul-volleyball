@@ -1,8 +1,23 @@
 {
-  "version": "3.0.1",
-  "releasedAt": "2026-10-19",
+  "version": "3.1.0",
+  "releasedAt": "2026-10-20",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.1.0",
+      "date": "2026-10-20",
+      "title": "Liste en accordéon, directions d’attaque et feuilles d’analyse complètes",
+      "items": [
+        "Liste des actions en accordéon : un seul point ouvert à la fois, en-tête compact avec set, temps vidéo, nombre d’actions et badge d’anomalie, boutons « Tout replier » / « Tout déplier » et interrupteur « suivre la lecture »",
+        "Le point en cours s’ouvre tout seul en Consultation, celui de l’action sélectionnée en Correction et le dernier point codé en Saisie ; la liste défile dans une seule zone, sans s’écraser",
+        "Le bouton « Sync » est retiré de la barre de codage : la fenêtre de synchronisation reste accessible en Correction (« Caler ici », « Synchronisation… », marges) et se ferme par Échap",
+        "Filtres par rotation (1 à 6) et par situation (+ / 0 / −) en Consultation et en Analyse : une attaque après une réception négative est classée « − »",
+        "Sept contrôles de codes enrichis, tous en avertissement : joueur absent du six, serveur attendu, remplacement sans sortant, attaque et service sans direction, point non clos en fin de set, set manquant — avec compteurs par type et filtre erreurs / avertissements / tout",
+        "Directions d’attaque à 2 clics sur le terrain (départ puis arrivée, flèche), écrites dans les champs start_zone / end_zone existants : les matchs déjà codés restent valides et l’export .dvw contient les deux zones",
+        "Fenêtre d’analyse « Directions » : tableau croisé départ × arrivée (agrégat « 4 → 5 ») et terrain à flèches ; un clic sur une cellule filtre la liste des actions",
+        "Toutes les feuilles d’analyse sont accessibles par le menu de gauche : Synthèse, Service, Réception, Attaque, Combinaisons, Contre, Défense/Passe, Zones, Situations, Rotations, Classements, Par set, Joueurs, Directions, Points et Distribution — l’onglet change sans remonter le composant"
+      ]
+    },
     {
       "version": "3.0.1",
       "date": "2026-10-19",
