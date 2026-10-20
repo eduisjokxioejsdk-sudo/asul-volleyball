@@ -93,6 +93,7 @@ import {
   shiftTimecode,
   situationByAction,
   stepPoint,
+  updateActionCode,
 } from '../utils/codingTools';
 import {
   DV_ACTIONS,
@@ -1155,6 +1156,21 @@ function DataVolleyDashboard({ user, onLogout }) {
     actionsRef.current = next;
     setActions(next);
   }, []);
+
+  /** Double-clic sur une action dans la liste de Saisie : modifier son code. */
+  const editActionCode = useCallback(
+    (action, rawCode) => {
+      if (!action) return;
+      const res = updateActionCode(actionsRef.current, action.uid, rawCode);
+      if (res.error) {
+        notifyEvent(false, res.error);
+        return;
+      }
+      applyActions(res.actions);
+      notifyEvent(true, `Action modifiée : ${action.code} → ${res.action?.code || rawCode}`);
+    },
+    [applyActions, notifyEvent]
+  );
 
   /** Temps vidéo effectif d'une action (timecode + décalage de synchronisation). */
   const videoTimeOf = useCallback(
@@ -2253,6 +2269,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                     autoScroll
                     directionMissing={attacksWithoutDirection(actions).length}
                     onDirectionMissing={goToAttackWithoutDirection}
+                    onEditCode={editActionCode}
                   />
                 </FloatingPanel>
               )}

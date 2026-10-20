@@ -12,8 +12,8 @@
 // ============================================================================
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowDownUp, Check, ChevronDown, ChevronRight, Clock, Trash } from './icons';
-import { formatTimecode } from '../utils/datavolley';
+import { AlertTriangle, ArrowDownUp, Check, ChevronDown, ChevronRight, Clock, Trash, X } from './icons';
+import { formatTimecode, validateAction } from '../utils/datavolley';
 import {
   ACCORDION_CLOSED,
   accordionReduce,
@@ -44,6 +44,7 @@ import {
  * @param {Function} [props.onFollowChange] - (value) => void
  * @param {number} [props.directionMissing] - attaques sans direction
  * @param {Function} [props.onDirectionMissing] - clic sur le compteur
+ * @param {Function} [props.onEditCode] - (action, code) => void (double-clic)
  */
 export default function DvCodeList({
   rallies,
@@ -66,6 +67,7 @@ export default function DvCodeList({
   onFollowChange,
   directionMissing = 0,
   onDirectionMissing,
+  onEditCode,
 }) {
   const list = rallies || [];
   const issueMap = useMemo(() => issuesByUid(issues), [issues]);
@@ -127,6 +129,47 @@ export default function DvCodeList({
     onFollowChange?.(next);
   };
 
+  // Édition directe d'un code par double-clic (mode Saisie).
+  const [editingUid, setEditingUid] = useState(null);
+  const [draftCode, setDraftCode] = useState('');
+  const [editError, setEditError] = useState('');
+  const canEdit = typeof onEditCode === 'function';
+
+  // Ferme l'éditeur si l'action disparaît (suppression, rechargement, etc.).
+  useEffect(() => {
+    if (editingUid == null) return;
+    const exists = list.some((r) => (r.actions || []).some((a) => a.uid === editingUid));
+    if (!exists) {
+      setEditingUid(null);
+      setDraftCode('');
+      setEditError('');
+    }
+  }, [list, editingUid]);
+
+  const startEdit = (action) => {
+    if (!canEdit || !action?.uid) return;
+    setEditingUid(action.uid);
+    setDraftCode(action.code);
+    setEditError('');
+  };
+
+  const cancelEdit = () => {
+    setEditingUid(null);
+    setDraftCode('');
+    setEditError('');
+  };
+
+  const saveEdit = (action) => {
+    const code = draftCode.replace(/\s+/g, '').trim();
+    const check = validateAction(code);
+    if (!check.valid) {
+      setEditError(check.labels || 'Code incomplet ou invalide.');
+      return;
+    }
+    onEditCode(action, code);
+    cancelEdit();
+  };
+
   return (
     <div className="dvc" ref={containerRef}>
       {list.length === 0 && <p className="dv-empty">{emptyText}</p>}
@@ -186,6 +229,14 @@ export default function DvCodeList({
                     onSetTime={onSetTime}
                     onRemove={onRemove}
                     onMove={onMove}
+                    canEdit={canEdit}
+                    editing={canEdit && a.uid === editingUid}
+                    draftCode={draftCode}
+                    editError={editError}
+                    onEditStart={() => startEdit(a)}
+                    onDraftChange={setDraftCode}
+                    onEditSave={() => saveEdit(a)}
+                    onEditCancel={cancelEdit}
                   />
                 ))}
               </div>
@@ -215,6 +266,7 @@ export default function DvCodeList({
           <span className="dvc-count">
             {list.length} point{list.length > 1 ? 's' : ''} · {issues.length} anomalie{issues.length > 1 ? 's' : ''}
           </span>
+          {canEdit && <span className="dvc-edit-hint">Double-clic sur une action : modifier son code</span>}
           {directionMissing > 0 && (
             <button
               type="button"
@@ -257,7 +309,51 @@ function CodeRow({
   onSetTime,
   onRemove,
   onMove,
+  canEdit = false,
+  editing = false,
+  draftCode = '',
+  editError = '',
+  onEditStart,
+  onDraftChange,
+  onEditSave,
+  onEditCancel,
 }) {
+  if (editing) {
+    return (
+      <div className={`dvc-row editing ${severity}`}>
+        <div className="dvc-edit">
+          <span className="dvc-tc">{formatTimecode(action.timecode)}</span>
+          <input
+            className="dvc-edit-input"
+            value={draftCode}
+            autoFocus
+            spellCheck={false}
+            aria-label={`Modifier le code ${action.code}`}
+            onChange={(e) => onDraftChange?.(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                onEditSave?.();
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                onEditCancel?.();
+              }
+            }}
+          />
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => onEditSave?.()} title="Valider le code (Entrée)">
+            <Check size={12} />
+          </button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEditCancel?.()} title="Annuler (Échap)">
+            <X size={12} />
+          </button>
+        </div>
+        {editError && <p className="dvc-edit-error">{editError}</p>}
+      </div>
+    );
+  }
   return (
     <div className={`dvc-row ${severity} ${selected ? 'selected' : ''}`}>
       <button
@@ -267,7 +363,15 @@ function CodeRow({
           if (editable && onSelect) onSelect(action);
           if (onSeek) onSeek(action);
         }}
-        title={`${action.code} — aller à ${formatTimecode(action.timecode)}`}
+        onDoubleClick={(e) => {
+          if (!canEdit) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onEditStart?.();
+        }}
+        title={`${action.code} — aller à ${formatTimecode(action.timecode)}${
+          canEdit ? ' · double-clic pour modifier le code' : ''
+        }`}
       >
         <span className="dvc-tc">{formatTimecode(action.timecode)}</span>
         <span className="dvc-team">{action.team === 'away' ? 'a' : '*'}</span>

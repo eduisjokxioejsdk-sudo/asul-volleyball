@@ -686,6 +686,32 @@ export function insertCodeAt(actions, index, code, opts = {}) {
 }
 
 
+/**
+ * Modifie le code d'une action existante (double-clic dans la liste).
+ * Le code est validé puis normalisé (2 chiffres de joueur, majuscules) ; les
+ * champs décomposés sont réécrits, mais l'uid, le temps vidéo, le set et la
+ * note sont conservés. En cas de code invalide, la liste est rendue INCHANGÉE.
+ *
+ * @param {Array} actions
+ * @param {string} uid - action à modifier
+ * @param {string} rawCode - nouveau code saisi
+ * @returns {{ actions:Array, action:Object|null, error:string|null, issues:string[] }}
+ */
+export function updateActionCode(actions, uid, rawCode) {
+  const list = actions || [];
+  const found = list.find((a) => a?.uid === uid);
+  if (!found) return { actions: list, action: null, error: 'action introuvable', issues: [] };
+  const raw = String(rawCode || '').replace(/\s+/g, '').trim();
+  const check = validateAction(raw);
+  if (!check.valid) {
+    return { actions: list, action: found, error: check.labels || 'code invalide', issues: check.issues || [] };
+  }
+  const code = formatCode(decomposeCode(raw));
+  const next = list.map((a) => (a?.uid === uid ? { ...a, code, ...decomposeCode(code) } : a));
+  return { actions: next, action: next.find((a) => a?.uid === uid) || null, error: null, issues: [] };
+}
+
+
 // ---------------------------------------------------------------------------
 // 6 bis. LISTE DES ACTIONS EN ACCORDÉON (3.1.0)
 // ---------------------------------------------------------------------------

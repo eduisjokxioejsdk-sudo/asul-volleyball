@@ -176,11 +176,13 @@ check('60 points construits', smokeRallies.length === 60, `${smokeRallies.length
         mode: 'consultation',
         activeIndex: listActions[150].action_index,
         issues: [],
+        onEditCode: noop,
       })
     );
     check('DvCodeList (60 points) se rend', html.length > 0 && (html.match(/dvc-point\b/g) || []).length >= 60);
     check('l’en-tête résume le point (actions + badge)', /Point/.test(html) && /action/.test(html) && /dvc-badge/.test(html));
     check('la barre d’outils est présente', /Tout replier/.test(html) && /Tout déplier/.test(html));
+    check('l’édition par double-clic est annoncée', /Double-clic sur une action/.test(html));
   } catch (err) {
     check('DvCodeList (60 points) se rend', false, `${err.name}: ${err.message}`);
   }

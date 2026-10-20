@@ -2,6 +2,16 @@
 
 Application d'analyse de vidéos de volleyball.
 
+## 🆕 Quoi de neuf — version 3.1.2
+
+- **Modifier une action par double-clic** dans la liste « Actions codées » du mode Saisie :
+  le code s’ouvre en édition directement, sans passer par la Correction. **Entrée** valide,
+  **Échap** annule.
+- Le code est **contrôlé et normalisé** avant enregistrement ; en cas d’erreur, un message
+  s’affiche et la liste n’est pas modifiée.
+- L’édition **conserve le temps vidéo, le set et l’ordre** de l’action ; équipe, joueur, action,
+  zones et évaluation sont recalculés, et la sauvegarde du match est automatique.
+
 ## 🆕 Quoi de neuf — version 3.1.1
 
 - **Timecodes par action, comme DataVolley 4** : chaque code garde la position vidéo de
@@ -58,6 +68,9 @@ Application d'analyse de vidéos de volleyball.
 - **Timecodes par action, comme DataVolley 4** : chaque code garde la position vidéo de l'instant
   où il est terminé, même si toute la suite (`*01S5#a02R1+a03A45#`) est validée d'un seul coup ;
   une formule combinée partage le temps de son bloc.
+- **Correction rapide en Saisie** : double-cliquez une action dans la liste pour modifier son code
+  (Entrée pour valider, Échap pour annuler). Le code est contrôlé avant enregistrement ; le temps
+  vidéo, le set et l'ordre des actions sont conservés.
 - **Quatre modes de travail, comme DataVolley** — le codage d'un match s'organise en **Saisie**,
   **Consultation**, **Correction** et **Analyse**, plus les Paramètres à part.
   - **Saisie** : la disposition « DataVolley » range l'écran d'un clic (vidéo en haut à gauche, score

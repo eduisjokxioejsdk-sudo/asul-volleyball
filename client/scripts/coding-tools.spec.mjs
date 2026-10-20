@@ -44,6 +44,7 @@ import {
   situationByAction,
   skippedTime,
   stepPoint,
+  updateActionCode,
   FUNCTION_EVALUATIONS,
 } from '../src/utils/codingTools.js';
 import { groupActionsIntoRallies, makeAction } from '../src/utils/datavolley.js';
@@ -458,6 +459,25 @@ eq('agrégat « 4 → 5 » : volume', DIR_ROWS.find((r) => r.key === '4 → 5')?
 eq('agrégat « 4 → 5 » : libellé', DIR_ROWS[0].key, '4 → 5');
 eq('attaques sans direction', attacksWithoutDirection(DIR_ACTIONS).length, 1);
 eq('pas de perte : une ligne par direction', DIR_ROWS.length, 3);
+
+console.log('\n== Modification directe d’une action (double-clic) ==');
+const EDIT_BASE = mk('*04A45#', 12, 1, 2);
+const EDIT = updateActionCode([EDIT_BASE], EDIT_BASE.uid, '*7A45#');
+eq('code normalisé (2 chiffres de joueur)', EDIT.action.code, '*07A45#');
+check('même action conservée (uid)', EDIT.actions.length === 1 && EDIT.action.uid === EDIT_BASE.uid);
+eq('temps vidéo conservé', EDIT.action.timecode, 12);
+eq('set conservé', EDIT.action.set_number, 2);
+eq('joueur mis à jour', EDIT.action.player_number, 7);
+eq('zone de départ conservée', EDIT.action.start_zone, '4');
+eq('zone d’arrivée conservée', EDIT.action.end_zone, '5');
+const EDIT_BAD = updateActionCode([EDIT_BASE], EDIT_BASE.uid, '*7A');
+check('code invalide refusé', !!EDIT_BAD.error);
+eq('liste inchangée si le code est invalide', EDIT_BAD.actions[0].code, '*04A45#');
+eq('aucune action perdue', EDIT_BAD.actions.length, 1);
+check('action introuvable refusée', !!updateActionCode([EDIT_BASE], 'nope', '*07A45#').error);
+const EDIT_TEAM = updateActionCode([EDIT_BASE], EDIT_BASE.uid, 'a07A#');
+eq('changement d’équipe pris en compte', EDIT_TEAM.action.team, 'away');
+eq('code de l’équipe extérieure', EDIT_TEAM.action.code, 'a07A#');
 
 console.log('\n== Divers ==');
 
