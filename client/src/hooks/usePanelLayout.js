@@ -15,6 +15,7 @@ import {
   setPanelsOpen,
   togglePanel,
 } from '../utils/panelLayout';
+import { applyProfileLayout } from '../utils/panelProfiles';
 
 /** Charge une disposition enregistrée, sinon la disposition par défaut. */
 function loadLayout(storageKey, size, skip = []) {
@@ -86,9 +87,15 @@ export default function usePanelLayout(storageKey, size, skip = []) {
   const setOpen = useCallback((pid, value) => setLayout((prev) => applyPanelPatch(prev, pid, { open: !!value }, sizeRef.current)), []);
   const setMany = useCallback((ids, value) => setLayout((prev) => setPanelsOpen(prev, ids, value)), []);
   const reset = useCallback(() => setLayout(defaultPanelLayout(sizeRef.current.width, sizeRef.current.height, skipRef.current)), []);
+  // Applique une disposition enregistrée (profil de fenêtres) au match courant.
+  const applyProfile = useCallback(
+    (profileLayout) =>
+      setLayout((prev) => applyProfileLayout(prev, profileLayout, sizeRef.current, skipRef.current)),
+    []
+  );
 
   const minHeight = useMemo(() => canvasMinHeight(layout), [layout]);
   const minWidth = useMemo(() => canvasMinWidth(layout), [layout]);
 
-  return { layout, setRect, toggle, open, close, setOpen, setMany, reset, minHeight, minWidth };
+  return { layout, setRect, toggle, open, close, setOpen, setMany, reset, applyProfile, minHeight, minWidth };
 }

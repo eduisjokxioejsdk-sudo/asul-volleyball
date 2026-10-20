@@ -7,16 +7,56 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PANEL_IDS, PANEL_META, isClosable } from '../utils/panelLayout';
 import * as icons from './icons';
-import { Check, LayoutGrid, RotateCcw, X } from './icons';
+import { Check, LayoutGrid, RotateCcw, Save, Trash, X } from './icons';
 
 /** Largeur du menu (voir .dv-panels-dropdown) + marge de sécurité. */
 const MENU_WIDTH = 270;
 const MENU_MARGIN = 12;
 
-export default function PanelsMenu({ layout, onToggle, onSetMany, onReset, compactIds = [] }) {
-  const [open, setOpen] = useState(false);
+export default function PanelsMenu({
+  layout,
+  onToggle,
+  onSetMany,
+  onReset,
+  compactIds = [],
+  profiles = [],
+  onSaveProfile,
+  onApplyProfile,
+  onDeleteProfile,
+  initialOpen = false,
+}) {
+  const [open, setOpen] = useState(initialOpen);
   const [openRight, setOpenRight] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [selectedProfile, setSelectedProfile] = useState('');
   const wrapRef = useRef(null);
+
+  // Un profil supprimé (ou remplacé) ne doit pas rester sélectionné.
+  useEffect(() => {
+    if (selectedProfile && !(profiles || []).some((p) => p.id === selectedProfile)) {
+      setSelectedProfile('');
+    }
+  }, [profiles, selectedProfile]);
+
+  const saveProfile = () => {
+    const name = profileName.trim();
+    if (!name || !onSaveProfile) return;
+    const saved = onSaveProfile(name);
+    if (saved?.id) {
+      setSelectedProfile(saved.id);
+      setProfileName('');
+    }
+  };
+
+  const applyProfile = () => {
+    if (selectedProfile && onApplyProfile) onApplyProfile(selectedProfile);
+  };
+
+  const deleteProfile = () => {
+    if (!selectedProfile || !onDeleteProfile) return;
+    onDeleteProfile(selectedProfile);
+    setSelectedProfile('');
+  };
 
   /**
    * Le menu s'ouvre normalement vers la gauche (ancré au bord droit du bouton),
@@ -111,6 +151,74 @@ export default function PanelsMenu({ layout, onToggle, onSetMany, onReset, compa
               <RotateCcw size={13} /> Réinitialiser
             </button>
           </div>
+
+          {onSaveProfile && (
+            <div className="dv-panels-profiles">
+              <strong>Profils de fenêtres</strong>
+              <p className="dv-panels-hint">
+                Enregistrez la disposition actuelle (positions, tailles, fenêtres ouvertes), puis appliquez-la à
+                n’importe quel match. Les profils restent sur ce poste.
+              </p>
+              <select
+                className="dv-profile-select"
+                value={selectedProfile}
+                onChange={(e) => setSelectedProfile(e.target.value)}
+                aria-label="Profil de fenêtres"
+              >
+                <option value="">Choisir un profil…</option>
+                {(profiles || []).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <div className="dv-profile-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={applyProfile}
+                  disabled={!selectedProfile}
+                >
+                  Appliquer
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={deleteProfile}
+                  disabled={!selectedProfile}
+                  title="Supprimer ce profil"
+                >
+                  <Trash size={12} />
+                </button>
+              </div>
+              <div className="dv-profile-save">
+                <input
+                  type="text"
+                  value={profileName}
+                  maxLength={40}
+                  placeholder="Nom du profil (ex. Saisie club)"
+                  onChange={(e) => setProfileName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      saveProfile();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={saveProfile}
+                  disabled={!profileName.trim()}
+                  title="Enregistrer la disposition actuelle (un nom existant met à jour le profil)"
+                >
+                  <Save size={12} /> Enregistrer
+                </button>
+              </div>
+              {(profiles || []).length === 0 && (
+                <p className="dv-panels-hint">Aucun profil enregistré pour l’instant.</p>
+              )}
+            </div>
+          )}
+
           <p className="dv-panels-hint">
             Glissez une barre de titre pour déplacer une fenêtre, tirez un bord ou le coin pour la redimensionner.
           </p>

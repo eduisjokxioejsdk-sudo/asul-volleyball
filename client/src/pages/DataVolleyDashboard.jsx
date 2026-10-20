@@ -28,6 +28,12 @@ import ShortcutSettings from '../components/ShortcutSettings';
 import SetClaimsBar from '../components/SetClaimsBar';
 import usePanelLayout from '../hooks/usePanelLayout';
 import { PANEL_GAP } from '../utils/panelLayout';
+import {
+  loadPanelProfiles,
+  removePanelProfile,
+  savePanelProfile,
+  storePanelProfiles,
+} from '../utils/panelProfiles';
 import { loadShortcuts, matchesShortcut, saveShortcuts, stepSpeed } from '../utils/shortcuts';
 import MatchReportFull, { REPORT_TABS } from '../components/MatchReportFull';
 import AttackDirectionCourt from '../components/AttackDirectionCourt';
@@ -361,9 +367,15 @@ function DataVolleyDashboard({ user, onLogout }) {
   // Fenêtres de la page de codage : déplaçables, redimensionnables, fermables.
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const panelsKey = useMemo(() => `dv.panels.video.${id}`, [id]);
-  const { layout, setRect, toggle: togglePanelById, open: openPanelById, close, setMany, reset: resetPanels, minHeight, minWidth } = usePanelLayout(panelsKey, canvasSize);
+  const { layout, setRect, toggle: togglePanelById, open: openPanelById, close, setMany, reset: resetPanels, applyProfile: applyPanelsLayout, minHeight, minWidth } = usePanelLayout(panelsKey, canvasSize);
   const rect = useCallback((pid) => layout[pid] || { x: 0, y: 0, w: 300, h: 200 }, [layout]);
   const isOpen = useCallback((pid) => !!layout?.[pid]?.open, [layout]);
+
+  // Profils de fenêtres : enregistrés sur le poste, réutilisables sur tous les matchs.
+  const [panelProfiles, setPanelProfiles] = useState(() => loadPanelProfiles());
+  useEffect(() => {
+    setPanelProfiles(loadPanelProfiles());
+  }, [id]);
 
   const actionsRef = useRef([]);
   const saveTimer = useRef(null);
@@ -772,6 +784,49 @@ function DataVolleyDashboard({ user, onLogout }) {
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 2500);
   }, []);
+
+  // --- Profils de fenêtres : enregistrer / appliquer / supprimer -------------
+  const saveLayoutProfile = useCallback(
+    (name) => {
+      const res = savePanelProfile(panelProfiles, name, layout);
+      if (!res) {
+        notifyEvent(false, 'Donnez un nom au profil de fenêtres.');
+        return null;
+      }
+      setPanelProfiles(res.profiles);
+      const stored = storePanelProfiles(res.profiles);
+      notifyEvent(
+        stored,
+        stored
+          ? `Disposition « ${res.profile.name} » enregistrée sur ce poste.`
+          : `Profil « ${res.profile.name} » conservé pour cette session (stockage indisponible).`
+      );
+      return res.profile;
+    },
+    [panelProfiles, layout, notifyEvent]
+  );
+
+  const applyLayoutProfile = useCallback(
+    (profileId) => {
+      const profile = panelProfiles.find((p) => p.id === profileId);
+      if (!profile) return;
+      applyPanelsLayout(profile.layout);
+      notifyEvent(true, `Disposition « ${profile.name} » appliquée à ce match.`);
+    },
+    [panelProfiles, applyPanelsLayout, notifyEvent]
+  );
+
+  const deleteLayoutProfile = useCallback(
+    (profileId) => {
+      const profile = panelProfiles.find((p) => p.id === profileId);
+      if (!profile) return;
+      const next = removePanelProfile(panelProfiles, profileId);
+      setPanelProfiles(next);
+      storePanelProfiles(next);
+      notifyEvent(true, `Profil « ${profile.name} » supprimé.`);
+    },
+    [panelProfiles, notifyEvent]
+  );
 
   /** Temps mort de l'équipe demandée, au point en cours du set en cours. */
   const addTimeout = async (team) => {
@@ -2026,6 +2081,10 @@ function DataVolleyDashboard({ user, onLogout }) {
             onToggle={togglePanelById}
             onSetMany={setMany}
             onReset={resetPanels}
+            profiles={panelProfiles}
+            onSaveProfile={saveLayoutProfile}
+            onApplyProfile={applyLayoutProfile}
+            onDeleteProfile={deleteLayoutProfile}
           />
           <button
             type="button"

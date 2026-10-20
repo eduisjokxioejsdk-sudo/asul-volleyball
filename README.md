@@ -64,6 +64,9 @@ Application d'analyse de vidéos de volleyball.
     **descente d'un chiffre vers les actions** (« Click to Rally ») : les actions retenues s'affichent à
     droite et se relisent d'un clic.
 - **Mode Entraînement** : jeux d'association (paires) et traduction chronométrée, pour apprendre les codes.
+- **Profils de fenêtres** : enregistrez une disposition (positions, tailles et fenêtres ouvertes)
+  sous un nom, depuis le menu **Fenêtres**, puis appliquez-la à n'importe quel autre match. Les
+  profils sont conservés sur le poste et restent disponibles d'un match à l'autre.
 - **Rapports** : bilan de match, ventilations par évaluation / type / zone, stats et efficacité par
   **combinaison**, **directions d'attaque**, synthèse **par set**, heatmaps, export **CSV**.
 - **Interopérabilité** : export / import du format **`.dvw`** (DataVolley), rotation point par point incluse.

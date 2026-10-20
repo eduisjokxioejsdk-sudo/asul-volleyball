@@ -121,6 +121,33 @@ for (const [file, name, props] of [
   }
 }
 
+// --- Menu des fenêtres : profils de disposition ------------------------------
+console.log('\n== Profils de fenêtres ==');
+{
+  const mod = await vite.ssrLoadModule('/src/components/PanelsMenu.jsx');
+  const Menu = mod.default;
+  try {
+    const html = renderToString(
+      React.createElement(Menu, {
+        layout: { video: { x: 0, y: 0, w: 600, h: 340, open: true }, console: { x: 0, y: 350, w: 600, h: 300, open: true } },
+        onToggle: noop,
+        onSetMany: noop,
+        onReset: noop,
+        profiles: [{ id: 'p1', name: 'Saisie club', layout: {} }],
+        onSaveProfile: () => ({ id: 'p1', name: 'Saisie club' }),
+        onApplyProfile: noop,
+        onDeleteProfile: noop,
+        initialOpen: true,
+      })
+    );
+    check('le menu rend la section « Profils de fenêtres »', /Profils de fenêtres/.test(html));
+    check('le profil enregistré est proposé', /Saisie club/.test(html));
+    check('les boutons Appliquer / Enregistrer sont présents', /Appliquer/.test(html) && /Enregistrer/.test(html));
+  } catch (err) {
+    check('le menu rend la section « Profils de fenêtres »', false, `${err.name}: ${err.message}`);
+  }
+}
+
 // --- Liste des codes en accordéon : 60 points / 200 actions -----------------
 console.log('\n== Liste des codes : 60 points, 200 actions ==');
 const { makeAction, groupActionsIntoRallies } = await vite.ssrLoadModule('/src/utils/datavolley.js');
