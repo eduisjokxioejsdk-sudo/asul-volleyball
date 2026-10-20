@@ -2,6 +2,23 @@
 
 Application d'analyse de vidéos de volleyball.
 
+## 🆕 Quoi de neuf — version 3.1.1
+
+- **Timecodes par action, comme DataVolley 4** : chaque code garde la position vidéo de
+  l’instant où il est **terminé**, même si toute la suite (`*01S5#a02R1+a03A45#`) est validée
+  d’un seul coup. Une formule combinée partage le temps de son bloc.
+- **Direction d’attaque dans une fenêtre séparée** : terrain complet façon Trajectoires,
+  un clic pour le départ puis un clic pour l’arrivée. Les attaques précédentes du **même
+  joueur** s’affichent en transparence — uniquement les trajectoires, sans type d’attaque.
+- La fenêtre Direction propose les **dernières attaques** du match pour compléter un point
+  plus ancien ; le compteur « attaques sans direction » l’ouvre sur la première à traiter.
+- **Profils de fenêtres** : enregistrez une disposition (positions, tailles, fenêtres
+  ouvertes) sous un nom depuis le menu **Fenêtres**, puis appliquez-la à **n’importe quel
+  autre match**. Les profils restent enregistrés sur le poste.
+- Menu Fenêtres : un nom existant **met à jour** le profil, un profil peut être **supprimé**,
+  et les fenêtres ajoutées depuis (comme Direction d’attaque) sont conservées lors de
+  l’application d’un ancien profil.
+
 ## 🆕 Quoi de neuf — version 3.1.0
 
 - **Liste des actions en accordéon** : un seul point ouvert à la fois, en-tête compact

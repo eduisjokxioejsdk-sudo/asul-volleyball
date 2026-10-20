@@ -1,8 +1,20 @@
 {
-  "version": "3.1.0",
+  "version": "3.1.1",
   "releasedAt": "2026-10-20",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.1.1",
+      "date": "2026-10-20",
+      "title": "Timecodes par action, fenêtre Direction façon Trajectoires et profils de fenêtres",
+      "items": [
+        "Timecodes par action comme DataVolley 4 : chaque code garde la position vidéo de l’instant où il est terminé, même si toute la suite est validée d’un seul coup ; une formule combinée partage le temps de son bloc",
+        "Direction d’attaque dans une fenêtre séparée, sur un terrain complet façon Trajectoires : un clic pour le départ, un clic pour l’arrivée, et les attaques précédentes du même joueur affichées en transparence — sans choisir de type d’attaque",
+        "La fenêtre Direction propose les dernières attaques du match pour compléter un point plus ancien, et le compteur « attaques sans direction » ouvre directement la fenêtre sur la première à traiter",
+        "Profils de fenêtres : enregistrez une disposition (positions, tailles, fenêtres ouvertes) sous un nom, puis appliquez-la à n’importe quel autre match ; les profils restent enregistrés sur le poste",
+        "Menu Fenêtres : un nom de profil déjà utilisé met à jour le profil existant, un profil peut être supprimé, et les fenêtres ajoutées depuis (comme Direction d’attaque) ne disparaissent pas lors de l’application d’un ancien profil"
+      ]
+    },
     {
       "version": "3.1.0",
       "date": "2026-10-20",
