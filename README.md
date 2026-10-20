@@ -38,6 +38,9 @@ Application d'analyse de vidéos de volleyball.
   sous-zones (A-D), **combinaisons d'attaque** (X1 « A Quick », XP « Pipe », CB « Slide »…),
   **appels passeur** (K) et **formules combinées** service·réception **et** attaque·contre/défense
   (`*23S.10-`, `*05V66.12#`).
+- **Timecodes par action, comme DataVolley 4** : chaque code garde la position vidéo de l'instant
+  où il est terminé, même si toute la suite (`*01S5#a02R1+a03A45#`) est validée d'un seul coup ;
+  une formule combinée partage le temps de son bloc.
 - **Quatre modes de travail, comme DataVolley** — le codage d'un match s'organise en **Saisie**,
   **Consultation**, **Correction** et **Analyse**, plus les Paramètres à part.
   - **Saisie** : la disposition « DataVolley » range l'écran d'un clic (vidéo en haut à gauche, score

@@ -108,8 +108,10 @@ import {
   formatTimecode,
   groupActionsIntoRallies,
   isTerminalEvaluation,
+  itemTimecodes,
   learnActionTypes,
   makeActions,
+  nextBlockTimes,
   parseSequence,
   predictNextAction,
   prefillWithLearnedType,
@@ -358,6 +360,10 @@ function DataVolleyDashboard({ user, onLogout }) {
   // Confort de saisie : pré-remplissage du serveur
   const [autoServe, setAutoServe] = useState(true);
   const bufferRef = useRef('');
+  // Timecodes par bloc de saisie : chaque code garde le temps vidéo de l'instant
+  // où il a été terminé (comme DataVolley 4), même si la suite est validée d'un coup.
+  const blockTimesRef = useRef([]);
+  const blockTimeBufferRef = useRef('');
 
   // Raccourcis clavier personnalisables (onglet Paramètres) + vitesse de lecture.
   const shortcutsKey = useMemo(() => `dv.shortcuts.video.${id}`, [id]);
@@ -390,6 +396,15 @@ function DataVolleyDashboard({ user, onLogout }) {
   const wasPlayingRef = useRef(false);
 
   useEffect(() => { bufferRef.current = buffer; }, [buffer]);
+
+  // Horodatage par code : on relève la position vidéo à chaque fois qu'un bloc
+  // du tampon est terminé (ou modifié), pas seulement à la validation.
+  useEffect(() => {
+    const normalized = stripSpaces(buffer);
+    const now = videoRef.current ? videoRef.current.currentTime : null;
+    blockTimesRef.current = nextBlockTimes(blockTimesRef.current, blockTimeBufferRef.current, normalized, now);
+    blockTimeBufferRef.current = normalized;
+  }, [buffer]);
   useEffect(() => { actionsRef.current = actions; }, [actions]);
 
   // Les raccourcis sont enregistrés sur l'appareil (onglet Paramètres).
@@ -1086,8 +1101,12 @@ function DataVolleyDashboard({ user, onLogout }) {
     if (validItems.length === 0) return;
     const v = videoRef.current;
     const timecode = v ? v.currentTime : null;
+    // Chaque action garde le temps vidéo de l'instant où SON code a été terminé.
+    // Une formule combinée (un seul bloc) donne le même temps à ses deux actions.
+    const timecodes = itemTimecodes(raw, blockTimesRef.current);
     const newActions = makeActions(items, {
       currentTimecode: timecode,
+      timecodes,
       startIndex: actionsRef.current.length,
       setNumber: myClaimedSet ?? matchState.currentSet,
     });

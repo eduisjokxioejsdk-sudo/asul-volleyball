@@ -875,24 +875,77 @@ export function splitBuffer(buffer) {
   return parseSequence(buffer);
 }
 
-// ---------------------------------------------------------------------------
-// AIDE À LA SAISIE (clavier physique ou clavier virtuel)
-// ---------------------------------------------------------------------------
-export function currentInputBlock(buffer) {
+/**
+ * Découpe le tampon en BLOCS DE SAISIE : un bloc = un code tapé (même
+ * incomplet), une formule combinée (`a04SM.06#`) comptant pour un seul bloc
+ * bien qu'elle produise deux actions.
+ * Sert à horodater chaque code au moment où il est terminé (façon DataVolley).
+ * @returns {Array<{text:string,start:number,end:number}>}
+ */
+export function splitInputBlocks(buffer) {
   const s = String(buffer || '');
+  const blocks = [];
   let i = 0;
-  let lastStart = 0;
   while (i < s.length) {
-    lastStart = i;
+    const start = i;
     const sc = scanCode(s, i);
     let end = sc.end > i ? sc.end : i + 1;
     if (s[end] === DV_COMBINED_SEPARATOR && !sc.evaluation && (sc.action === 'S' || sc.action === 'A')) {
       const rc = sc.action === 'A' ? scanCombinedDefensePart(s, end + 1) : scanReceptionPart(s, end + 1);
       end = rc ? rc.end : end + 1;
     }
+    blocks.push({ text: s.slice(start, end), start, end });
     i = end;
   }
-  return { text: s.slice(lastStart), start: lastStart };
+  return blocks;
+}
+
+/**
+ * Entretient les timecodes par bloc de saisie.
+ *
+ * Principe (comme DataVolley 4) : chaque code reçoit le temps vidéo de
+ * l'instant où il est TERMINÉ. On conserve les temps des blocs dont le texte
+ * n'a pas changé ; tout bloc nouveau ou modifié reçoit `now`.
+ *
+ * @param {Array<number|null>} times - temps des blocs du tampon précédent
+ * @param {string} previousBuffer - tampon précédent (sans espaces)
+ * @param {string} nextBuffer - tampon courant (sans espaces)
+ * @param {number|null} now - position vidéo courante
+ * @returns {Array<number|null>} un temps par bloc du tampon courant
+ */
+export function nextBlockTimes(times, previousBuffer, nextBuffer, now) {
+  const prev = splitInputBlocks(previousBuffer).map((b) => b.text);
+  const next = splitInputBlocks(nextBuffer).map((b) => b.text);
+  let common = 0;
+  while (common < prev.length && common < next.length && prev[common] === next[common]) common += 1;
+  const kept = (Array.isArray(times) ? times : []).slice(0, common);
+  const time = typeof now === 'number' && !Number.isNaN(now) ? now : null;
+  while (kept.length < next.length) kept.push(time);
+  return kept;
+}
+
+/**
+ * Timecodes alignés sur les items de `parseSequence(buffer)` : un bloc donne
+ * une action, sauf une formule combinée qui en donne deux (même temps).
+ */
+export function itemTimecodes(buffer, blockTimes) {
+  const blocks = splitInputBlocks(buffer);
+  const times = Array.isArray(blockTimes) ? blockTimes : [];
+  const out = [];
+  for (let b = 0; b < blocks.length; b += 1) {
+    const parsed = parseSequence(blocks[b].text);
+    for (let k = 0; k < parsed.length; k += 1) out.push(times[b] ?? null);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// AIDE À LA SAISIE (clavier physique ou clavier virtuel)
+// ---------------------------------------------------------------------------
+export function currentInputBlock(buffer) {
+  const blocks = splitInputBlocks(buffer);
+  const last = blocks[blocks.length - 1];
+  return last ? { text: last.text, start: last.start } : { text: '', start: 0 };
 }
 
 function countLeadingDigits(s) {
@@ -1532,17 +1585,33 @@ export function makeAction(code, currentTimecode = null, extra = {}) {
 
 /**
  * Transforme les items renvoyés par parseSequence en actions.
+ *
+ * `opts.timecodes` (optionnel) donne un timecode par ITEM, y compris les items
+ * invalides ignorés : c'est ainsi que chaque code garde le temps vidéo de
+ * l'instant où il a été terminé (comportement DataVolley 4). Sans temps pour un
+ * item, on retombe sur `opts.currentTimecode` (comportement historique).
+ *
  * @param {Array<{code:string,valid:boolean}>} items
- * @param {{currentTimecode?:number|null, startIndex?:number, setNumber?:number|null}} opts
+ * @param {{currentTimecode?:number|null, timecodes?:Array<number|null>,
+ *          startIndex?:number, setNumber?:number|null}} opts
  */
 export function makeActions(items, opts = {}) {
-  const valid = (items || []).filter((it) => it.valid);
-  return valid.map((it, i) =>
-    makeAction(it.code, opts.currentTimecode ?? null, {
-      action_index: (opts.startIndex || 0) + i,
-      set_number: opts.setNumber ?? null,
-    })
-  );
+  const list = items || [];
+  const times = Array.isArray(opts.timecodes) ? opts.timecodes : null;
+  const out = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const it = list[i];
+    if (!it.valid) continue;
+    const own = times ? times[i] : null;
+    const timecode = typeof own === 'number' && !Number.isNaN(own) ? own : opts.currentTimecode ?? null;
+    out.push(
+      makeAction(it.code, timecode, {
+        action_index: (opts.startIndex || 0) + out.length,
+        set_number: opts.setNumber ?? null,
+      })
+    );
+  }
+  return out;
 }
 
 /**
