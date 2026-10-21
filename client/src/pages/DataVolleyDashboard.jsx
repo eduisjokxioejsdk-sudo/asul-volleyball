@@ -18,6 +18,7 @@ import DvModeBar from '../components/DvModeBar';
 import DvCodeList from '../components/DvCodeList';
 import DvFilterPanel from '../components/DvFilterPanel';
 import DvConsultationPane from '../components/DvConsultationPane';
+import VideoAnnotationLayer from '../components/VideoAnnotationLayer';
 import DvCorrectionPane from '../components/DvCorrectionPane';
 import { DvAnalysisMenu, DvDrillDown } from '../components/DvAnalysisPane';
 import DvCommandWindow from '../components/DvCommandWindow';
@@ -223,6 +224,11 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [consultFilters, setConsultFilters] = useState(EMPTY_FILTERS);
   const [consultIndex, setConsultIndex] = useState(-1);
   const [playing, setPlaying] = useState(false);
+  // Consultation : lecture en boucle de la playlist de rallies.
+  const [consultLoop, setConsultLoop] = useState(false);
+  // Dessin sur la vidéo (calque d'annotations).
+  const [annotOn, setAnnotOn] = useState(false);
+  const [annotations, setAnnotations] = useState([]);
   // Correction : action sélectionnée dans la liste (outils de temps).
   const [correctUid, setCorrectUid] = useState(null);
   // Attaque choisie dans la fenêtre « Direction d'attaque » (null = la dernière).
@@ -1556,13 +1562,20 @@ function DataVolleyDashboard({ user, onLogout }) {
       if (first && first.action_index !== consultIndex) setConsultIndex(first.action_index);
       return;
     }
-    // Hors segment : on reprend au point suivant (ou on s'arrête à la fin).
+    // Hors segment : on reprend au point suivant (ou on reboucle la playlist).
     const next = consultSegments.find((s) => s.segmentStart > t);
     if (next) {
       v.currentTime = next.segmentStart;
       resumeTimeRef.current = next.segmentStart;
       const first = (next.actions || [])[0];
       if (first) setConsultIndex(first.action_index);
+    } else if (consultLoop && consultSegments.length) {
+      // Boucle : on revient au début de la playlist.
+      const first = consultSegments[0];
+      v.currentTime = first.segmentStart;
+      resumeTimeRef.current = first.segmentStart;
+      const firstAction = (first.actions || [])[0];
+      if (firstAction) setConsultIndex(firstAction.action_index);
     } else {
       v.pause();
       setPlaying(false);
@@ -2036,31 +2049,42 @@ function DataVolleyDashboard({ user, onLogout }) {
   const videoNode = (
     <>
       <div className="video-player-wrapper">
-        <video
-          ref={videoRef}
-          src={playbackUrl}
-          controls
-          preload="auto"
-          className="trimmed-player"
-          onTimeUpdate={handleTimeUpdate}
-          onPlay={() => { wasPlayingRef.current = true; setPlaying(true); }}
-          onPause={() => { wasPlayingRef.current = false; setPlaying(false); }}
-          onLoadedMetadata={(e) => {
-            // Changement de mode : on reprend au timecode quitté (et on relance
-            // la lecture si la vidéo jouait avant).
-            const el = e.currentTarget;
-            setVideoDuration(Number.isFinite(el.duration) ? el.duration : 0);
-            const t = resumeTimeRef.current;
-            if (t > 0) {
-              try { el.currentTime = t; } catch { /* média pas encore accessible */ }
-            }
-            if (wasPlayingRef.current) el.play().catch(() => {});
-          }}
-          onError={(e) => { const el = e.currentTarget; if (el.dataset.fb !== '1' && videoUrl) { el.dataset.fb = '1'; el.src = videoUrl; } }}
-        />
+        <VideoAnnotationLayer enabled={annotOn} onAnnotationsChange={setAnnotations}>
+          <video
+            ref={videoRef}
+            src={playbackUrl}
+            controls
+            preload="auto"
+            className="trimmed-player"
+            onTimeUpdate={handleTimeUpdate}
+            onPlay={() => { wasPlayingRef.current = true; setPlaying(true); }}
+            onPause={() => { wasPlayingRef.current = false; setPlaying(false); }}
+            onLoadedMetadata={(e) => {
+              // Changement de mode : on reprend au timecode quitté (et on relance
+              // la lecture si la vidéo jouait avant).
+              const el = e.currentTarget;
+              setVideoDuration(Number.isFinite(el.duration) ? el.duration : 0);
+              const t = resumeTimeRef.current;
+              if (t > 0) {
+                try { el.currentTime = t; } catch { /* média pas encore accessible */ }
+              }
+              if (wasPlayingRef.current) el.play().catch(() => {});
+            }}
+            onError={(e) => { const el = e.currentTarget; if (el.dataset.fb !== '1' && videoUrl) { el.dataset.fb = '1'; el.src = videoUrl; } }}
+          />
+        </VideoAnnotationLayer>
       </div>
       <div className="dv-timecode">
         <Clock size={12} /> {formatTimecode(currentTime)}
+        <button
+          type="button"
+          className={`btn btn-sm ${annotOn ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setAnnotOn((v) => !v)}
+          title={annotOn ? 'Quitter le dessin sur la vidéo' : 'Dessiner sur la vidéo'}
+          style={{ marginLeft: 8 }}
+        >
+          <Pencil size={12} /> Dessin
+        </button>
       </div>
     </>
   );
@@ -2552,6 +2576,9 @@ function DataVolleyDashboard({ user, onLogout }) {
                   setsWon2={matchState.setsWon.team2}
                   issues={issues}
                   actionSet={setOfAction}
+                  currentTime={currentTime}
+                  loop={consultLoop}
+                  onToggleLoop={() => setConsultLoop((v) => !v)}
                 />
               )}
 

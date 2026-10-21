@@ -2,6 +2,13 @@
 
 Application d'analyse de vidéos de volleyball.
 
+## 🆕 Quoi de neuf — version 3.2.0
+
+- **Playlist de rallies en Consultation** : tous les points retenus par les filtres dans une liste, avec le code du point, ses timecodes et son nombre d’actions. Un clic place la vidéo au début du point.
+- **Tri dans les deux sens** (ordre des points, timecode, nombre d’actions, code) et total « N points · N actions ».
+- **Lecture enchaînée** : point précédent / suivant, lecture / pause et **mode boucle** qui repart au premier point après le dernier.
+- **Dessin sur la vidéo** : trait, flèche, rectangle, ellipse, main levée et texte, 6 couleurs, 3 épaisseurs, annuler et effacer tout. Le bouton **Dessin** de la barre de temps active le calque, sans gêner la lecture.
+
 ## 🆕 Quoi de neuf — version 3.1.3
 
 - **Modifier une action par double-clic en Saisie et en Correction** : double-cliquez une action dans la liste « Actions codées » pour modifier directement son code, sans passer par la fenêtre de correction. **Entrée** valide, **Échap** annule.

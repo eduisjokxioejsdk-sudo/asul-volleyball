@@ -7103,6 +7103,250 @@ body {
   background: var(--bg-tertiary);
 }
 
+/* --- Playlist de rallies (mode Consultation) ------------------------------- */
+
+.rally-playlist {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+}
+
+.rally-playlist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rally-playlist-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.rally-playlist-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.rally-playlist-controls .btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.rally-playlist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.rally-item {
+
+
+/* --- Calque de dessin sur la vidéo --------------------------------------- */
+
+.video-annot-layer {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.video-annot-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.video-annot-layer.active .video-annot-svg {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.video-annot-tools {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.video-annot-tools select {
+  padding: 2px 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.video-annot-colors,
+.video-annot-widths {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.video-annot-swatch {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.video-annot-swatch.active {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.video-annot-width {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.video-annot-width span {
+  display: block;
+  width: 12px;
+  background: var(--text-primary);
+  border-radius: 2px;
+}
+
+.video-annot-width.active {
+  border-color: var(--accent);
+}
+
+.video-annot-text-pop {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.video-annot-text-pop input {
+  min-width: 180px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.rally-playlist-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.rally-playlist-sort {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.rally-playlist-stats {
+  color: var(--text-secondary);
+  font-size: 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+  display: grid;
+  grid-template-columns: 34px 1fr auto 22px;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rally-item:hover {
+  background: var(--bg-secondary);
+  border-color: var(--border-subtle);
+}
+
+.rally-item.active {
+  background: var(--bg-secondary);
+  border-color: var(--accent);
+}
+
+.rally-item-num {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.rally-item-code {
+  font-family: var(--font-mono, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rally-item-tc {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rally-item-count {
+  text-align: right;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+
 .dvx-current {
   border: 1px solid var(--border-subtle);
   border-radius: 10px;

@@ -10,6 +10,7 @@ import { ChevronLeft, Clock, Pause, Play } from './icons';
 import DvCodeList from './DvCodeList';
 import DvFilterPanel from './DvFilterPanel';
 import DvRotationWindow from './DvRotationWindow';
+import RallyPlaylist from './RallyPlaylist';
 import { formatTimecode } from '../utils/datavolley';
 import { EMPTY_FILTERS, actionShortLabel, reviewTotals } from '../utils/codingTools';
 
@@ -36,6 +37,9 @@ const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
  * @param {Function} props.onRate - (rate) => void
  * @param {Function} props.onStep - (dir) => void
  * @param {Object} props.rotationView - état du terrain au point lu
+ * @param {number} props.currentTime - position courante de la vidéo (secondes)
+ * @param {boolean} props.loop - lecture en boucle activée
+ * @param {Function} props.onToggleLoop - () => void
  */
 export default function DvConsultationPane({
   videoNode,
@@ -57,6 +61,7 @@ export default function DvConsultationPane({
   onRate,
   onStep,
   rotationView,
+  currentTime = 0,
   team1,
   team2,
   homeConfig,
@@ -66,6 +71,8 @@ export default function DvConsultationPane({
   setsWon2 = 0,
   issues = [],
   actionSet,
+  loop = false,
+  onToggleLoop,
 }) {
   const totals = useMemo(() => reviewTotals(segments, duration), [segments, duration]);
 
@@ -191,6 +198,19 @@ export default function DvConsultationPane({
             </div>
           </div>
         )}
+
+        <RallyPlaylist
+          rallies={points}
+          segments={segments}
+          activeIndex={activeIndex}
+          onSeekPoint={onSeekPoint}
+          currentTime={currentTime}
+          playing={playing}
+          onTogglePlay={onTogglePlay}
+          loop={loop}
+          onToggleLoop={onToggleLoop}
+          onStep={onStep}
+        />
 
         <DvCodeList
           rallies={points}
