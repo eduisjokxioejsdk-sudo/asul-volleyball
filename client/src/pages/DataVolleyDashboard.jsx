@@ -2581,6 +2581,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                   team1={team1}
                   team2={team2}
                   disabled={matchFinished}
+                  onEditCode={editActionCode}
                 />
               )}
 

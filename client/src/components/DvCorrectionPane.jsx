@@ -53,6 +53,7 @@ export default function DvCorrectionPane({
   selectedUid = null,
   onSelect,
   actionSet,
+  onEditCode,
   team1 = 'Domicile',
   team2 = 'Extérieur',
 }) {
@@ -171,6 +172,7 @@ export default function DvCorrectionPane({
           autoScroll={false}
           directionMissing={directionMissing}
           onDirectionMissing={onDirectionMissing}
+          onEditCode={onEditCode}
         />
       </aside>
     </div>

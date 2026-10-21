@@ -1,14 +1,14 @@
 {
-  "version": "3.1.2",
+  "version": "3.1.3",
   "releasedAt": "2026-10-20",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
     {
-      "version": "3.1.2",
+      "version": "3.1.3",
       "date": "2026-10-20",
-      "title": "Modifier une action par double-clic dans le codage",
+      "title": "Modifier une action par double-clic en Saisie et en Correction",
       "items": [
-        "Double-cliquez une action dans la liste « Actions codées » du mode Saisie pour modifier directement son code, sans passer par la Correction",
+        "Double-cliquez une action dans la liste « Actions codées » du mode Saisie et du mode Correction pour modifier directement son code, sans passer par la fenêtre de correction",
         "Le nouveau code est contrôlé et normalisé avant enregistrement (2 chiffres de joueur, majuscules) : Entrée valide, Échap annule",
         "La modification conserve l’identifiant de l’action, son temps vidéo, son set et l’ordre du match ; équipe, joueur, action, zones et évaluation sont recalculés et la sauvegarde est automatique",
         "Un code incomplet ou invalide est refusé avec un message, sans modifier la liste ni perdre aucune action"

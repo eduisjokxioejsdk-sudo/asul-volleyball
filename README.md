@@ -2,6 +2,12 @@
 
 Application d'analyse de vidéos de volleyball.
 
+## 🆕 Quoi de neuf — version 3.1.3
+
+- **Modifier une action par double-clic en Saisie et en Correction** : double-cliquez une action dans la liste « Actions codées » pour modifier directement son code, sans passer par la fenêtre de correction. **Entrée** valide, **Échap** annule.
+- Le code est **contrôlé et normalisé** avant enregistrement ; en cas d’erreur, un message s’affiche et la liste n’est pas modifiée.
+- L’édition **conserve le temps vidéo, le set et l’ordre** de l’action ; équipe, joueur, action, zones et évaluation sont recalculés, et la sauvegarde du match est automatique.
+
 ## 🆕 Quoi de neuf — version 3.1.2
 
 - **Modifier une action par double-clic** dans la liste « Actions codées » du mode Saisie :
