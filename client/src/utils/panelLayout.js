@@ -10,7 +10,7 @@
 export const ANCHOR_PANELS = ['video', 'console'];
 
 /** Toutes les fenêtres de la page codage, dans l'ordre du menu « Fenêtres ». */
-export const PANEL_IDS = ['video', 'console', 'score', 'court', 'positions', 'pupitre', 'actions', 'direction', 'shortcuts', 'aide', 'keypad'];
+export const PANEL_IDS = ['video', 'console', 'score', 'court', 'positions', 'actions', 'direction', 'shortcuts', 'aide', 'keypad'];
 
 /** Titres + icônes (noms d'icônes de components/icons) de chaque fenêtre. */
 export const PANEL_META = {
@@ -19,7 +19,6 @@ export const PANEL_META = {
   score: { title: 'Score', icon: 'Trophy' },
   court: { title: 'Terrain', icon: 'Crosshair' },
   positions: { title: 'Positions', icon: 'Users' },
-  pupitre: { title: 'Pupitre de saisie', icon: 'Grid3x3' },
   actions: { title: 'Actions codées', icon: 'ListChecks' },
   direction: { title: 'Direction d’attaque', icon: 'Target' },
   shortcuts: { title: 'Raccourcis', icon: 'Keyboard' },
@@ -34,7 +33,6 @@ export const PANEL_MIN = {
   score: { minW: 220, minH: 70 },
   court: { minW: 220, minH: 160 },
   positions: { minW: 220, minH: 110 },
-  pupitre: { minW: 300, minH: 240 },
   actions: { minW: 220, minH: 120 },
   direction: { minW: 260, minH: 180 },
   shortcuts: { minW: 220, minH: 52 },
@@ -105,7 +103,6 @@ export function defaultPanelLayout(width = 1200, height = 800, skip = []) {
   const courtH = clamp(Math.round(railW / 1.9) + HEADER_H + 40, 200, 420);
   const scoreH = 92;
   const positionsH = 168;
-  const pupitreH = clamp(Math.round(railW * 0.92), 300, 420);
   const aideH = clamp(Math.round(H * 0.32), 200, 380);
   const keypadH = 220;
 
@@ -124,7 +121,6 @@ export function defaultPanelLayout(width = 1200, height = 800, skip = []) {
     push('console', consoleH);
     push('court', courtH);
     push('positions', positionsH);
-    push('pupitre', pupitreH);
     push('actions', actionsH);
     push('direction', directionH);
     push('shortcuts', shortcutsH);
@@ -158,8 +154,6 @@ export function defaultPanelLayout(width = 1200, height = 800, skip = []) {
   ry += courtH + gap;
   layout.positions = { x: rightX, y: ry, w: railW, h: positionsH, open: true };
   ry += positionsH + gap;
-  layout.pupitre = { x: rightX, y: ry, w: railW, h: pupitreH, open: true };
-  ry += pupitreH + gap;
   layout.shortcuts = { x: rightX, y: ry, w: railW, h: shortcutsH, open: true };
   ry += shortcutsH + gap;
   layout.aide = { x: rightX, y: ry, w: railW, h: aideH, open: false };

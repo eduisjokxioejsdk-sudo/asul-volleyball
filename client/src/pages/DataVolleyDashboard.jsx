@@ -22,7 +22,6 @@ import DvCorrectionPane from '../components/DvCorrectionPane';
 import { DvAnalysisMenu, DvDrillDown } from '../components/DvAnalysisPane';
 import DvCommandWindow from '../components/DvCommandWindow';
 import DvRotationWindow from '../components/DvRotationWindow';
-import DvScoutPad from '../components/DvScoutPad';
 import FloatingPanel from '../components/FloatingPanel';
 import PanelsMenu from '../components/PanelsMenu';
 import ShortcutSettings from '../components/ShortcutSettings';
@@ -513,23 +512,6 @@ function DataVolleyDashboard({ user, onLogout }) {
     const team = parts.team === 'away' ? 'away' : parts.team === 'home' ? 'home' : null;
     return { team, number: num };
   }, [buffer, codeOpts]);
-  // Pupitre de saisie (façon DataVolley 4) : il propose un tampon complet.
-  // On écrit toujours la référence avant l'état, comme le clavier virtuel.
-  const applyPadBuffer = useCallback((next) => {
-    bufferRef.current = next;
-    setBuffer(next);
-  }, []);
-  const backspacePadBuffer = useCallback(() => {
-    const next = bufferRef.current.slice(0, -1);
-    bufferRef.current = next;
-    setBuffer(next);
-  }, []);
-  const clearPadBuffer = useCallback(() => {
-    bufferRef.current = '';
-    setBuffer('');
-  }, []);
-
-
 
   // Hauteur du canevas : au moins la place nécessaire aux fenêtres ouvertes.
   const canvasHeight = Math.max(minHeight, canvasSize.height || 0);
@@ -2464,37 +2446,6 @@ function DataVolleyDashboard({ user, onLogout }) {
                   </div>
                   <SetterRow label={team1} serving={matchState.server === 'team1'} pos={matchState.homeSetterPos} onChange={(p) => setSetterPos('home', p)} />
                   <SetterRow label={team2} serving={matchState.server === 'team2'} pos={matchState.awaySetterPos} onChange={(p) => setSetterPos('away', p)} />
-                </FloatingPanel>
-              )}
-
-              {/* Fenêtre « pupitre » : le geste de DataVolley 4 — cliquer le
-                  joueur du six, puis l'action, la zone et l'évaluation. */}
-              {isOpen('pupitre') && (
-                <FloatingPanel
-                  id="pupitre"
-                  title="Pupitre de saisie"
-                  icon={Grid3x3}
-                  rect={rect('pupitre')}
-                  onRectChange={(patch) => setRect('pupitre', patch)}
-                  onClose={() => close('pupitre')}
-                  size={canvasSize}
-                >
-                  <DvScoutPad
-                    buffer={buffer}
-                    team1={team1}
-                    team2={team2}
-                    homeLineup={boardState.homeLineup}
-                    awayLineup={boardState.awayLineup}
-                    homeConfig={homeConfig}
-                    awayConfig={awayConfig}
-                    serving={boardState.server}
-                    lightMode={lightMode}
-                    disabled={matchFinished}
-                    onChange={applyPadBuffer}
-                    onBackspace={backspacePadBuffer}
-                    onClear={clearPadBuffer}
-                    onCommit={commitBuffer}
-                  />
                 </FloatingPanel>
               )}
 

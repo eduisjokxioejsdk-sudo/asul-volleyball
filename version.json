@@ -1,21 +1,8 @@
 {
-  "version": "3.2.0",
-  "releasedAt": "2026-10-21",
+  "version": "3.1.3",
+  "releasedAt": "2026-10-20",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
-    {
-      "version": "3.2.0",
-      "date": "2026-10-21",
-      "title": "Pupitre de saisie façon DataVolley 4",
-      "items": [
-        "Nouvelle fenêtre « Pupitre de saisie » dans le mode Saisie, ouverte par défaut : le geste de DataVolley 4, sans taper les numéros",
-        "Le six réel de chaque équipe est cliquable — numéro, nom, poste et rôle, libéro compris, avec le ballon de service et le joueur en cours de saisie mis en avant",
-        "Après le joueur, le pupitre propose les 7 actions (S R A B D E F), les zones sur un terrain 3 × 3 (départ puis arrivée, sous-zone) et les évaluations nommées de l’action en cours",
-        "Les boutons non attendus sont désactivés : impossible de produire un code invalide ; Retour, Vider et Valider agissent sur le même tampon que le clavier et les timecodes par action restent identiques",
-        "En mode « Sans évaluation », le pupitre masque les évaluations ; si aucun six n’est renseigné, il renvoie vers « Six & rôles »",
-        "La fenêtre est déplaçable, redimensionnable, mémorisée avec les autres fenêtres et incluse dans les profils de disposition"
-      ]
-    },
     {
       "version": "3.1.3",
       "date": "2026-10-20",
