@@ -2,6 +2,13 @@
 
 Application d'analyse de vidéos de volleyball.
 
+## 🆕 Quoi de neuf — version 3.2.0
+
+- **Pupitre de saisie façon DataVolley 4** : dans le mode Saisie, la fenêtre « Pupitre de saisie » (ouverte par défaut) permet de coder à la souris, sans taper les numéros. Cliquez le joueur du six — numéro, nom, poste et rôle, libéro compris — puis l’action, la zone sur le terrain 3 × 3 (départ, arrivée, sous-zone) et l’évaluation nommée.
+- Les **boutons non attendus sont désactivés** : le pupitre ne peut pas produire un code invalide. Il écrit dans le même tampon que le clavier, donc les **timecodes par action** et les contrôles restent identiques.
+- Le **ballon de service** et le joueur en cours de saisie sont mis en avant ; en mode « Sans évaluation », les évaluations sont masquées ; sans six renseigné, le pupitre renvoie vers « Six & rôles ».
+- La fenêtre est **déplaçable, redimensionnable**, mémorisée avec les autres fenêtres et incluse dans les **profils de disposition**.
+
 ## 🆕 Quoi de neuf — version 3.1.3
 
 - **Modifier une action par double-clic en Saisie et en Correction** : double-cliquez une action dans la liste « Actions codées » pour modifier directement son code, sans passer par la fenêtre de correction. **Entrée** valide, **Échap** annule.
@@ -85,7 +92,9 @@ Application d'analyse de vidéos de volleyball.
     `[` / `]` terminent le point pour le domicile ou l'extérieur, **Ctrl+A** annule une fin de point,
     **Échap** ouvre la **fenêtre de commandes** (`T`, `aT` temps morts, `C5.12`, `aC5.12` remplacements,
     `>TEXTE` code libre). Saisie rapide : code attendu prédit (action suivante + passeur), clavier
-    virtuel, aide-mémoire.
+    virtuel, aide-mémoire, et **pupitre de saisie façon DataVolley 4** : cliquez le joueur du six
+    (noms et postes), puis l'action, la zone sur le terrain 3 × 3 et l'évaluation — le tout sans
+    taper le numéro.
   - **Consultation** : le match se relit **en enchaînant les points, sans les temps morts** (marges et
     vitesse réglables, compteur du temps mort évité). À droite, en permanence : filtres **action**,
     **qualité** (évaluation), **position** (zone), **rotation** (1-6) et **situation** (+ / 0 / −),

@@ -110,6 +110,20 @@ for (const [file, name, props] of [
   ['/src/components/DvCommandWindow.jsx', 'default', { open: true, onClose: noop, onSubmit: noop }],
   ['/src/components/DvConsultationPane.jsx', 'default', { points: [], segments: [], filters: {}, onFilters: noop }],
   ['/src/components/DvCorrectionPane.jsx', 'default', { actions: [], rallies: [], sync: {} }],
+  [
+    '/src/components/DvScoutPad.jsx',
+    'default',
+    {
+      buffer: '*04',
+      team1: 'ASUL',
+      team2: 'Nantes',
+      homeLineup: { P1: 1, P2: 2, P3: 3, P4: 4, P5: 5, P6: 6 },
+      awayLineup: { P1: 11, P2: 12, P3: 13, P4: 14, P5: 15, P6: 16 },
+      homeConfig: { roster: [{ number: 4, name: 'Martin', role: 'outside' }] },
+      awayConfig: { roster: [{ number: 11, name: 'Dupont', role: 'setter' }] },
+      onChange: noop,
+    },
+  ],
 ]) {
   const mod = await vite.ssrLoadModule(file);
   const Comp = mod[name] || mod.default;
@@ -120,6 +134,36 @@ for (const [file, name, props] of [
     check(`${path.basename(file)} se rend`, false, `${err.name}: ${err.message}`);
   }
 }
+// --- Pupitre de saisie : le six cliquable et les actions attendues ----------
+console.log('\n== Pupitre de saisie (façon DataVolley 4) ==');
+{
+  const mod = await vite.ssrLoadModule('/src/components/DvScoutPad.jsx');
+  const Pad = mod.default;
+  const props = {
+    buffer: '*04',
+    team1: 'ASUL',
+    team2: 'Nantes',
+    homeLineup: { P1: 1, P2: 2, P3: 3, P4: 4, P5: 5, P6: 6 },
+    awayLineup: { P1: 11, P2: 12, P3: 13, P4: 14, P5: 15, P6: 16 },
+    homeConfig: { roster: [{ number: 4, name: 'Martin', role: 'outside' }] },
+    awayConfig: { roster: [{ number: 11, name: 'Dupont', role: 'setter' }] },
+    onChange: noop,
+  };
+  try {
+    const html = renderToString(React.createElement(Pad, props));
+    check('le six est affiché (n° et nom)', /\*?Martin/.test(html) && html.includes('04'));
+    check('les 7 actions sont proposées', (html.match(/dvp-skill\b/g) || []).length === 7);
+    check('l’action attendue est mise en avant', /dvp-skill next/.test(html));
+    check('le code en cours est affiché', html.includes('*04'));
+    const served = renderToString(React.createElement(Pad, { ...props, buffer: '*04S' }));
+    check('après l’action, les zones sont cliquables', /dvp-zone/.test(served));
+    check('après l’action, les évaluations sont proposées', /dvp-eval-sym/.test(served));
+  } catch (err) {
+    check('le pupitre se rend', false, `${err.name}: ${err.message}`);
+  }
+}
+
+
 
 // --- Menu des fenêtres : profils de disposition ------------------------------
 console.log('\n== Profils de fenêtres ==');
