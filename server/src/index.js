@@ -14,6 +14,9 @@ const liveRoutes = require('./routes/live');
 const teamsRoutes = require('./routes/teams');
 const trajectoryRoutes = require('./routes/trajectories');
 const systemRoutes = require('./routes/system');
+const montageRoutes = require('./routes/montages');
+const playlistsRoutes = require('./routes/playlists');
+const practiceRoutes = require('./routes/practice');
 const { initSocket } = require('./socket');
 const db = require('./database');
 
@@ -37,8 +40,8 @@ app.use(cors({
   origin: true,
   credentials: true
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve uploaded files
 app.use('/uploads', express.static(uploadsDir));
@@ -46,11 +49,14 @@ app.use('/uploads', express.static(uploadsDir));
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/videos', videoRoutes);
+app.use('/api/videos', montageRoutes);
 app.use('/api/datavolley', datavolleyRoutes);
 app.use('/api/live', liveRoutes);
 app.use('/api/teams', teamsRoutes);
 app.use('/api/trajectories', trajectoryRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/playlists', playlistsRoutes);
+app.use('/api/practice', practiceRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

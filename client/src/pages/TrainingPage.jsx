@@ -1,3 +1,6 @@
+import AppNavigation from '../components/AppNavigation';
+import PancakeLogo from '../components/PancakeLogo';
+import AnimatedPancake from '../components/AnimatedPancake';
 // ============================================================================
 // Mode Entraînement — deux modes :
 //   • « Réviser »  : jeux (memory, relier par flèches, QCM) + traduction chronométrée.
@@ -249,15 +252,29 @@ export default function TrainingPage({ user, onLogout }) {
 
   // Filtre des familles (commun aux jeux).
   const renderGroups = () => (
-    <div className="dv-help-card" style={{ marginBottom: 12 }}>
-      <h5>Familles à réviser</h5>
+    <div className="dv-help-card" style={{ marginBottom: 16, padding: 14 }}>
+      <h5 style={{ margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a1a1aa', fontSize: 11.5 }}>
+        Familles de codes à réviser
+      </h5>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {TRAINING_GROUPS.map((g) => (
-          <label key={g.id} className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
-            <input type="checkbox" checked={groups.includes(g.id)} onChange={() => toggleGroup(g.id)} style={{ marginRight: 6 }} />
-            {g.label}
-          </label>
-        ))}
+        {TRAINING_GROUPS.map((g) => {
+          const checked = groups.includes(g.id);
+          return (
+            <label
+              key={g.id}
+              className={`btn btn-sm ${checked ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ cursor: 'pointer' }}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggleGroup(g.id)}
+                style={{ marginRight: 6 }}
+              />
+              {g.label}
+            </label>
+          );
+        })}
       </div>
     </div>
   );
@@ -434,11 +451,24 @@ export default function TrainingPage({ user, onLogout }) {
   // Mode « Réviser » : sélecteur d'activité + jeu actif.
   const renderReview = () => (
     <div>
-      <div className="mode-selector" style={{ marginBottom: 12 }}>
-        <button className={`mode-btn ${activity === 'pairs' ? 'active' : ''}`} onClick={() => setActivity('pairs')}><Dices size={15} /> Paires</button>
-        <button className={`mode-btn ${activity === 'match' ? 'active' : ''}`} onClick={() => setActivity('match')}><Shuffle size={15} /> Relier</button>
-        <button className={`mode-btn ${activity === 'quiz' ? 'active' : ''}`} onClick={() => setActivity('quiz')}><ListChecks size={15} /> QCM</button>
-        <button className={`mode-btn ${activity === 'translate' ? 'active' : ''}`} onClick={() => setActivity('translate')}><Timer size={15} /> Traduction</button>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#a1a1aa', marginBottom: 6 }}>
+          Choisir un mini-jeu d’entraînement
+        </div>
+        <div className="mode-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))', gap: 10, padding: 8 }}>
+          <button className={`mode-btn ${activity === 'pairs' ? 'active' : ''}`} onClick={() => setActivity('pairs')}>
+            <Dices size={16} /> 01 · Paires (Memory)
+          </button>
+          <button className={`mode-btn ${activity === 'match' ? 'active' : ''}`} onClick={() => setActivity('match')}>
+            <Shuffle size={16} /> 02 · Relier
+          </button>
+          <button className={`mode-btn ${activity === 'quiz' ? 'active' : ''}`} onClick={() => setActivity('quiz')}>
+            <ListChecks size={16} /> 03 · QCM
+          </button>
+          <button className={`mode-btn ${activity === 'translate' ? 'active' : ''}`} onClick={() => setActivity('translate')}>
+            <Timer size={16} /> 04 · Traduction Chrono
+          </button>
+        </div>
       </div>
       {activity !== 'translate' && renderGroups()}
       {activity === 'pairs' && renderPairs()}
@@ -622,65 +652,50 @@ export default function TrainingPage({ user, onLogout }) {
 
   return (
     <div className="dashboard asul-modern">
-      <nav className="navbar">
-        <div className="navbar-brand">
-          <img src="/logo.png" alt="ASUL" style={{ height: 28, marginRight: 4 }} />
-          ASUL <span>• Entraînement</span>
-        </div>
-        <div className="navbar-user">
-          <span className="user-info">
-            <span className="user-name">{user?.name}</span>
-          </span>
-          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/dashboard')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <ChevronLeft size={14} /> Accueil
-          </button>
-          <button className="btn btn-secondary btn-sm" onClick={onLogout}>
-            Déconnexion
-          </button>
-        </div>
-      </nav>
+      <AppNavigation user={user} onLogout={onLogout} />
 
       <div className="dashboard-content">
-        <section className="asul-hero asul-rise">
-          <div className="asul-hero-grid">
-            <div className="asul-hero-copy">
-              <span className="asul-hero-eyebrow"><Sparkles size={13} /> Mode entraînement</span>
-              <h1>Deviens un pro du <em>codage DataVolley</em></h1>
-              <p>
-                <strong>Réviser</strong> : jeux (paires, relier, QCM) et traduction chronométrée.{' '}
-                <strong>Formation</strong> : 11 leçons progressives, de la théorie à la pratique, validées par une épreuve à 10/10.
-              </p>
-            </div>
-            <div className="asul-ball-stage">
-              <div className="asul-ball">
-                <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
-                  <defs>
-                    <radialGradient id="tpBallGrad" cx="34%" cy="28%" r="82%">
-                      <stop offset="0%" stopColor="#ffffff" />
-                      <stop offset="52%" stopColor="#eaf1ff" />
-                      <stop offset="100%" stopColor="#b7c7e8" />
-                    </radialGradient>
-                  </defs>
-                  <circle cx="50" cy="50" r="47" fill="url(#tpBallGrad)" stroke="#2868b8" strokeWidth="2.5" />
-                  <g fill="none" stroke="#3d8bff" strokeWidth="2.6" strokeLinecap="round" opacity="0.9">
-                    <path d="M50 3 C 22 30, 22 70, 50 97" />
-                    <path d="M50 3 C 78 30, 78 70, 50 97" />
-                    <path d="M3 50 C 30 22, 70 22, 97 50" />
-                    <path d="M3 50 C 30 78, 70 78, 97 50" />
-                  </g>
-                  <ellipse cx="36" cy="29" rx="15" ry="8" fill="#ffffff" opacity="0.55" />
-                </svg>
+        <section className="pk-hero-banner" style={{ marginBottom: 22 }}>
+          <div style={{ position: 'relative', zIndex: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+              <PancakeLogo size={52} />
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.05em', color: '#ffffff', lineHeight: 1.1 }}>
+                  Pancake <span style={{ color: '#c8a165' }}>Stats</span> · Académie
+                </div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, color: '#e8c98f', letterSpacing: '0.08em', marginTop: 2 }}>
+                  ENTRAÎNEMENT INTENSIF AU CODAGE
+                </div>
               </div>
             </div>
+            <h1 className="pk-hero-title" style={{ fontSize: 38 }}>
+              Deviens un pro du <span>codage DataVolley</span>
+            </h1>
+            <p className="pk-hero-lead" style={{ marginBottom: 18 }}>
+              <strong>Réviser</strong> : 4 mini-jeux interactifs (Paires, Relier, QCM et Traduction chronométrée) pour automatiser tes réflexes clavier.{' '}
+              <strong>Formation</strong> : 11 leçons progressives, de la théorie à la pratique, validées par une épreuve finale à 10/10.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+              <span className="pk-mono" style={{ padding: '4px 10px', background: 'rgba(16, 185, 129, 0.14)', border: '1px solid #059669', color: '#10b981', fontSize: 11.5, fontWeight: 700 }}>
+                ✓ {completed.length} / {LESSONS.length} LEÇONS VALIDÉES
+              </span>
+              <span className="pk-mono" style={{ padding: '4px 10px', background: 'rgba(200, 161, 101, 0.14)', border: '1px solid #c8a165', color: '#e8c98f', fontSize: 11.5, fontWeight: 700 }}>
+                4 MINI-JEUX D’ENTRAÎNEMENT
+              </span>
+              <span className="pk-mono" style={{ padding: '4px 10px', background: 'rgba(14, 165, 233, 0.14)', border: '1px solid #0284c7', color: '#38bdf8', fontSize: 11.5, fontWeight: 700 }}>
+                SYNTAXE OFFICIELLE DV4
+              </span>
+            </div>
           </div>
+          <AnimatedPancake size={145} showTelemetry={true} />
         </section>
 
-        <div className="mode-selector" style={{ marginBottom: 16 }}>
+        <div className="mode-selector" style={{ marginBottom: 18, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: 8 }}>
           <button className={`mode-btn ${mode === 'review' ? 'active' : ''}`} onClick={() => setMode('review')}>
-            <Dices size={16} /> Réviser
+            <Dices size={16} /> Mode Réviser (Mini-Jeux & Chrono)
           </button>
           <button className={`mode-btn ${mode === 'training' ? 'active' : ''}`} onClick={() => setMode('training')}>
-            <BookOpen size={16} /> Formation
+            <BookOpen size={16} /> Mode Formation (Parcours 11 Leçons)
           </button>
         </div>
 

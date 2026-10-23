@@ -13,6 +13,9 @@ const DV_EVAL_KEYS = ['#', '+', '!', '-', '/', '='];
 const DV_SUBZONE_KEYS = ['A', 'B', 'C', 'D'];
 const DV_COMBINED_SEPARATOR = '.';
 const DV_TEAM_KEYS = ['*', 'a'];
+const DV_BLOCKER_KEYS = ['0', '1', '2', '3', '4'];
+const DV_EXTENDED_HIT_KEYS = ['H', 'P', 'T'];
+const DV_EXTENDED_SPECIAL_KEYS = ['B', 'O', 'N', 'Z'];
 
 const DV_TYPES = {
   S: ['H', 'Q', 'M', 'T'],
@@ -76,6 +79,9 @@ function scanCode(str, start) {
     end_zone: '',
     end_subzone: '',
     evaluation: '',
+    num_blockers: '',
+    kill_type: '',
+    special_code: '',
     complete: false,
     issues: [],
   };
@@ -169,6 +175,35 @@ function scanCode(str, start) {
     i += 1;
     out.complete = true;
   }
+  // Codes étendus DataVolley 4 après l'évaluation (positions 9-14) :
+  //   - num_blockers : 0..4 (si ce n'est pas le début d'un nouveau code sans '*')
+  //   - kill_type    : H, P, T (type de frappe post-éval)
+  //   - special_code : B (block-out), O (out), N (filet), Z (ligne/arbitre)
+  if (action === 'A' || action === 'B' || action === 'S') {
+    let extGuard = 0;
+    while (i < s.length && extGuard < 3) {
+      extGuard += 1;
+      const ch = s[i];
+      if (!ch || ch === '*' || ch === 'a' || ch === DV_COMBINED_SEPARATOR) break;
+      const up = ch.toUpperCase();
+      if (!out.num_blockers && DV_BLOCKER_KEYS.includes(ch) && !/^\d{1,2}[SRABDEF]/i.test(s.slice(i))) {
+        out.num_blockers = ch;
+        i += 1;
+        continue;
+      }
+      if (!out.kill_type && DV_EXTENDED_HIT_KEYS.includes(up) && !/^\d{1,2}[SRABDEF]/i.test(s.slice(i))) {
+        out.kill_type = up;
+        i += 1;
+        continue;
+      }
+      if (!out.special_code && DV_EXTENDED_SPECIAL_KEYS.includes(up) && !/^\d{1,2}[SRABDEF]/i.test(s.slice(i))) {
+        out.special_code = up;
+        i += 1;
+        continue;
+      }
+      break;
+    }
+  }
   out.end = i;
   return out;
 }
@@ -187,6 +222,9 @@ function decomposeCode(code) {
     end_zone: sc.end_zone,
     end_subzone: sc.end_subzone,
     evaluation: sc.evaluation,
+    num_blockers: sc.num_blockers,
+    kill_type: sc.kill_type,
+    special_code: sc.special_code,
   };
 }
 
@@ -226,6 +264,11 @@ function formatCode(fields) {
   }
   if (f.end_subzone) parts.push(f.end_subzone);
   parts.push(f.evaluation || '');
+  if (f.num_blockers !== undefined && f.num_blockers !== null && f.num_blockers !== '') {
+    parts.push(String(f.num_blockers));
+  }
+  if (f.kill_type) parts.push(String(f.kill_type).toUpperCase());
+  if (f.special_code) parts.push(String(f.special_code).toUpperCase());
   return parts.join('');
 }
 

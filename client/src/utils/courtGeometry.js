@@ -110,10 +110,55 @@ export function zoneFromPoint(point, side = 'home') {
   return ['5', '6', '1'][col];
 }
 
+/**
+ * Sous-zone DataVolley (A, B, C, D) d'un point dans sa zone 3x3m.
+ * Convention DataVolley :
+ *   B (avant-droite) | C (avant-gauche)
+ *   A (arrière-droite) | D (arrière-gauche)
+ * dans le repère de l'équipe qui défend la moitié où tombe le ballon.
+ */
+export function subzoneFromPoint(point, side = 'home') {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return '';
+  const depth = side === 'away' ? (RIGHT_X - point.x) / U : (point.x - LEFT_X) / U;
+  const width = side === 'away' ? M - (point.y - FREE) / U : (point.y - FREE) / U;
+  const d = Math.min(M - 0.001, Math.max(0, depth));
+  const w = Math.min(M - 0.001, Math.max(0, width));
+  const localD = d % 3; // 0 (vers fond) .. 3 (vers filet)
+  const localW = w % 3; // 0 (gauche) .. 3 (droite)
+  const isFrontHalf = localD >= 1.5;
+  const isRightHalf = localW >= 1.5;
+  if (isFrontHalf && isRightHalf) return 'B';
+  if (isFrontHalf && !isRightHalf) return 'C';
+  if (!isFrontHalf && isRightHalf) return 'A';
+  return 'D';
+}
+
+/**
+ * Convertit un point SVG (terrain 18m×9m) en coordonnées DataVolley 4 (0..100).
+ * Dans DataVolley 4, le terrain 18m×9m est représenté sur une grille 100×100.
+ */
+export function toDv100Coords(point) {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return { x: null, y: null };
+  const nx = Math.round(((point.x - LEFT_X) / (RIGHT_X - LEFT_X)) * 1000) / 10;
+  const ny = Math.round(((point.y - FREE) / (M * U)) * 1000) / 10;
+  return {
+    x: Math.max(0, Math.min(100, nx)),
+    y: Math.max(0, Math.min(100, ny)),
+  };
+}
+
+/** Convertit des coordonnées DataVolley 4 (0..100) en point SVG du terrain. */
+export function fromDv100Coords(x100, y100) {
+  if (x100 == null || y100 == null || !Number.isFinite(Number(x100)) || !Number.isFinite(Number(y100))) return null;
+  return {
+    x: LEFT_X + (Number(x100) / 100) * (RIGHT_X - LEFT_X),
+    y: FREE + (Number(y100) / 100) * (M * U),
+  };
+}
+
 /** Centre SVG de la zone 1-9 pour le côté de l'équipe donnée. */
 export function zoneCenter(zone, side = 'home') {
   const cell = ZONE_CELLS[String(zone || '')];
   if (!cell) return null;
   return xyFrom(cell[0], cell[1], side === 'away' ? 'right' : 'left');
 }
-

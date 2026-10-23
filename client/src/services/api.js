@@ -60,6 +60,19 @@ export const videosAPI = {
       },
     }),
   update: (id, data) => api.patch(`/videos/${id}`, data),
+  uploadAngle: (id, formData, onProgress) =>
+    api.post(`/videos/${id}/upload-angle`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      timeout: 0,
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
+    }),
   delete: (id) => api.delete(`/videos/${id}`),
   getFileUrl: (filename) => `${API_BASE}/videos/file/${filename}`,
   getProxyUrl: (filename) => `${API_BASE}/videos/proxy/${filename}`,
@@ -95,6 +108,7 @@ export const datavolleyAPI = {
   finish: (videoId) => api.post(`/datavolley/${videoId}/finish`),
   reopen: (videoId) => api.post(`/datavolley/${videoId}/reopen`),
   getFinished: () => api.get('/datavolley/finished'),
+  getMultiMatchData: (videoIds) => api.post('/datavolley/multi-match-data', { videoIds }),
   getTeams: (videoId) => api.get(`/datavolley/${videoId}/teams`),
   saveTeams: (videoId, payload) => api.put(`/datavolley/${videoId}/teams`, payload),
   getSetups: (videoId) => api.get(`/datavolley/${videoId}/setups`),
@@ -121,6 +135,8 @@ export const teamsAPI = {
   update: (id, name, players, settings = {}) =>
     api.patch(`/teams/${id}`, { name, players, libero: settings.libero ?? null, libero_for: settings.liberoFor ?? null }),
   delete: (id) => api.delete(`/teams/${id}`),
+  getDirectory: () => api.get('/teams/players/directory'),
+  importBatch: (teams) => api.post('/teams/import-batch', { teams }),
   // Partage à distance (synchronisation cloud — voir server/src/teamsSync.js)
   sync: () => api.post('/teams/sync'),
   getSyncStatus: () => api.get('/teams/sync/status'),
@@ -131,14 +147,15 @@ export const teamsAPI = {
 // Partagées comme les équipes ; seul le créateur peut supprimer une fiche.
 export const trajectoryAPI = {
   getAll: () => api.get('/trajectories'),
-  create: (name, homeTeamId, awayTeamId) =>
-    api.post('/trajectories', { name, home_team_id: homeTeamId ?? null, away_team_id: awayTeamId ?? null }),
+  create: (name, homeTeamId, awayTeamId, videoId) =>
+    api.post('/trajectories', { name, home_team_id: homeTeamId ?? null, away_team_id: awayTeamId ?? null, video_id: videoId ?? null }),
   getOne: (id) => api.get(`/trajectories/${id}`),
   // Rapport global : toutes les flèches de tous les matchs d'une équipe.
   getTeamReport: (teamId) => api.get(`/trajectories/team/${teamId}`),
   rename: (id, name) => api.patch(`/trajectories/${id}`, { name }),
   delete: (id) => api.delete(`/trajectories/${id}`),
   saveShots: (id, shots) => api.post(`/trajectories/${id}/shots`, { shots }),
+  linkVideo: (id, videoId) => api.put(`/trajectories/${id}/link-video`, { video_id: videoId }),
   // Partage à distance (synchronisation cloud).
   sync: () => api.post('/trajectories/sync'),
   getSyncStatus: () => api.get('/trajectories/sync/status'),
@@ -178,6 +195,55 @@ export const liveAPI = {
   saveSetups: (sessionId, setups) => api.put(`/live/${sessionId}/setups`, { setups }),
   // Enregistrement du direct : finalise la piste en une vidéo de replay ancrée.
   finalizeRecording: (sessionId) => api.post(`/live/${sessionId}/finalize-recording`, {}, { timeout: 0 }),
+};
+
+// Montages vidéo (Chantier 5 : export compilations d'actions / rallies)
+export const montageAPI = {
+  getAll: (videoId) => api.get(`/videos/${videoId}/montages`),
+  getOne: (videoId, montageId) => api.get(`/videos/${videoId}/montages/${montageId}`),
+  create: (videoId, payload) => api.post(`/videos/${videoId}/montages`, payload),
+  cancel: (videoId, montageId) => api.post(`/videos/${videoId}/montages/${montageId}/cancel`),
+  delete: (videoId, montageId) => api.delete(`/videos/${videoId}/montages/${montageId}`),
+  getDownloadUrl: (videoId, montageId) => `${API_BASE}/videos/${videoId}/montages/${montageId}/download`,
+  getStreamUrl: (videoId, montageId) => `${API_BASE}/videos/${videoId}/montages/${montageId}/stream`,
+  // Téléchargement authentifié : le navigateur n'envoie pas le header
+  // Authorization lors d'une navigation classique, on passe donc par axios
+  // (intercepteur token) puis on déclenche l'enregistrement du blob.
+  download: async (videoId, montageId, filename = 'montage.mp4') => {
+    const res = await api.get(`/videos/${videoId}/montages/${montageId}/download`, {
+      responseType: 'blob',
+    });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  },
+};
+
+
+// Playlists Vidéo Persistantes Multi-Matchs (Point 19)
+export const playlistsAPI = {
+  getAll: () => api.get('/playlists'),
+  create: (data) => api.post('/playlists', data),
+  update: (id, data) => api.put(`/playlists/${id}`, data),
+  addItems: (id, items) => api.post(`/playlists/${id}/items`, { items }),
+  removeItem: (id, itemId) => api.delete(`/playlists/${id}/items/${itemId}`),
+  delete: (id) => api.delete(`/playlists/${id}`),
+};
+
+// Mode Entraînement (Point 13 — ateliers & séances sans score ni rotation)
+export const practiceAPI = {
+  getSessions: () => api.get('/practice/sessions'),
+  getSession: (id) => api.get(`/practice/sessions/${id}`),
+  createSession: (data) => api.post('/practice/sessions', data),
+  updateSession: (id, data) => api.put(`/practice/sessions/${id}`, data),
+  saveActions: (id, actions) => api.post(`/practice/sessions/${id}/actions`, { actions }),
+  getMultiSessionData: (sessionIds) => api.post('/practice/multi-session-data', { sessionIds }),
+  deleteSession: (id) => api.delete(`/practice/sessions/${id}`),
 };
 
 export default api;

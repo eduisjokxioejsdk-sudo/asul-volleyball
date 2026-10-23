@@ -35,14 +35,21 @@ const storage = multer.diskStorage({
   }
 });
 
+// Extensions vidéo acceptées (le filtre MIME seul rejette les .mkv / .avi
+// envoyés en « application/octet-stream », très fréquent sous Windows).
+const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mpeg', '.mpg', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
+
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    const allowedMimes = ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'];
-    if (allowedMimes.includes(file.mimetype)) {
+    const allowedMimes = ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska', 'video/webm'];
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const okMime = allowedMimes.includes(file.mimetype);
+    const okExt = ALLOWED_VIDEO_EXTENSIONS.includes(ext);
+    if (okMime || okExt) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid video format. Only mp4, mpeg, mov, avi, mkv are allowed.'));
+      cb(new Error(`Format vidéo non pris en charge : ${ext || file.mimetype}. Formats acceptés : mp4, mpeg, mov, avi, mkv, webm, m4v.`));
     }
   },
   // Limite de taille : 100 Go max (permet l'upload de très grosses vidéos,
@@ -50,51 +57,141 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 * 1024 }
 });
 
-// Upload a video
+// Upload a video (or create a match with 0, 1, or 2 camera angles)
 router.post('/upload', authenticateToken, (req, res) => {
-  upload.single('video')(req, res, (err) => {
+  upload.fields([
+    { name: 'video', maxCount: 1 },
+    { name: 'video_angle2', maxCount: 1 },
+  ])(req, res, (err) => {
     if (err) {
-      if (err instanceof multer.MulterError) {
-        return res.status(400).json({ error: err.message });
-      }
       return res.status(400).json({ error: err.message });
     }
 
-    if (!req.file) {
-      return res.status(400).json({ error: 'No video file provided' });
-    }
+    const file1 = req.files?.video?.[0] || null;
+    const file2 = req.files?.video_angle2?.[0] || null;
 
     const team1_name = req.body.team1_name || 'Équipe 1';
     const team2_name = req.body.team2_name || 'Équipe 2';
+    const display_name = req.body.display_name || `${team1_name} vs ${team2_name}`;
+    const home_team_id = req.body.home_team_id ? Number(req.body.home_team_id) : null;
+    const away_team_id = req.body.away_team_id ? Number(req.body.away_team_id) : null;
+    const angle2_offset = req.body.angle2_offset ? Number(req.body.angle2_offset) : 0;
 
-    // Le fichier est conservé sur le disque local (server/uploads).
-    const finishUpload = (filepath) => {
-      db.run(
-        'INSERT INTO videos (user_id, filename, original_name, filepath, team1_name, team2_name, status, sync_uuid, dirty, local_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)',
-        [req.user.id, req.file.filename, req.file.originalname, filepath, team1_name, team2_name, 'uploaded', uuidv4(), new Date().toISOString()],
-        function (err) {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to save video metadata' });
-          }
+    const filename = file1 ? file1.filename : '';
+    const original_name = file1 ? file1.originalname : display_name;
+    const filepath = file1 ? file1.path : '';
+    const filename_angle2 = file2 ? file2.filename : null;
+    const filepath_angle2 = file2 ? file2.path : null;
+    const status = file1 ? 'uploaded' : 'pending_video';
 
-          syncHub.videos.syncNow({ reason: 'upload' }).catch(() => {});
-          emitCollectionChanged('videos');
-          res.status(201).json({
-            id: this.lastID,
-            user_id: req.user.id,
-            filename: req.file.filename,
-            original_name: req.file.originalname,
-            filepath,
-            team1_name,
-            team2_name,
-            status: 'uploaded',
-            duration: null
-          });
+    db.run(
+      `INSERT INTO videos (
+        user_id, filename, original_name, display_name, filepath,
+        filename_angle2, filepath_angle2, angle2_offset,
+        team1_name, team2_name, home_team_id, away_team_id,
+        status, sync_uuid, dirty, local_updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [
+        req.user.id,
+        filename,
+        original_name,
+        display_name,
+        filepath,
+        filename_angle2,
+        filepath_angle2,
+        angle2_offset,
+        team1_name,
+        team2_name,
+        home_team_id,
+        away_team_id,
+        status,
+        uuidv4(),
+        new Date().toISOString(),
+      ],
+      function (dbErr) {
+        if (dbErr) {
+          return res.status(500).json({ error: 'Failed to save video metadata' });
         }
-      );
-    };
 
-    finishUpload(req.file.path);
+        if (home_team_id || away_team_id) {
+          db.run(
+            'INSERT OR REPLACE INTO volley_matches (video_id, home_team_id, away_team_id) VALUES (?, ?, ?)',
+            [this.lastID, home_team_id, away_team_id],
+            () => {}
+          );
+        }
+        syncHub.videos.syncNow({ reason: 'upload' }).catch(() => {});
+        emitCollectionChanged('videos');
+        res.status(201).json({
+          id: this.lastID,
+          user_id: req.user.id,
+          filename,
+          original_name,
+          display_name,
+          filepath,
+          filename_angle2,
+          filepath_angle2,
+          angle2_offset,
+          team1_name,
+          team2_name,
+          status,
+          duration: null,
+        });
+      }
+    );
+  });
+});
+
+// Upload or replace Angle 1 or Angle 2 after match creation ("après coup")
+router.post('/:id/upload-angle', authenticateToken, (req, res) => {
+  upload.single('video')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'Aucun fichier vidéo fourni.' });
+    }
+
+    const angle = String(req.body.angle || '2') === '1' ? '1' : '2';
+    const nowIso = new Date().toISOString();
+
+    db.get('SELECT * FROM videos WHERE id = ? AND user_id = ?', [req.params.id, req.user.id], (getErr, video) => {
+      if (getErr) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
+
+      if (angle === '1') {
+        if (video.filepath) fs.remove(video.filepath).catch(() => {});
+        db.run(
+          `UPDATE videos
+              SET filename = ?, original_name = COALESCE(NULLIF(original_name, ''), ?), filepath = ?, status = 'uploaded', dirty = 1, local_updated_at = ?
+            WHERE id = ?`,
+          [req.file.filename, req.file.originalname, req.file.path, nowIso, video.id],
+          (upErr) => {
+            if (upErr) return res.status(500).json({ error: 'Failed to update Angle 1' });
+            db.get('SELECT * FROM videos WHERE id = ?', [video.id], (e2, updated) => {
+              emitCollectionChanged('videos');
+              res.json({ video: updated });
+            });
+          }
+        );
+      } else {
+        if (video.filepath_angle2) fs.remove(video.filepath_angle2).catch(() => {});
+        const offset = req.body.angle2_offset !== undefined ? Number(req.body.angle2_offset) : (video.angle2_offset || 0);
+        db.run(
+          `UPDATE videos
+              SET filename_angle2 = ?, filepath_angle2 = ?, angle2_offset = ?, dirty = 1, local_updated_at = ?
+            WHERE id = ?`,
+          [req.file.filename, req.file.path, offset, nowIso, video.id],
+          (upErr) => {
+            if (upErr) return res.status(500).json({ error: 'Failed to update Angle 2' });
+            db.get('SELECT * FROM videos WHERE id = ?', [video.id], (e2, updated) => {
+              emitCollectionChanged('videos');
+              res.json({ video: updated });
+            });
+          }
+        );
+      }
+    });
   });
 });
 
@@ -142,10 +239,14 @@ router.delete('/:id', authenticateToken, (req, res) => {
         return res.status(404).json({ error: 'Video not found' });
       }
 
-      // Supprime les fichiers associés (source + proxy).
-      fs.remove(video.filepath).catch(() => {});
+      // Supprime les fichiers associés (source + proxy + 2e angle).
+      if (video.filepath) fs.remove(video.filepath).catch(() => {});
       if (video.filepath_proxy) {
         fs.remove(video.filepath_proxy).catch(() => {});
+      }
+      // Le 2e angle de caméra : sans cela, le fichier reste orphelin sur le disque.
+      if (video.filepath_angle2) {
+        fs.remove(video.filepath_angle2).catch(() => {});
       }
       // Delete database records
       db.run('DELETE FROM videos WHERE id = ?', [video.id], function (err) {
@@ -177,9 +278,9 @@ router.get('/proxy/:filename', (req, res) => {
   res.sendFile(filePath);
 });
 
-// Update video (rename, color)
+// Update video (rename, color, angle2_offset)
 router.patch('/:id', authenticateToken, (req, res) => {
-  const { display_name, color } = req.body;
+  const { display_name, color, angle2_offset } = req.body;
   
   db.get(
     'SELECT * FROM videos WHERE id = ? AND user_id = ?',
@@ -202,6 +303,10 @@ router.patch('/:id', authenticateToken, (req, res) => {
       if (color !== undefined) {
         updates.push('color = ?');
         values.push(color);
+      }
+      if (angle2_offset !== undefined) {
+        updates.push('angle2_offset = ?');
+        values.push(Number(angle2_offset) || 0);
       }
 
       if (updates.length === 0) {

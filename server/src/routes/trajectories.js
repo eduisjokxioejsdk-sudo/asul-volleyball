@@ -104,7 +104,11 @@ router.get('/', authenticateToken, (req, res) => {
             (SELECT COUNT(*) FROM trajectory_shots s WHERE s.match_id = m.id) AS shot_count,
             (SELECT COUNT(*) FROM trajectory_shots s
               WHERE s.match_id = m.id AND s.result IN ('faute', 'out')) AS error_count
+       v.original_name as video_original_name,
+            v.display_name as video_display_name,
+            v.filename as video_filename
        FROM trajectory_matches m
+       LEFT JOIN videos v ON v.id = m.video_id
       WHERE COALESCE(m.deleted, 0) = 0
       ORDER BY m.created_at DESC, m.id DESC`,
     (err, rows) => {
@@ -116,9 +120,10 @@ router.get('/', authenticateToken, (req, res) => {
 
 // Crée une fiche : nom + 1 ou 2 équipes de la liste partagée.
 router.post('/', authenticateToken, (req, res) => {
-  const { name, home_team_id, away_team_id } = req.body || {};
+  const { name, home_team_id, away_team_id, video_id } = req.body || {};
   const homeId = Number(home_team_id) || null;
   const awayId = Number(away_team_id) || null;
+  const videoId = Number(video_id) || null;
 
   if (!homeId && !awayId) return res.status(400).json({ error: 'Sélectionnez au moins une équipe' });
   if (homeId && awayId && homeId === awayId) {
@@ -136,9 +141,9 @@ router.post('/', authenticateToken, (req, res) => {
     const finalName = (name || '').trim() || `${pairName} — ${new Date().toLocaleDateString('fr-FR')}`;
 
     db.run(
-      `INSERT INTO trajectory_matches (user_id, name, home_team_id, away_team_id, team1_name, team2_name, created_by, dirty, local_updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-      [req.user.id, finalName, homeId, awayId, home?.name || null, away?.name || null, req.user.email || null, new Date().toISOString()],
+      `INSERT INTO trajectory_matches (user_id, name, home_team_id, away_team_id, video_id, team1_name, team2_name, created_by, dirty, local_updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [req.user.id, finalName, homeId, awayId, videoId, home?.name || null, away?.name || null, req.user.email || null, new Date().toISOString()],
       function (err2) {
         if (err2) return res.status(500).json({ error: 'Database error' });
         const insertedId = this.lastID;
@@ -368,6 +373,22 @@ router.post('/:id/shots', authenticateToken, (req, res) => {
       });
     });
   });
+});
+
+
+// Associe ou dissocie une vidéo DataVolley à une fiche de trajectoire
+router.put('/:id/link-video', authenticateToken, (req, res) => {
+  const matchId = req.params.id;
+  const videoId = req.body.video_id ? Number(req.body.video_id) : null;
+  db.run(
+    'UPDATE trajectory_matches SET video_id = ?, dirty = 1, local_updated_at = ? WHERE id = ?',
+    [videoId, new Date().toISOString(), matchId],
+    function (err) {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      emitChanged();
+      res.json({ ok: true, video_id: videoId });
+    }
+  );
 });
 
 module.exports = router;

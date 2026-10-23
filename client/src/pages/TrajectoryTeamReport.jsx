@@ -8,6 +8,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import PancakeLogo from '../components/PancakeLogo';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import TrajectoryCourt from '../components/TrajectoryCourt';
@@ -160,7 +161,8 @@ export default function TrajectoryTeamReport() {
       <div className="vd-workspace">
         <nav className="video-tabs dv-nav">
           <motion.button className="back-btn" onClick={() => navigate('/dashboard')} whileHover={{ x: -2 }} whileTap={{ scale: 0.98 }}>←</motion.button>
-          <div className="dv-title">
+          <div className="dv-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <PancakeLogo size={18} />
             <strong>Rapport global — {teamName}</strong>
             <span className="live-status active">Toutes les fiches</span>
             <span className="dv-teams">

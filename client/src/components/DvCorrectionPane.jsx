@@ -1,7 +1,6 @@
 // ============================================================================
-// MODE CORRECTION — caler la vidéo, réparer les codes, compléter le match.
-// À gauche : la vidéo et les outils de synchronisation (calage sur le premier
-// service). À droite : les anomalies relevées puis le déroulé modifiable.
+// MODE CORRECTION — caler la vidéo (global + par set Point 22), réparer les
+// codes, compléter le match (avec coordonnées 100×100 Point 14).
 // ============================================================================
 
 import { useMemo, useState } from 'react';
@@ -11,25 +10,6 @@ import AttackDirectionCourt from './AttackDirectionCourt';
 import { DV_ACTIONS, formatTimecode } from '../utils/datavolley';
 import { codeIssues, countIssuesByType, filterIssues, nextIssue } from '../utils/codingTools';
 
-/**
- * @param {Object} props
- * @param {React.ReactNode} props.videoNode
- * @param {Array} props.actions
- * @param {Array} props.rallies
- * @param {Array} [props.issues] - anomalies (codeIssues) ; recalculées si absentes
- * @param {Object} props.sync
- * @param {number} props.videoTime - position courante de la vidéo
- * @param {Function} props.onAnchorHere - () => void (caler sur le premier service)
- * @param {Function} props.onSyncPatch - (patch) => void (marges, fenêtre de synchronisation)
- * @param {Function} props.onSeekAction - (action) => void
- * @param {Function} props.onPickZone - (action) => void (compléter la zone d'attaque)
- * @param {Function} [props.onTimeShift] / [props.onSetTime] / [props.onRemove] / [props.onMove]
- * @param {Object} [props.roster] - { home: [numéros], away: [numéros] } pour le contrôle
- * @param {boolean} [props.disabled]
- * @param {string} [props.selectedUid]
- * @param {Function} [props.onSelect]
- * @param {Function} [props.actionSet]
- */
 export default function DvCorrectionPane({
   videoNode,
   actions,
@@ -59,7 +39,6 @@ export default function DvCorrectionPane({
 }) {
   const [reviewSkill, setReviewSkill] = useState('A');
   const [reviewIndex, setReviewIndex] = useState(0);
-  // Filtre des anomalies : erreurs / avertissements / tout.
   const [severity, setSeverity] = useState('all');
 
   const issueList = useMemo(
@@ -71,17 +50,12 @@ export default function DvCorrectionPane({
   const visibleIssues = useMemo(() => filterIssues(issueList, severity), [issueList, severity]);
   const issueCounts = useMemo(() => countIssuesByType(issueList), [issueList]);
 
-  // Parcours « compléter un match » : les actions de la compétence choisie,
-  // une par une, pour ajouter la zone en cliquant le terrain.
   const reviewList = useMemo(() => (actions || []).filter((a) => a.action === reviewSkill), [actions, reviewSkill]);
   const current = reviewList[Math.min(reviewIndex, Math.max(0, reviewList.length - 1))] || null;
-  // Action dont on édite la direction : celle sélectionnée dans la liste, sinon
-  // l'action en cours du parcours « Compléter un match ».
   const directionAction = useMemo(
     () => (actions || []).find((a) => a.uid === selectedUid) || current || null,
     [actions, selectedUid, current]
   );
-  // Attaques précédentes du même joueur : uniquement les trajectoires.
   const directionHistory = useMemo(() => {
     if (!directionAction) return [];
     return (actions || [])
@@ -91,10 +65,17 @@ export default function DvCorrectionPane({
           a.team === directionAction.team &&
           Number(a.player_number) === Number(directionAction.player_number) &&
           a.uid !== directionAction.uid &&
-          a.start_zone &&
-          a.end_zone
+          (a.start_zone || a.start_x != null) &&
+          (a.end_zone || a.end_x != null)
       )
-      .map((a) => ({ start: String(a.start_zone), end: String(a.end_zone) }));
+      .map((a) => ({
+        start: String(a.start_zone || ''),
+        end: String(a.end_zone || ''),
+        startX: a.start_x,
+        startY: a.start_y,
+        endX: a.end_x,
+        endY: a.end_y,
+      }));
   }, [actions, directionAction]);
 
   return (
@@ -103,6 +84,8 @@ export default function DvCorrectionPane({
         <div className="dvx-stage">{videoNode}</div>
         <SyncTools
           sync={sync}
+          actions={actions}
+          actionSet={actionSet}
           videoTime={videoTime}
           disabled={disabled}
           onAnchorHere={onAnchorHere}
@@ -140,19 +123,26 @@ export default function DvCorrectionPane({
         {directionAction && (
           <div className="dvx-direction">
             <h5>
-              Direction de l’action <code>{directionAction.code}</code>
+              Direction & Coordonnées 100×100 de <code>{directionAction.code}</code>
             </h5>
             <AttackDirectionCourt
               key={directionAction.uid}
               side={directionAction.team === 'away' ? 'away' : 'home'}
               startZone={directionAction.start_zone}
               endZone={directionAction.end_zone}
+              endSubzone={directionAction.end_subzone}
+              startX={directionAction.start_x}
+              startY={directionAction.start_y}
+              midX={directionAction.mid_x}
+              midY={directionAction.mid_y}
+              endX={directionAction.end_x}
+              endY={directionAction.end_y}
               history={directionHistory}
               playerLabel={`n°${String(directionAction.player_number || 0).padStart(2, '0')}`}
               teamName={directionAction.team === 'away' ? team2 : team1}
               opponentName={directionAction.team === 'away' ? team1 : team2}
               disabled={disabled}
-              onChange={({ start, end }) => onDirection?.(directionAction, start, end)}
+              onChange={(payload) => onDirection?.(directionAction, payload.start, payload.end, payload)}
             />
           </div>
         )}
@@ -179,25 +169,86 @@ export default function DvCorrectionPane({
   );
 }
 
-/** Outils de calage : ancre sur le premier service, marges de lecture. */
-function SyncTools({ sync, videoTime, disabled, onAnchorHere, onSyncPatch }) {
+/** Outils de calage : ancre sur le premier service, marges de lecture et décalage par Set (Point 22). */
+function SyncTools({ sync, actions = [], actionSet, videoTime, disabled, onAnchorHere, onSyncPatch }) {
+  const setOffsets = sync?.set_offsets && typeof sync.set_offsets === 'object' ? sync.set_offsets : {};
+
+  const updateSetOffset = (setNum, val) => {
+    const nextOffsets = { ...setOffsets, [String(setNum)]: Number(val) || 0 };
+    onSyncPatch?.({ set_offsets: nextOffsets });
+  };
+
+  const calibrateSetAtCurrentVideoTime = (setNum) => {
+    const firstServeOfSet = (actions || []).find((a) => {
+      const s = actionSet ? actionSet(a) : a.set_number;
+      return Number(s) === Number(setNum) && a.action === 'S' && a.timecode != null;
+    });
+    if (!firstServeOfSet) return;
+    const baseTime = Number(firstServeOfSet.timecode) + Number(sync.sync_offset || 0);
+    const delta = Math.round((videoTime - baseTime) * 10) / 10;
+    updateSetOffset(setNum, delta);
+  };
+
   return (
     <div className="dvx-sync">
       <h5 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Settings size={14} /> Calage de la vidéo
+        <Settings size={14} /> Calage de la vidéo (Global & Par Set)
       </h5>
       <p className="dv-hint">
-        Cherchez le premier service dans la vidéo, puis <strong>Caler ici</strong> : tout le match se recale d’un seul
-        décalage.
+        Cherchez le premier service dans la vidéo, puis <strong>Caler ici</strong>. Si la caméra a été coupée entre les sets,
+        ajustez le décalage propre à chaque set (Set 1 à Set 5).
       </p>
       <div className="dvx-sync-row">
         <button type="button" className="btn btn-primary btn-sm" onClick={onAnchorHere} disabled={disabled}>
-          <Crosshair size={13} /> Caler ici (premier service)
+          <Crosshair size={13} /> Caler ici (1er service Set 1)
         </button>
-        <span className="dvx-offset" title="Décalage appliqué à tous les codes">
-          <Clock size={12} /> décalage {Number(sync.sync_offset || 0).toFixed(2)} s · position {formatTimecode(videoTime)}
+        <span className="dvx-offset" title="Décalage global appliqué à tous les codes">
+          <Clock size={12} /> décalage global {Number(sync.sync_offset || 0).toFixed(2)} s · vidéo {formatTimecode(videoTime)}
         </span>
       </div>
+
+      {/* Synchronisation Indépendante par Set (Point 22) */}
+      <div
+        style={{
+          marginTop: 10,
+          marginBottom: 10,
+          padding: '8px 10px',
+          borderRadius: 8,
+          background: 'rgba(15,23,42,0.45)',
+          border: '1px solid var(--border-color)',
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#38bdf8' }}>
+          ⏱️ Décalage indépendant par Set (Offset Set 1..5 en secondes)
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+          {[1, 2, 3, 4, 5].map((s) => (
+            <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+              <strong>Set {s}:</strong>
+              <input
+                type="number"
+                step="0.5"
+                value={setOffsets[String(s)] ?? 0}
+                onChange={(e) => updateSetOffset(s, e.target.value)}
+                style={{ width: 58, padding: '2px 4px', borderRadius: 4, fontFamily: 'monospace' }}
+                disabled={disabled}
+              />
+              <span>s</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '2px 5px', fontSize: 10 }}
+                onClick={() => calibrateSetAtCurrentVideoTime(s)}
+                disabled={disabled}
+                title={`Caler le 1er service du Set ${s} sur la position vidéo actuelle`}
+              >
+                Caler S{s}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="dvx-sync-row">
         <label className="dvx-filter">
           <span>Marge avant le point (s)</span>
@@ -227,7 +278,6 @@ function SyncTools({ sync, videoTime, disabled, onAnchorHere, onSyncPatch }) {
   );
 }
 
-/** Parcours d'une compétence pour compléter le match (zones manquantes). */
 function ReviewTools({ reviewSkill, setReviewSkill, reviewIndex, setReviewIndex, reviewList, current, disabled, onSeekAction, onPickZone }) {
   return (
     <div className="dvx-review">
@@ -285,7 +335,6 @@ function ReviewTools({ reviewSkill, setReviewSkill, reviewIndex, setReviewIndex,
   );
 }
 
-/** Anomalies relevées dans le codage (contrôle façon DataVolley). */
 function IssuePanel({
   issueList,
   allIssues = issueList,
@@ -375,4 +424,3 @@ function IssuePanel({
     </div>
   );
 }
-

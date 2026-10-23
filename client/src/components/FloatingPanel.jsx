@@ -42,6 +42,8 @@ export default function FloatingPanel({
   headerExtra = null,
   size,
   className = '',
+  active = false,
+  onFocus,
   children,
 }) {
   const dragRef = useRef(null);
@@ -116,9 +118,10 @@ export default function FloatingPanel({
 
   return (
     <section
-      className={`floating-panel${mode ? ' dragging' : ''}${className ? ` ${className}` : ''}`}
+      className={`floating-panel${mode ? ' dragging' : ''}${active ? ' active' : ''}${className ? ` ${className}` : ''}`}
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
       aria-label={title}
+      onPointerDown={() => onFocus?.(id)}
     >
       <header
         className="fp-header"

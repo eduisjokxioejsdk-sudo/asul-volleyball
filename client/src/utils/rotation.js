@@ -1,5 +1,5 @@
 // ============================================================================
-// Moteur de rotation + score + libéro.
+// Moteur de rotation + score + libéro + sanctions / points arbitre.
 // À partir des rallyes codés (1re action = service, action terminale = point)
 // et des six de départ par set, on rejoue le match pour connaître à tout
 // instant : le score, l'équipe au service, les six des deux équipes (P1..P6)
@@ -164,7 +164,7 @@ function initSet(state, setNumber, setups) {
 /**
  * Remplacements indexés par « set:points joués » : `point_number` est le nombre
  * de points déjà joués dans le set au moment du remplacement (0 = avant le
- * premier point du set). Les autres événements (temps morts) sont ignorés ici.
+ * premier point du set).
  */
 function groupSubstitutions(events) {
   const map = new Map();
@@ -184,6 +184,33 @@ function groupSubstitutions(events) {
 }
 
 /**
+ * Événements qui attribuent un point hors rallye (carton rouge CR, retard DR,
+ * point d'arbitre *P/aP).
+ * Pour une sanction/retard rouge sur `team`, le point va à l'équipe ADVERSE.
+ * Pour un `point_adjust` sur `team`, le point va à `team`.
+ */
+function groupPenaltyAndAdjustEvents(events) {
+  const map = new Map();
+  for (const ev of events || []) {
+    if (!ev) continue;
+    let awardTo = null;
+    if ((ev.kind === 'sanction' || ev.kind === 'delay') && ev.payload?.card === 'R') {
+      // Sanction rouge contre home → point pour team2 (away), et inversement
+      awardTo = ev.team === 'away' ? 'team1' : 'team2';
+    } else if (ev.kind === 'point_adjust') {
+      awardTo = ev.team === 'away' ? 'team2' : 'team1';
+    }
+    if (!awardTo) continue;
+    const setNumber = Number(ev.set_number) > 0 ? Number(ev.set_number) : 1;
+    const position = Math.max(0, Number(ev.point_number) || 0);
+    const key = `${setNumber}:${position}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push({ awardTo, kind: ev.kind, event: ev });
+  }
+  return map;
+}
+
+/**
  * Rejoue le match complet.
  * @param {Array} rallies - rallyes ordonnés (groupActionsIntoRallies)
  * @param {Object} setups - { [set]: { first_server, home_setter_pos,
@@ -192,7 +219,7 @@ function groupSubstitutions(events) {
  * @param {Object} [opts.homeTeam] - { libero, liberoFor } fiche équipe domicile
  * @param {Object} [opts.awayTeam] - idem extérieur
  * @param {Array} [events] - événements de match ({ kind, set_number, point_number,
- *                          team, payload }) : les remplacements modifient les six.
+ *                          team, payload }) : remplacements, cartons rouges, points arbitre.
  * @returns {Object} état du match + instantané par point
  */
 export function computeMatchState(rallies, setups = {}, opts = {}, events = []) {
@@ -215,6 +242,7 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
   let matchWinner = null;
 
   const substitutions = groupSubstitutions(events);
+  const pointEvents = groupPenaltyAndAdjustEvents(events);
 
   /**
    * Applique les remplacements enregistrés après `position` points joués dans le
@@ -241,9 +269,37 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
     }
   };
 
+  /**
+   * Applique les points de pénalité (carton rouge CR, retard DR) ou d'ajustement
+   * arbitral (*P / aP) enregistrés à ce moment du set.
+   */
+  const applyPointEvents = (setNumber, position) => {
+    const pending = pointEvents.get(`${setNumber}:${position}`);
+    if (!pending) return;
+    for (const pe of pending) {
+      const winner = pe.awardTo;
+      const prevServer = state.server;
+      if (winner === 'team1') state.score.team1 += 1;
+      else state.score.team2 += 1;
+
+      if (winner !== prevServer) {
+        if (winner === 'team1') {
+          state.homeLineup = rotateLineup(state.homeLineup);
+          state.homePos = rotateSetterPos(state.homePos);
+        } else {
+          state.awayLineup = rotateLineup(state.awayLineup);
+          state.awayPos = rotateSetterPos(state.awayPos);
+        }
+      }
+      state.server = winner;
+    }
+  };
+
   initSet(state, 1, setups);
   applySubstitutions(1, 0);
+  applyPointEvents(1, 0);
 
+  let setPointsPlayed = 0;
 
   for (const rally of list) {
     const snapshot = {
@@ -277,6 +333,7 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
     if (winner === 'team1') state.score.team1 += 1;
     else state.score.team2 += 1;
 
+    setPointsPlayed += 1;
     snapshot.winner = winner;
     snapshot.scoreAfter = { ...state.score };
 
@@ -291,8 +348,10 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
       }
       state.currentSet += 1;
       state.score = { team1: 0, team2: 0 };
+      setPointsPlayed = 0;
       initSet(state, state.currentSet, setups);
       applySubstitutions(state.currentSet, 0);
+      applyPointEvents(state.currentSet, 0);
       continue;
     }
 
@@ -308,9 +367,13 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
     }
     state.server = winner;
 
-    // Remplacement enregistré après ce point : il prend effet pour l'échange
-    // suivant (le joueur entrant occupe le poste du sortant).
-    applySubstitutions(state.currentSet, state.score.team1 + state.score.team2);
+    // Remplacement et pénalités enregistrés après ce point :
+    const totalScorePts = state.score.team1 + state.score.team2;
+    applySubstitutions(state.currentSet, totalScorePts);
+    applyPointEvents(state.currentSet, totalScorePts);
+    if (rally.pointNumber != null && rally.pointNumber !== totalScorePts) {
+      applyPointEvents(state.currentSet, rally.pointNumber);
+    }
   }
 
   // Point en cours (dernier rallye non terminé) : on affiche son serveur réel.
@@ -318,6 +381,16 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
   if (last && !getPointWinner(last)) {
     const srv = rallyServerTeam(last);
     if (srv) state.server = srv;
+  }
+
+  // Applique les pénalités et ajustements de points enregistrés après les échanges joués
+  for (const [key] of pointEvents.entries()) {
+    const [sNumStr, posStr] = key.split(':');
+    const sNum = Number(sNumStr);
+    const pos = Number(posStr);
+    if (sNum === state.currentSet && pos > setPointsPlayed) {
+      applyPointEvents(sNum, pos);
+    }
   }
 
   return {
@@ -363,4 +436,3 @@ export function computePerRallySetterPositions(rallies, setups = {}) {
     awayLineup: s.awayLineup,
   }));
 }
-

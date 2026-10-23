@@ -67,21 +67,39 @@ router.get('/', authenticateToken, (req, res) => {
   });
 });
 
-// Remplace la liste des joueurs d'une équipe (n° + nom + rôle).
+// Remplace la liste des joueurs d'une équipe (attributs complets DV4 / FFVB).
 function savePlayers(teamId, players, callback) {
   db.run('DELETE FROM team_players WHERE team_id = ?', [teamId], (err) => {
     if (err) return callback(err);
     if (!players || players.length === 0) return callback(null);
     const stmt = db.prepare(
-      'INSERT INTO team_players (team_id, number, name, role, serve_type) VALUES (?, ?, ?, ?, ?)'
+      `INSERT INTO team_players
+        (team_id, number, name, role, secondary_role, serve_type, license_number,
+         first_name, last_name, height_cm, birth_year, handedness, is_captain, is_libero, active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     players.forEach((p) => {
+      const fullName =
+        (p.name || '').trim() ||
+        [p.last_name, p.first_name].filter(Boolean).join(' ').trim() ||
+        `N°${p.number}`;
+      const isLib = p.is_libero ? 1 : p.role === 'libero' ? 1 : 0;
       stmt.run(
         teamId,
         Number(p.number) || 0,
-        (p.name || '').trim() || `N°${p.number}`,
-        p.role || 'universal',
-        p.serve_type || null
+        fullName,
+        p.role || (isLib ? 'libero' : 'universal'),
+        p.secondary_role || null,
+        p.serve_type || null,
+        p.license_number ? String(p.license_number).trim() : null,
+        p.first_name ? String(p.first_name).trim() : null,
+        p.last_name ? String(p.last_name).trim() : null,
+        p.height_cm ? Number(p.height_cm) : null,
+        p.birth_year ? Number(p.birth_year) : null,
+        p.handedness || 'R',
+        p.is_captain ? 1 : 0,
+        isLib,
+        p.active === false || p.active === 0 ? 0 : 1
       );
     });
     stmt.finalize((err2) => callback(err2 || null));
@@ -239,6 +257,116 @@ router.put('/sync/config', authenticateToken, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Annuaire global des joueurs tous clubs confondus (dédoublonné par licence ou nom).
+router.get('/players/directory', authenticateToken, (req, res) => {
+  db.all(
+    `SELECT tp.*, t.name AS team_name
+       FROM team_players tp
+       JOIN teams t ON t.id = tp.team_id
+      WHERE COALESCE(t.deleted, 0) = 0
+      ORDER BY tp.name COLLATE NOCASE ASC, tp.number ASC`,
+    [],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json({ players: rows || [] });
+    }
+  );
+});
+
+// Importation ou fusion d'une ou deux équipes (depuis Feuille de Match FFVB, .dvw ou CSV)
+router.post('/import-batch', authenticateToken, (req, res) => {
+  const { teams: incomingTeams } = req.body || {};
+  if (!Array.isArray(incomingTeams) || incomingTeams.length === 0) {
+    return res.status(400).json({ error: 'Aucune équipe à importer' });
+  }
+
+  loadTeams((err, existingTeams) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+
+    let idx = 0;
+    const importedIds = [];
+
+    const processNext = () => {
+      if (idx >= incomingTeams.length) {
+        emitTeamsChanged();
+        triggerSync();
+        return loadTeams((errFinal, allTeams) => {
+          if (errFinal) return res.status(500).json({ error: 'Database error' });
+          res.json({
+            importedIds,
+            teams: allTeams,
+          });
+        });
+      }
+
+      const item = incomingTeams[idx++];
+      const tName = String(item?.name || '').trim();
+      if (!tName) return processNext();
+
+      const found = (existingTeams || []).find(
+        (et) => et.name.trim().toLowerCase() === tName.toLowerCase()
+      );
+
+      // Fusionner l'effectif existant avec les nouveaux joueurs (par license_number ou number)
+      const mergeRoster = (oldPlayers, newPlayers) => {
+        const byNum = new Map();
+        for (const op of oldPlayers || []) {
+          byNum.set(Number(op.number), { ...op });
+        }
+        for (const np of newPlayers || []) {
+          const num = Number(np.number);
+          if (!num) continue;
+          const prev = byNum.get(num) || {};
+          byNum.set(num, {
+            ...prev,
+            ...np,
+            number: num,
+            name: (np.name || prev.name || `N°${num}`).trim(),
+            role: np.role || prev.role || (np.is_libero ? 'libero' : 'universal'),
+            license_number: np.license_number || prev.license_number || null,
+            height_cm: np.height_cm || prev.height_cm || null,
+            birth_year: np.birth_year || prev.birth_year || null,
+            handedness: np.handedness || prev.handedness || 'R',
+            is_captain: np.is_captain ?? prev.is_captain ?? 0,
+            is_libero: np.is_libero ?? prev.is_libero ?? 0,
+          });
+        }
+        return Array.from(byNum.values()).sort((a, b) => a.number - b.number);
+      };
+
+      if (found) {
+        const merged = mergeRoster(found.players, item.players);
+        const lib = item.libero ?? found.libero ?? null;
+        const libFor = item.libero_for ?? found.libero_for ?? null;
+        savePlayers(found.id, merged, () => {
+          saveTeamSettings(found.id, lib, libFor, () => {
+            touchLocal(found.id);
+            importedIds.push(found.id);
+            processNext();
+          });
+        });
+      } else {
+        db.run(
+          'INSERT INTO teams (name, sync_uuid, dirty, deleted, local_updated_at) VALUES (?, ?, 1, 0, ?)',
+          [tName, crypto.randomUUID(), new Date().toISOString()],
+          function (insErr) {
+            if (insErr) return processNext();
+            const newId = this.lastID;
+            savePlayers(newId, item.players || [], () => {
+              saveTeamSettings(newId, item.libero ?? null, item.libero_for ?? null, () => {
+                importedIds.push(newId);
+                processNext();
+              });
+            });
+          }
+        );
+      }
+    };
+
+    processNext();
+  });
 });
 
 module.exports = router;

@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import PancakeLogo from '../components/PancakeLogo';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import TrajectoryCourt from '../components/TrajectoryCourt';
@@ -184,7 +185,8 @@ export default function TrajectoryView({ user }) {
       <div className="vd-workspace">
         <nav className="video-tabs dv-nav">
           <motion.button className="back-btn" onClick={() => navigate('/dashboard')} whileHover={{ x: -2 }} whileTap={{ scale: 0.98 }}>←</motion.button>
-          <div className="dv-title">
+          <div className="dv-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <PancakeLogo size={18} />
             <strong>{match.name}</strong>
             <span className="live-status active">Consultation</span>
             <span className="dv-teams">

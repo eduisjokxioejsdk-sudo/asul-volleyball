@@ -1,20 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { authAPI } from '../services/api';
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.08, delayChildren: 0.1 }
-  }
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] } }
-};
+import PancakeLogo from '../components/PancakeLogo';
 
 function Login({ onLogin }) {
   const [email, setEmail] = useState('');
@@ -39,31 +26,22 @@ function Login({ onLogin }) {
 
   return (
     <div className="auth-page asul-modern">
-      <motion.div
-        className="auth-container"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        <motion.div variants={itemVariants} style={{ textAlign: 'center', marginBottom: 8 }}>
-          <img src="/logo.png" alt="ASUL" style={{ height: 72, marginBottom: 12 }} />
-          <motion.h1 variants={itemVariants}>ASUL</motion.h1>
-        </motion.div>
-        <motion.p className="subtitle" variants={itemVariants}>
-          Analyse de Volleyball
-        </motion.p>
+      <div className="auth-container">
+        <div style={{ textAlign: 'center', marginBottom: 12 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+            <PancakeLogo size={72} />
+          </div>
+          <h1 style={{ fontWeight: 800, letterSpacing: '-0.05em', fontSize: 22, margin: 0 }}>
+            Pancake Stats
+          </h1>
+          <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 2 }}>
+            Play-by-Play · Scouting · DataVolley 4
+          </div>
+        </div>
 
-        {error && (
-          <motion.div
-            className="error-message"
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            {error}
-          </motion.div>
-        )}
+        {error && <div className="error-message">{error}</div>}
 
-        <motion.form variants={itemVariants} onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Email</label>
             <input
@@ -86,21 +64,15 @@ function Login({ onLogin }) {
             />
           </div>
 
-          <motion.button
-            type="submit"
-            className="btn btn-primary btn-block"
-            disabled={loading}
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            {loading ? 'Connexion...' : 'Se connecter'}
-          </motion.button>
-        </motion.form>
+          <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+            {loading ? 'Connexion...' : 'Se connecter'} <kbd>Entrée</kbd>
+          </button>
+        </form>
 
-        <motion.div className="auth-link" variants={itemVariants}>
+        <div className="auth-link">
           Pas encore de compte ? <Link to="/register">S'inscrire</Link>
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
     </div>
   );
 }

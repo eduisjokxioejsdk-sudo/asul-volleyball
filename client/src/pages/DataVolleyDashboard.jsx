@@ -1,10 +1,25 @@
+import AppNavigation from '../components/AppNavigation';
+import PancakeLogo from '../components/PancakeLogo';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { videosAPI, datavolleyAPI } from '../services/api';
 import useCollectionChanged from '../hooks/useCollectionChanged';
 import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS } from '../utils/rotation';
-import { computeSetterDistributionByRotation, attackZoneOf, normalizeAttackZone } from '../utils/distribution';
+import {
+  computeSetterDistributionByRotation,
+  attackZoneOf,
+  normalizeAttackZone,
+  DISTRIBUTION_PHASES,
+  PASS_ZONE_FILTERS,
+  DEFENDER_ROLE_FILTERS,
+} from '../utils/distribution';
+import { loadCourtCalibration, saveCourtCalibration } from '../utils/homography';
+import VideoTvOverlay from '../components/VideoTvOverlay';
+import LiveCoachTablet from '../components/LiveCoachTablet';
+import { applyCompoundAutoCodes, matchMacroShortcut } from '../utils/compoundCodes';
+import useDualScreenVideo from '../hooks/useDualScreenVideo';
+import PlaylistManagerModal from '../components/PlaylistManagerModal';
 import { emptyTeamConfig, parseSavedLineup, serializeSavedLineup, serverPrefill } from '../utils/lineup';
 import { computeMatchReport, indexActionSets, indexActionLineups, reportToRows } from '../utils/matchReport';
 import { computeScouting, tacticToRows } from '../utils/scouting';
@@ -46,6 +61,7 @@ import { buildTimelineEvents, buildTimelinePoints } from '../utils/matchTimeline
 import {
   AlertTriangle,
   ArrowDownUp,
+  Camera,
   ChartColumn,
   Check,
   ChevronLeft,
@@ -71,6 +87,7 @@ import {
   Target,
   Trash,
   Trophy,
+  Tv,
   Upload,
   Users,
   Volleyball,
@@ -270,6 +287,35 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [editAwayConfig, setEditAwayConfig] = useState({ roster: [], libero: null, liberoFor: null });
   const [distPos, setDistPos] = useState('Total');
   const [distTeam, setDistTeam] = useState('home');
+  const [distFilters, setDistFilters] = useState({
+    phase: 'K1',
+    passZone: 'ALL',
+    setterCall: 'ALL',
+    defenderRole: 'ALL',
+  });
+  const [distShowAllZones, setDistShowAllZones] = useState(false);
+
+  // TV Overlay, Calibration Homographique 4 coins & Multi-Caméras (Angle 1 / Angle 2)
+  const [showTvOverlay, setShowTvOverlay] = useState(true);
+  const [calibMode, setCalibMode] = useState(false); // false | 'calibrating' | 'active'
+  const [courtCorners, setCourtCorners] = useState(() => loadCourtCalibration(id));
+  const [cameraView, setCameraView] = useState('1'); // '1' | '2' | 'split'
+  const videoAngle2Ref = useRef(null);
+  const [showAngleModal, setShowAngleModal] = useState(false);
+  const [playlistOpen, setPlaylistOpen] = useState(false);
+  const [uploadingAngle, setUploadingAngle] = useState(false);
+  const [angleUploadProgress, setAngleUploadProgress] = useState(0);
+  const [angleOffsetInput, setAngleOffsetInput] = useState(0);
+
+  useEffect(() => {
+    const saved = loadCourtCalibration(id);
+    setCourtCorners(saved);
+    if (saved && saved.length === 4) {
+      setCalibMode('active');
+    } else {
+      setCalibMode(false);
+    }
+  }, [id]);
 
   // Correction manuelle d'une zone (action choisie dans la liste des séquences)
   const [zoneActionUid, setZoneActionUid] = useState(null);
@@ -379,6 +425,7 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   // Fenêtres de la page de codage : déplaçables, redimensionnables, fermables.
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [activePanelId, setActivePanelId] = useState(null);
   const panelsKey = useMemo(() => `dv.panels.video.${id}`, [id]);
   const { layout, setRect, toggle: togglePanelById, open: openPanelById, close, setMany, reset: resetPanels, applyProfile: applyPanelsLayout, minHeight, minWidth } = usePanelLayout(panelsKey, canvasSize);
   const rect = useCallback((pid) => layout[pid] || { x: 0, y: 0, w: 300, h: 200 }, [layout]);
@@ -466,10 +513,34 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   const matchFinished = match?.status === 'finished';
 
-  const videoUrl = video ? videosAPI.getFileUrl(video.filename) : null;
+  const videoUrl = video?.filename ? videosAPI.getFileUrl(video.filename) : null;
   const proxyFilename = video?.filepath_proxy ? video.filepath_proxy.split(/[\\/]/).pop() : null;
   const proxyUrl = proxyFilename ? videosAPI.getProxyUrl(proxyFilename) : null;
   const playbackUrl = proxyUrl || videoUrl;
+  const angle2Url = video?.filename_angle2 ? videosAPI.getFileUrl(video.filename_angle2) : null;
+  const angle2Offset = Number(video?.angle2_offset || 0);
+
+  useEffect(() => {
+    setAngleOffsetInput(Number(video?.angle2_offset || 0));
+  }, [video?.angle2_offset]);
+
+  const syncAngle2Video = useCallback(
+    (mainTime, shouldPlay = null) => {
+      const v2 = videoAngle2Ref.current;
+      if (!v2 || !angle2Url) return;
+      const target = Math.max(0, (Number(mainTime) || 0) + angle2Offset);
+      if (Math.abs((v2.currentTime || 0) - target) > 0.25) {
+        try {
+          v2.currentTime = target;
+        } catch {
+          // ignore if metadata not loaded yet
+        }
+      }
+      if (shouldPlay === true && v2.paused) v2.play().catch(() => {});
+      if (shouldPlay === false && !v2.paused) v2.pause();
+    },
+    [angle2Url, angle2Offset]
+  );
 
   // Nouvelle vidéo (premier chargement ou changement de match) : la position
   // mémorisée ne vaut que pour la vidéo en cours, on repart donc du début.
@@ -502,10 +573,78 @@ function DataVolleyDashboard({ user, onLogout }) {
       resumeTimeRef.current = clamped;
       return;
     }
+    if (action === 'frameBack') {
+      v.pause();
+      const target = Math.max(0, v.currentTime - 0.04);
+      v.currentTime = target;
+      resumeTimeRef.current = target;
+      return;
+    }
+    if (action === 'frameForward') {
+      v.pause();
+      const target = v.currentTime + 0.04;
+      v.currentTime = Number.isFinite(v.duration) ? Math.min(v.duration, target) : target;
+      resumeTimeRef.current = v.currentTime;
+      return;
+    }
     if (action === 'speedDown') { setPlaybackRate((r) => stepSpeed(r, -1)); return; }
     if (action === 'speedUp') { setPlaybackRate((r) => stepSpeed(r, 1)); return; }
     if (action === 'speedReset') setPlaybackRate(1);
   }, []);
+
+  // --- Synchronisation 2e écran (BroadcastChannel) --------------------------
+  // Les commandes reçues du lecteur détaché pilotent réellement la vidéo : on
+  // applique le timecode / l'état de lecture, sans renvoyer d'écho (voir
+  // l'effet de diffusion plus bas).
+  const remoteCmdAtRef = useRef(0);
+
+  const handleRemoteSeek = useCallback((time) => {
+    const v = videoRef.current;
+    const t = Number(time);
+    if (!v || !Number.isFinite(t)) return;
+    const next = Math.max(0, t);
+    remoteCmdAtRef.current = Date.now();
+    try {
+      v.currentTime = next;
+    } catch {
+      // Métadonnées pas encore chargées : la position suivra au chargement.
+    }
+    resumeTimeRef.current = next;
+    setCurrentTime(next);
+    syncAngle2Video(next, null);
+  }, [syncAngle2Video]);
+
+  const handleRemotePlayState = useCallback((playingState) => {
+    const v = videoRef.current;
+    if (!v) return;
+    remoteCmdAtRef.current = Date.now();
+    if (playingState) {
+      // La lecture peut être refusée (autoplay) : on ne reflète que l'état réel.
+      v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    } else {
+      v.pause();
+      setPlaying(false);
+      resumeTimeRef.current = v.currentTime;
+    }
+  }, []);
+
+  const { popoutActive, openSecondScreen, broadcastSync } = useDualScreenVideo({
+    onRemoteSeek: handleRemoteSeek,
+    onRemotePlayState: handleRemotePlayState,
+  });
+
+  useEffect(() => {
+    if (!popoutActive || !playbackUrl) return;
+    const fromRemote = Date.now() - remoteCmdAtRef.current < 150;
+    broadcastSync({
+      videoId: id,
+      src: playbackUrl,
+      currentTime: fromRemote ? undefined : currentTime,
+      playing,
+      playbackRate,
+      title: `${team1} vs ${team2}`,
+    });
+  }, [popoutActive, playbackUrl, id, currentTime, playing, playbackRate, team1, team2, broadcastSync]);
 
   // Joueur correspondant au bloc en cours de frappe → mis en avant sur le terrain.
   const bufferPlayer = useMemo(() => {
@@ -999,9 +1138,89 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   // Distribution du passeur par rotation (onglet Distribution).
   const setterDist = useMemo(
-    () => computeSetterDistributionByRotation(statsActions, statsRallies, setups, setterNumbers),
-    [statsActions, statsRallies, setups, setterNumbers]
+    () => computeSetterDistributionByRotation(statsActions, statsRallies, setups, setterNumbers, distFilters),
+    [statsActions, statsRallies, setups, setterNumbers, distFilters]
   );
+
+  // Action active au timecode courant (pour l'incrustation TV Overlay)
+  const activeOverlayAction = useMemo(() => {
+    if (!actions.length) return null;
+    const offset = Number(sync.sync_offset || 0);
+    let best = null;
+    let bestDelta = Infinity;
+    for (const a of actions) {
+      if (a.timecode == null) continue;
+      const t = Number(a.timecode) + offset;
+      const diff = currentTime - t;
+      if (diff >= -0.4 && diff <= 3.5 && Math.abs(diff) < bestDelta) {
+        best = a;
+        bestDelta = Math.abs(diff);
+      }
+    }
+    return best || actions[actions.length - 1] || null;
+  }, [actions, currentTime, sync.sync_offset]);
+
+  // Clic sur la vidéo calibrée (4 coins) → ajoute la zone (et sous-zone) au tampon de codage
+  const handleZoneFromVideoClick = useCallback(
+    ({ zone, subzone }) => {
+      if (!zone) return;
+      const current = bufferRef.current || '';
+      let next = tryAppendChar(current, String(zone));
+      if (next != null) {
+        if (subzone) {
+          const withSub = tryAppendChar(next, String(subzone).toUpperCase());
+          if (withSub != null) next = withSub;
+        }
+        bufferRef.current = next;
+        setBuffer(next);
+        notifyEvent(true, `Zone ajoutée au code : Z${zone}${subzone || ''} → ${next}`);
+      } else {
+        notifyEvent(true, `Zone détectée sur vidéo : Z${zone}${subzone || ''}`);
+      }
+    },
+    [notifyEvent]
+  );
+
+  // Upload d'un angle vidéo (Cam 1 ou Cam 2) après coup
+  const handleUploadAngleFile = async (angleNum, file) => {
+    if (!file) return;
+    setUploadingAngle(true);
+    setAngleUploadProgress(0);
+    try {
+      const fd = new FormData();
+      fd.append('video', file);
+      fd.append('angle', String(angleNum));
+      if (angleNum === 2) {
+        fd.append('angle2_offset', String(angleOffsetInput || 0));
+      }
+      const res = await videosAPI.uploadAngle(id, fd, (pe) => {
+        if (pe.total) setAngleUploadProgress(Math.round((pe.loaded * 100) / pe.total));
+      });
+      if (res.data?.video) {
+        setVideo(res.data.video);
+        if (angleNum === 2) setCameraView('split');
+        notifyEvent(true, `Caméra ${angleNum} importée avec succès.`);
+      }
+    } catch (err) {
+      notifyEvent(false, err?.response?.data?.error || `Échec de l'import Caméra ${angleNum}`);
+    } finally {
+      setUploadingAngle(false);
+      setAngleUploadProgress(0);
+    }
+  };
+
+  const handleSaveAngleOffset = async (newOffset) => {
+    const val = Number(newOffset) || 0;
+    setAngleOffsetInput(val);
+    try {
+      const res = await videosAPI.update(id, { angle2_offset: val });
+      if (res.data?.video) setVideo(res.data.video);
+      syncAngle2Video(currentTime, null);
+      notifyEvent(true, `Décalage Caméra 2 réglé à ${val >= 0 ? '+' : ''}${val.toFixed(1)} s`);
+    } catch (err) {
+      notifyEvent(false, 'Impossible d’enregistrer le décalage Caméra 2');
+    }
+  };
 
   /** Nom d'un joueur d'après les fiches d'équipe (roster du set en cours). */
   const playerNameOf = useCallback(
@@ -1111,11 +1330,15 @@ function DataVolleyDashboard({ user, onLogout }) {
     // Chaque action garde le temps vidéo de l'instant où SON code a été terminé.
     // Une formule combinée (un seul bloc) donne le même temps à ses deux actions.
     const timecodes = itemTimecodes(raw, blockTimesRef.current);
-    const newActions = makeActions(items, {
+    const rawActions = makeActions(items, {
       currentTimecode: timecode,
       timecodes,
       startIndex: actionsRef.current.length,
       setNumber: myClaimedSet ?? matchState.currentSet,
+    });
+    const newActions = applyCompoundAutoCodes(rawActions, {
+      homeSetterNumber: setterNumbers.home,
+      awaySetterNumber: setterNumbers.away,
     });
     const next = reindexActions([...actionsRef.current, ...newActions]);
     actionsRef.current = next;
@@ -1142,7 +1365,7 @@ function DataVolleyDashboard({ user, onLogout }) {
       bufferRef.current = prefill;
       setBuffer(prefill);
     }
-  }, [matchFinished, autoServe, lightMode, setups, codeOpts, rallyOpts, myClaimedSet, matchState.currentSet]);
+  }, [matchFinished, autoServe, lightMode, setups, codeOpts, rallyOpts, myClaimedSet, matchState.currentSet, setterNumbers]);
 
   const seekTo = useCallback((t) => {
     const v = videoRef.current;
@@ -1180,8 +1403,13 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   /** Temps vidéo effectif d'une action (timecode + décalage de synchronisation). */
   const videoTimeOf = useCallback(
-    (a) => (a?.timecode == null ? null : Number(a.timecode) + Number(sync.sync_offset || 0)),
-    [sync.sync_offset]
+    (a) => {
+      if (a?.timecode == null) return null;
+      const setNum = setOfAction(a) || 1;
+      const setOffset = Number(sync.set_offsets?.[String(setNum)] || 0);
+      return Number(a.timecode) + Number(sync.sync_offset || 0) + setOffset;
+    },
+    [sync.sync_offset, sync.set_offsets, setOfAction]
   );
 
   /** Va sur une action (Consultation, Correction, Analyse). */
@@ -1217,9 +1445,9 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   /** Écrit une direction (2 zones) dans l'action visée, sans changer de format. */
   const setDirection = useCallback(
-    (action, start, end) => {
+    (action, start, end, coords = {}) => {
       if (!action?.uid) return;
-      applyActions(applyDirection(actionsRef.current, action.uid, start, end));
+      applyActions(applyDirection(actionsRef.current, action.uid, start, end, coords));
       notifyEvent(true, `Direction ${start || '—'} → ${end || '—'} enregistrée.`);
     },
     [applyActions, notifyEvent]
@@ -1481,15 +1709,39 @@ function DataVolleyDashboard({ user, onLogout }) {
     const onKey = (e) => {
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.altKey) return;
+      // Alt seul n'est plus bloqué : les macros clavier utilisent Alt+1…0.
+      // Seule la navigation globale (Ctrl+Alt+N) est réservée à la barre.
+      if (e.ctrlKey && e.altKey) return;
 
-      // Échap : fenêtre de commandes (temps morts, remplacements, code libre).
+      // F1 / F3 / F4 / F5 : changement de mode (dans tous les modes).
+      // F2 reste réservé à « afficher / masquer les fenêtres ».
+      const MODE_KEYS = { F1: 'saisie', F3: 'consultation', F4: 'correction', F5: 'analyse' };
+      if (MODE_KEYS[e.key]) { e.preventDefault(); changeMode(MODE_KEYS[e.key]); return; }
+
+      // Échap : vider le tampon (ferme au passage les fenêtres superposées).
       if (e.key === 'Escape') {
         e.preventDefault();
         if (showSync) { setShowSync(false); return; }
+        if (showCommand) { setShowCommand(false); return; }
+        setBuffer('');
+        return;
+      }
+
+      // Ctrl+Shift+C : fenêtre de commandes (temps morts, remplacements, code libre).
+      if (e.key === 'c' && e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
         setShowCommand((v) => !v);
         return;
       }
+
+      // Raccourcis d'affichage et de vitesse : valables dans tous les modes.
+      if (matchesShortcut(e, shortcuts.togglePanels)) {
+        e.preventDefault();
+        setMany(['score', 'court', 'positions', 'actions', 'shortcuts'], !arePanelsVisible);
+        return;
+      }
+      if (matchesShortcut(e, shortcuts.speedDown)) { e.preventDefault(); videoAction('speedDown'); return; }
+      if (matchesShortcut(e, shortcuts.speedUp)) { e.preventDefault(); videoAction('speedUp'); return; }
 
       // En Consultation : Espace et flèches pour relire les points.
       if (mode === 'consultation') {
@@ -1503,14 +1755,26 @@ function DataVolleyDashboard({ user, onLogout }) {
       if (mode !== 'saisie') return;
       if (e.ctrlKey || e.metaKey) return;
 
+      // Raccourcis Macros Clavier (F1-F8 configurés dans Codes Auto & Macros)
+      const matchedMacro = matchMacroShortcut(e);
+      if (matchedMacro && !matchFinished) {
+        e.preventDefault();
+        const nextBuf = (bufferRef.current || '') + matchedMacro.code;
+        bufferRef.current = nextBuf;
+        setBuffer(nextBuf);
+        notifyEvent(true, `Macro ${matchedMacro.key} (${matchedMacro.label}) → ${matchedMacro.code}`);
+        return;
+      }
+
+      // Image par image (, et . quand le tampon est vide)
+      if (e.key === ',' && !bufferRef.current) { e.preventDefault(); videoAction('frameBack'); return; }
+      if (e.key === '.' && !bufferRef.current) { e.preventDefault(); videoAction('frameForward'); return; }
+
       // Raccourcis vidéo (désactivés si le match est terminé pour la saisie).
       if (matchesShortcut(e, shortcuts.pause)) { e.preventDefault(); videoAction('pause'); return; }
       if (matchesShortcut(e, shortcuts.seekBack)) { e.preventDefault(); videoAction('seekBack'); return; }
       if (matchesShortcut(e, shortcuts.seekForward)) { e.preventDefault(); videoAction('seekForward'); return; }
-      if (matchesShortcut(e, shortcuts.speedDown)) { e.preventDefault(); videoAction('speedDown'); return; }
-      if (matchesShortcut(e, shortcuts.speedUp)) { e.preventDefault(); videoAction('speedUp'); return; }
       if (matchesShortcut(e, shortcuts.speedReset)) { e.preventDefault(); videoAction('speedReset'); return; }
-      if (matchesShortcut(e, shortcuts.togglePanels)) { e.preventDefault(); setMany(['score', 'court', 'positions', 'actions', 'shortcuts'], !arePanelsVisible); return; }
 
       if (matchFinished) return;
 
@@ -1540,6 +1804,8 @@ function DataVolleyDashboard({ user, onLogout }) {
     setMany,
     arePanelsVisible,
     showSync,
+    showCommand,
+    changeMode,
     togglePlayback,
     goToPoint,
     markPointEnd,
@@ -1960,7 +2226,7 @@ function DataVolleyDashboard({ user, onLogout }) {
             <ChevronLeft size={14} /> Retour à l’analyse
           </button>
           <div className="dv-fullpage-title">
-            <Table size={16} />
+            <PancakeLogo size={18} />
             <strong>Rapport de match</strong>
             <span className="dv-fullpage-sub">{team1} — {team2}</span>
             <span className="dv-fullpage-meta">
@@ -2048,49 +2314,322 @@ function DataVolleyDashboard({ user, onLogout }) {
   // Saisie, ou dans la scène du mode affiché (Consultation, Correction, Analyse).
   const videoNode = (
     <>
-      <div className="video-player-wrapper">
-        <VideoAnnotationLayer enabled={annotOn} onAnnotationsChange={setAnnotations}>
-          <video
-            ref={videoRef}
-            src={playbackUrl}
-            controls
-            preload="auto"
-            className="trimmed-player"
-            onTimeUpdate={handleTimeUpdate}
-            onPlay={() => { wasPlayingRef.current = true; setPlaying(true); }}
-            onPause={() => { wasPlayingRef.current = false; setPlaying(false); }}
-            onLoadedMetadata={(e) => {
-              // Changement de mode : on reprend au timecode quitté (et on relance
-              // la lecture si la vidéo jouait avant).
-              const el = e.currentTarget;
-              setVideoDuration(Number.isFinite(el.duration) ? el.duration : 0);
-              const t = resumeTimeRef.current;
-              if (t > 0) {
-                try { el.currentTime = t; } catch { /* média pas encore accessible */ }
-              }
-              if (wasPlayingRef.current) el.play().catch(() => {});
+      <div
+        className="video-player-wrapper"
+        style={{
+          position: 'relative',
+          display: cameraView === 'split' && angle2Url ? 'grid' : 'block',
+          gridTemplateColumns: cameraView === 'split' && angle2Url ? '1fr 1fr' : undefined,
+          gap: cameraView === 'split' && angle2Url ? 4 : 0,
+        }}
+      >
+        {!playbackUrl && cameraView !== '2' ? (
+          <div
+            style={{
+              height: '100%',
+              minHeight: 220,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              background: '#09090b',
+              border: '1px dashed #27272a',
+              padding: 16,
+              textAlign: 'center',
             }}
-            onError={(e) => { const el = e.currentTarget; if (el.dataset.fb !== '1' && videoUrl) { el.dataset.fb = '1'; el.src = videoUrl; } }}
-          />
-        </VideoAnnotationLayer>
+          >
+            <Camera size={24} className="text-amber-500" />
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#e4e4e7' }}>
+              Aucune vidéo Caméra 1 associée à ce match
+            </div>
+            <div style={{ fontSize: 11, color: '#a1a1aa', maxWidth: 340 }}>
+              Vous pouvez coder ce match dès maintenant et importer la vidéo Caméra 1 et/ou Caméra 2 après coup.
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowAngleModal(true)}
+            >
+              <Upload size={12} /> Uploader Caméra 1 / Caméra 2
+            </button>
+          </div>
+        ) : null}
+
+        {playbackUrl && cameraView !== '2' && (
+          <div style={{ position: 'relative', width: '100%', height: '100%', isolation: 'isolate' }}>
+            <VideoAnnotationLayer enabled={annotOn} onAnnotationsChange={setAnnotations}>
+              <video
+                ref={videoRef}
+                src={playbackUrl}
+                controls
+                preload="auto"
+                className="trimmed-player"
+                onTimeUpdate={(e) => {
+                  handleTimeUpdate(e);
+                  syncAngle2Video(e.currentTarget.currentTime, null);
+                }}
+                onSeeked={(e) => syncAngle2Video(e.currentTarget.currentTime, null)}
+                onPlay={(e) => {
+                  wasPlayingRef.current = true;
+                  setPlaying(true);
+                  syncAngle2Video(e.currentTarget.currentTime, true);
+                }}
+                onPause={(e) => {
+                  wasPlayingRef.current = false;
+                  setPlaying(false);
+                  syncAngle2Video(e.currentTarget.currentTime, false);
+                }}
+                onLoadedMetadata={(e) => {
+                  const el = e.currentTarget;
+                  setVideoDuration(Number.isFinite(el.duration) ? el.duration : 0);
+                  const t = resumeTimeRef.current;
+                  if (t > 0) {
+                    try { el.currentTime = t; } catch { /* média pas encore accessible */ }
+                  }
+                  if (wasPlayingRef.current) el.play().catch(() => {});
+                }}
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  if (el.dataset.fb !== '1' && videoUrl) {
+                    el.dataset.fb = '1';
+                    el.src = videoUrl;
+                  }
+                }}
+              />
+            </VideoAnnotationLayer>
+            <VideoTvOverlay
+              showScoreboard={showTvOverlay}
+              team1={team1}
+              team2={team2}
+              score={boardState.score}
+              setsWon={boardState.setsWon}
+              currentSet={boardState.currentSet}
+              server={boardState.server}
+              homeSetterPos={boardState.homeSetterPos}
+              awaySetterPos={boardState.awaySetterPos}
+              activeAction={activeOverlayAction}
+              calibrationMode={calibMode}
+              corners={courtCorners}
+              onSaveCorners={(pts) => {
+                saveCourtCalibration(id, pts);
+                setCourtCorners(pts);
+                setCalibMode(pts && pts.length === 4 ? 'active' : false);
+              }}
+              onZoneDetected={handleZoneFromVideoClick}
+              onCloseCalibration={() =>
+                setCalibMode(courtCorners && courtCorners.length === 4 ? 'active' : false)
+              }
+              onStartCalibration={() => setCalibMode('calibrating')}
+            />
+          </div>
+        )}
+
+        {angle2Url && (cameraView === '2' || cameraView === 'split') && (
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <video
+              ref={videoAngle2Ref}
+              src={angle2Url}
+              controls={cameraView === '2'}
+              muted={cameraView === 'split'}
+              preload="auto"
+              className="trimmed-player"
+              onLoadedMetadata={(e) => {
+                const v1 = videoRef.current;
+                const baseTime = v1 ? v1.currentTime : resumeTimeRef.current;
+                try {
+                  e.currentTarget.currentTime = Math.max(0, (baseTime || 0) + angle2Offset);
+                } catch {
+                  // ignore
+                }
+              }}
+            />
+            <span
+              style={{
+                position: 'absolute',
+                top: 6,
+                right: 6,
+                padding: '2px 6px',
+                fontSize: 10,
+                fontFamily: 'JetBrains Mono, monospace',
+                background: 'rgba(9,9,11,0.85)',
+                border: '1px solid #3f3f46',
+                color: '#38bdf8',
+                pointerEvents: 'none',
+              }}
+            >
+              CAM 2 ({angle2Offset >= 0 ? `+${angle2Offset}` : angle2Offset}s)
+            </span>
+          </div>
+        )}
       </div>
-      <div className="dv-timecode">
-        <Clock size={12} /> {formatTimecode(currentTime)}
+      <div className="dv-timecode" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'JetBrains Mono, monospace' }}>
+          <Clock size={12} /> {formatTimecode(currentTime)}
+        </span>
         <button
           type="button"
           className={`btn btn-sm ${annotOn ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => setAnnotOn((v) => !v)}
           title={annotOn ? 'Quitter le dessin sur la vidéo' : 'Dessiner sur la vidéo'}
-          style={{ marginLeft: 8 }}
+          style={{ marginLeft: 4 }}
         >
-          <Pencil size={12} /> Dessin
+          <Pencil size={11} /> Dessin
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm ${showTvOverlay ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setShowTvOverlay((v) => !v)}
+          title="Afficher / masquer le bandeau TV Score + Rotations + Code actif"
+        >
+          <Tv size={11} /> TV Score
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm ${calibMode === 'active' ? 'btn-success' : 'btn-secondary'}`}
+          onClick={() => {
+            if (calibMode === 'active') {
+              setCalibMode(false);
+            } else if (courtCorners?.length === 4) {
+              setCalibMode('active');
+            } else {
+              setCalibMode('calibrating');
+            }
+          }}
+          title={calibMode === 'active' ? 'Masquer la grille 3D' : 'Afficher la grille 3D du terrain'}
+        >
+          <Crosshair size={11} /> {calibMode === 'active' ? 'Grille 3D ON' : 'Grille 3D OFF'}
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm ${calibMode === 'calibrating' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => {
+            if (calibMode === 'calibrating') {
+              setCalibMode(courtCorners?.length === 4 ? 'active' : false);
+            } else {
+              setCalibMode('calibrating');
+            }
+          }}
+          title="Redéfinir les 4 coins du terrain sur la vidéo (si la caméra a bougé)"
+        >
+          <RotateCcw size={11} /> {calibMode === 'calibrating' ? 'Annuler 4 coins' : 'Recalibrer 4 coins'}
+        </button>
+        {angle2Url && (
+          <div className="btn-group-horizontal" style={{ marginLeft: 2 }}>
+            <button
+              type="button"
+              className={`btn btn-sm ${cameraView === '1' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setCameraView('1')}
+            >
+              Cam 1
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${cameraView === '2' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setCameraView('2')}
+            >
+              Cam 2
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${cameraView === 'split' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setCameraView('split')}
+            >
+              2 Angles
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => setShowAngleModal(true)}
+          title="Uploader Caméra 1 et/ou Caméra 2 après coup et régler la synchro multi-angles"
+        >
+          <Camera size={11} /> {angle2Url ? 'Cam 1/2' : '+ Cam 1/2'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => videoAction('frameBack')}
+          title="Image précédente (-0.04s, touche ,)"
+        >
+          ⏮ -1 img
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => videoAction('frameForward')}
+          title="Image suivante (+0.04s, touche .)"
+        >
+          ⏭ +1 img
+        </button>
+        <select
+          className="dvx-input"
+          style={{ width: 64, padding: '2px 4px', fontSize: 11 }}
+          value={playbackRate}
+          onChange={(e) => setPlaybackRate(Number(e.target.value) || 1)}
+          title="Vitesse de lecture (inclut ralenti extrême 0.25x)"
+        >
+          <option value={0.25}>0.25×</option>
+          <option value={0.5}>0.5×</option>
+          <option value={0.75}>0.75×</option>
+          <option value={1}>1×</option>
+          <option value={1.25}>1.25×</option>
+          <option value={1.5}>1.5×</option>
+          <option value={2}>2×</option>
+        </select>
+        <button
+          type="button"
+          className={`btn btn-sm ${popoutActive ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() =>
+            openSecondScreen({
+              videoId: id,
+              src: playbackUrl,
+              currentTime,
+              playing,
+              playbackRate,
+              title: `${team1} vs ${team2}`,
+            })
+          }
+          title="Ouvrir le lecteur vidéo détaché sur un 2e écran (optionnel)"
+        >
+          <MonitorPlay size={11} /> {popoutActive ? '2e écran actif' : '2e écran'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => setPlaylistOpen(true)}
+          title="Ouvrir le gestionnaire de playlists vidéo multi-matchs"
+        >
+          🎬 Playlists
         </button>
       </div>
     </>
   );
 
+  // « Sans évaluation » remonte dans la barre globale : la barre de codage reste
+  // sur une seule ligne et les fenêtres de saisie gagnent de la hauteur.
+  const lightModeToggle = (
+    <button
+      type="button"
+      className={`nav-tool-btn ${lightMode ? 'active' : ''}`}
+      onClick={() => setLightMode((v) => !v)}
+      title="Coder sans évaluation (ex. *02S a10A) — les points se découpent par service"
+      aria-pressed={lightMode}
+    >
+      {lightMode ? <ListChecks size={13} /> : <Volleyball size={13} />} Sans évaluation
+    </button>
+  );
+
   return (
     <div className="video-dashboard dv-page">
+      <AppNavigation
+        user={user}
+        onLogout={onLogout}
+        activeVideoId={id}
+        compact={mode === 'saisie'}
+        tools={lightModeToggle}
+      />
       <div className="vd-workspace">
         <nav className="video-tabs dv-nav">
           <motion.button className="back-btn" onClick={() => navigate('/dashboard')} whileHover={{ x: -2 }} whileTap={{ scale: 0.98 }}>←</motion.button>
@@ -2108,7 +2647,7 @@ function DataVolleyDashboard({ user, onLogout }) {
               <Trophy size={14} /> Fin de match
             </button>
           )}
-          <div className="dv-title">
+          <div className="dv-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <strong>{video.display_name || video.original_name}</strong>
             <span className="dv-teams">
               <House size={12} /> {team1} &nbsp;·&nbsp; <Plane size={12} /> {team2}
@@ -2154,15 +2693,6 @@ function DataVolleyDashboard({ user, onLogout }) {
           >
             {modeAide ? <EyeOff size={14} /> : <Eye size={14} />} Mode Aide
           </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${lightMode ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setLightMode((v) => !v)}
-            title="Coder sans évaluation (ex. *02S a10A) — les points se découpent par service"
-            aria-pressed={lightMode}
-          >
-            {lightMode ? <ListChecks size={14} /> : <Volleyball size={14} />} Sans évaluation
-          </button>
           <div className="dv-save-state">
             {saving ? (
               <>
@@ -2188,12 +2718,33 @@ function DataVolleyDashboard({ user, onLogout }) {
                   className="panel-video"
                   rect={rect('video')}
                   onRectChange={(patch) => setRect('video', patch)}
+                  active={activePanelId === 'video'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                   closable={false}
                   headerExtra={
-                    <span className="dv-speed-badge" title="Vitesse de lecture (touches Ralentir / Accélérer)">
-                      {playbackRate}×
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button
+                        type="button"
+                        className={`btn btn-xs ${calibMode === 'calibrating' ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (calibMode === 'calibrating') {
+                            setCalibMode(courtCorners?.length === 4 ? 'active' : false);
+                          } else {
+                            setCalibMode('calibrating');
+                          }
+                        }}
+                        title={calibMode === 'calibrating' ? 'Annuler la calibration' : 'Redéfinir les 4 coins du terrain sur la vidéo si la caméra a bougé'}
+                        style={{ padding: '2px 7px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <Crosshair size={12} />
+                        {calibMode === 'calibrating' ? 'Annuler calibration' : 'Redéfinir coins'}
+                      </button>
+                      <span className="dv-speed-badge" title="Vitesse de lecture (touches Ralentir / Accélérer)">
+                        {playbackRate}×
+                      </span>
+                    </div>
                   }
                 >
                   {videoNode}
@@ -2208,6 +2759,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   icon={Keyboard}
                   rect={rect('console')}
                   onRectChange={(patch) => setRect('console', patch)}
+                  active={activePanelId === 'console'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                   closable={false}
                 >
@@ -2281,6 +2834,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   rect={rect('actions')}
                   onRectChange={(patch) => setRect('actions', patch)}
                   onClose={() => close('actions')}
+                  active={activePanelId === 'actions'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                 >
                   <DvCodeList
@@ -2309,6 +2864,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   rect={rect('direction')}
                   onRectChange={(patch) => setRect('direction', patch)}
                   onClose={() => close('direction')}
+                  active={activePanelId === 'direction'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                 >
                   {directionTarget ? (
@@ -2339,12 +2896,20 @@ function DataVolleyDashboard({ user, onLogout }) {
                         side={directionTarget.team === 'away' ? 'away' : 'home'}
                         startZone={directionTarget.start_zone}
                         endZone={directionTarget.end_zone}
+                        startSubzone={directionTarget.start_subzone}
+                        endSubzone={directionTarget.end_subzone}
+                        startX={directionTarget.start_x}
+                        startY={directionTarget.start_y}
+                        midX={directionTarget.mid_x}
+                        midY={directionTarget.mid_y}
+                        endX={directionTarget.end_x}
+                        endY={directionTarget.end_y}
                         history={directionHistory}
                         playerLabel={`n°${String(directionTarget.player_number || 0).padStart(2, '0')}`}
                         teamName={directionTeam}
                         opponentName={directionOpponent}
                         disabled={matchFinished}
-                        onChange={({ start, end }) => setDirection(directionTarget, start, end)}
+                        onChange={(payload) => setDirection(directionTarget, payload.start, payload.end, payload)}
                       />
                     </>
                   ) : (
@@ -2366,6 +2931,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   rect={rect('score')}
                   onRectChange={(patch) => setRect('score', patch)}
                   onClose={() => close('score')}
+                  active={activePanelId === 'score'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                 >
                   <DvRotationWindow
@@ -2437,6 +3004,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   rect={rect('court')}
                   onRectChange={(patch) => setRect('court', patch)}
                   onClose={() => close('court')}
+                  active={activePanelId === 'court'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                 >
                   <MatchBoard
@@ -2462,6 +3031,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   rect={rect('positions')}
                   onRectChange={(patch) => setRect('positions', patch)}
                   onClose={() => close('positions')}
+                  active={activePanelId === 'positions'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -2482,6 +3053,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   rect={rect('shortcuts')}
                   onRectChange={(patch) => setRect('shortcuts', patch)}
                   onClose={() => close('shortcuts')}
+                  active={activePanelId === 'shortcuts'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                 >
                   <VideoShortcuts coding />
@@ -2498,6 +3071,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   rect={rect('aide')}
                   onRectChange={(patch) => setRect('aide', patch)}
                   onClose={() => close('aide')}
+                  active={activePanelId === 'aide'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                 >
                   <DvSyntaxHelp />
@@ -2512,6 +3087,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                   rect={rect('keypad')}
                   onRectChange={(patch) => setRect('keypad', patch)}
                   onClose={() => close('keypad')}
+                  active={activePanelId === 'keypad'}
+                  onFocus={setActivePanelId}
                   size={canvasSize}
                 >
                   <DvKeyPad
@@ -2541,44 +3118,24 @@ function DataVolleyDashboard({ user, onLogout }) {
             </div>
           ) : (
             <div className={`dv-main-col ${mode === 'analyse' ? 'dv-main-analyse' : ''} ${mode === 'consultation' || mode === 'correction' ? 'dv-main-wide' : ''}`}>
-              {flash && (
+              {flash && !flash.ok && (
                 <div className={`dv-flash ${flash.ok ? 'ok' : 'err'}`}>{flash.text}</div>
               )}
 
-              {/* Mode Consultation : relire les points, sans les temps morts. */}
+              {/* Mode Banc / Coach Tablet (remplace l'ancien mode Consultation) */}
               {mode === 'consultation' && (
-                <DvConsultationPane
-                  videoNode={videoNode}
-                  points={consultFiltered}
-                  segments={consultSegments}
-                  duration={videoDuration}
-                  activeIndex={consultIndex}
-                  playing={playing}
-                  rate={playbackRate}
-                  matchedUids={consultMatchedUids}
-                  filters={consultFilters}
-                  onFilters={patchConsultFilters}
-                  onResetFilters={() => setConsultFilters(EMPTY_FILTERS)}
-                  options={filterOptions}
-                  resultCount={consultMatched.length}
-                  onSeekAction={seekToAction}
-                  onSeekPoint={seekToRally}
-                  onTogglePlay={togglePlayback}
-                  onRate={setPlaybackRate}
-                  onStep={goToPoint}
-                  rotationView={consultRotation}
+                <LiveCoachTablet
                   team1={team1}
                   team2={team2}
+                  boardState={boardState}
+                  scouting={scouting}
+                  actions={actions}
+                  rallies={rallies}
+                  setups={setups}
+                  setterNumbers={setterNumbers}
                   homeConfig={homeConfig}
                   awayConfig={awayConfig}
-                  events={events}
-                  setsWon1={matchState.setsWon.team1}
-                  setsWon2={matchState.setsWon.team2}
-                  issues={issues}
-                  actionSet={setOfAction}
-                  currentTime={currentTime}
-                  loop={consultLoop}
-                  onToggleLoop={() => setConsultLoop((v) => !v)}
+                  videoSlot={videoNode}
                 />
               )}
 
@@ -2816,8 +3373,123 @@ function DataVolleyDashboard({ user, onLogout }) {
                 )}
                 {mode === 'analyse' && tab === 'distribution' && (
                   <motion.div key="distribution" className="dv-panel dv-analysis-window" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
-                    <h4>Distribution du passeur</h4>
-                    <p className="dv-hint">Attaques après réception, par position du passeur dans la rotation. Cliquez la zone de l'attaquant après chaque attaque pour alimenter l'analyse.</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div>
+                        <h4>Distribution du passeur (Situationnelle & Transition)</h4>
+                        <p className="dv-hint" style={{ marginBottom: 6 }}>
+                          Filtrez par phase de jeu (Side-Out K1, Transition K2, Ballon gratuit), zone du 1er contact, appel du passeur et qui a défendu le 1er ballon (Passeur vs Autre joueur).
+                        </p>
+                      </div>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#a1a1aa', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={distShowAllZones}
+                          onChange={(e) => setDistShowAllZones(e.target.checked)}
+                        />
+                        Afficher les 9 zones
+                      </label>
+                    </div>
+
+                    {/* Barre de filtres situationnels (Features 7 & 10) */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                        gap: 8,
+                        padding: 8,
+                        marginBottom: 10,
+                        background: '#09090b',
+                        border: '1px solid #27272a',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#a1a1aa', marginBottom: 4 }}>
+                          Phase de jeu
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                          {DISTRIBUTION_PHASES.map((ph) => (
+                            <button
+                              key={ph.key}
+                              type="button"
+                              className={`btn btn-sm ${distFilters.phase === ph.key ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setDistFilters((f) => ({ ...f, phase: ph.key }))}
+                              title={ph.hint}
+                              style={{ fontSize: 10, padding: '2px 6px' }}
+                            >
+                              {ph.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#a1a1aa', marginBottom: 4 }}>
+                          Zone Réception / 1er Contact
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                          {PASS_ZONE_FILTERS.map((pz) => (
+                            <button
+                              key={pz.key}
+                              type="button"
+                              className={`btn btn-sm ${distFilters.passZone === pz.key ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setDistFilters((f) => ({ ...f, passZone: pz.key }))}
+                              style={{ fontSize: 10, padding: '2px 6px' }}
+                            >
+                              {pz.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#a1a1aa', marginBottom: 4 }}>
+                          Appel Passeur (Setter Call)
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${distFilters.setterCall === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => setDistFilters((f) => ({ ...f, setterCall: 'ALL' }))}
+                            style={{ fontSize: 10, padding: '2px 6px' }}
+                          >
+                            Tous
+                          </button>
+                          {DV_SETTER_CALLS.map((sc) => (
+                            <button
+                              key={sc.code}
+                              type="button"
+                              className={`btn btn-sm ${distFilters.setterCall === sc.code ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setDistFilters((f) => ({ ...f, setterCall: sc.code }))}
+                              title={sc.label}
+                              style={{ fontSize: 10, padding: '2px 6px', fontFamily: 'JetBrains Mono, monospace' }}
+                            >
+                              {sc.code}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#a1a1aa', marginBottom: 4 }}>
+                          Défenseur 1er Ballon (Transition)
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                          {DEFENDER_ROLE_FILTERS.map((dr) => (
+                            <button
+                              key={dr.key}
+                              type="button"
+                              className={`btn btn-sm ${distFilters.defenderRole === dr.key ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setDistFilters((f) => ({ ...f, defenderRole: dr.key }))}
+                              title={dr.hint}
+                              style={{ fontSize: 10, padding: '2px 6px' }}
+                            >
+                              {dr.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                       <div className="dv-stat-tabs" style={{ margin: 0 }}>
                         {['Total', ...COURT_POSITIONS].map((pos) => (
@@ -2830,8 +3502,29 @@ function DataVolleyDashboard({ user, onLogout }) {
                       </div>
                     </div>
                     <div className="dv-stat-team">
-                      <h5>{teamLabel(distTeam)}{distPos !== 'Total' ? ` — passeur en ${distPos}` : ''}</h5>
-                      <DistributionCourt distribution={setterDist[distTeam]?.[distPos]} />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                        <h5 style={{ margin: 0 }}>
+                          {teamLabel(distTeam)}{distPos !== 'Total' ? ` — passeur en ${distPos}` : ''}
+                        </h5>
+                        {setterDist[distTeam]?.[distPos]?.setterDugCount > 0 && (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontFamily: 'JetBrains Mono, monospace',
+                              padding: '2px 8px',
+                              background: 'rgba(245,158,11,0.14)',
+                              border: '1px solid #f59e0b',
+                              color: '#fbbf24',
+                            }}
+                          >
+                            Passeur a défendu le 1er ballon : {setterDist[distTeam][distPos].setterDugCount} fois (Passe de secours)
+                          </span>
+                        )}
+                      </div>
+                      <DistributionCourt
+                        distribution={setterDist[distTeam]?.[distPos]}
+                        showAllZones={distShowAllZones}
+                      />
                     </div>
                   </motion.div>
                 )}
@@ -3095,6 +3788,134 @@ function DataVolleyDashboard({ user, onLogout }) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Modale Multi-Caméras : Upload Caméra 1 / Caméra 2 après coup + Décalage synchro */}
+      <AnimatePresence>
+        {showAngleModal && (
+          <motion.div
+            className="modal-overlay"
+            onClick={() => !uploadingAngle && setShowAngleModal(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="modal dv-sub-modal"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              style={{ maxWidth: 520 }}
+            >
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Camera size={18} className="text-amber-500" /> Gestion Vidéo Multi-Angles (Cam 1 & Cam 2)
+              </h2>
+              <p className="dv-hint">
+                Importez ou remplacez la vidéo <strong>Caméra 1 (Principale)</strong> et/ou la <strong>Caméra 2 (Second angle : latéral, fond de terrain…)</strong> à tout moment, même après le codage du match.
+              </p>
+
+              <div className="form-group" style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Caméra 1 — Vue Principale</span>
+                  <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: video?.filename ? '#10b981' : '#f59e0b' }}>
+                    {video?.filename ? '✓ Vidéo présente' : 'Non importée'}
+                  </span>
+                </label>
+                <input
+                  type="file"
+                  accept="video/*"
+                  disabled={uploadingAngle}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUploadAngleFile(1, f);
+                  }}
+                  style={{ marginTop: 6 }}
+                />
+              </div>
+
+              <div className="form-group" style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Caméra 2 — Second Angle synchronisé</span>
+                  <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: video?.filename_angle2 ? '#38bdf8' : '#71717a' }}>
+                    {video?.filename_angle2 ? '✓ Caméra 2 présente' : 'Optionnelle / Non importée'}
+                  </span>
+                </label>
+                <input
+                  type="file"
+                  accept="video/*"
+                  disabled={uploadingAngle}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUploadAngleFile(2, f);
+                  }}
+                  style={{ marginTop: 6 }}
+                />
+
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, color: '#a1a1aa' }}>Décalage Cam 2 vs Cam 1 (s) :</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={angleOffsetInput}
+                    onChange={(e) => setAngleOffsetInput(e.target.value)}
+                    style={{ width: 90, fontFamily: 'JetBrains Mono, monospace' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleSaveAngleOffset(angleOffsetInput)}
+                  >
+                    Appliquer décalage
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      const v1 = videoRef.current;
+                      const v2 = videoAngle2Ref.current;
+                      if (v1 && v2) {
+                        const diff = Number((v2.currentTime - v1.currentTime).toFixed(2));
+                        handleSaveAngleOffset(diff);
+                      }
+                    }}
+                    title="Caler automatiquement sur la position actuelle des 2 lecteurs"
+                  >
+                    Caler sur position actuelle
+                  </button>
+                </div>
+              </div>
+
+              {uploadingAngle && (
+                <div style={{ margin: '10px 0', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: '#f59e0b' }}>
+                  Importation en cours… {angleUploadProgress}%
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={uploadingAngle}
+                  onClick={() => setShowAngleModal(false)}
+                >
+                  Fermer
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <PlaylistManagerModal
+        open={playlistOpen}
+        onClose={() => setPlaylistOpen(false)}
+        videoId={id}
+        videoTitle={video?.display_name || video?.original_name || ''}
+        rallies={consultFiltered}
+        segments={consultSegments}
+        leadIn={sync.lead_in ?? 4}
+        leadOut={sync.lead_out ?? 3}
+      />
     </div>
   );
 

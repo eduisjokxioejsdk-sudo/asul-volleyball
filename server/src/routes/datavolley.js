@@ -102,8 +102,9 @@ router.post('/:videoId/actions', authenticateToken, (req, res) => {
         const stmt = db.prepare(
           `INSERT INTO volley_actions
             (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation,
-             type, start_zone, end_zone, end_subzone, set_number, note, attack_zone)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             type, start_zone, end_zone, end_subzone, set_number, note, attack_zone,
+             start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         );
 
         rows.forEach((a, i) => {
@@ -120,12 +121,19 @@ router.post('/:videoId/actions', authenticateToken, (req, res) => {
             a.action || parts.action,
             a.evaluation || parts.evaluation,
             parts.type || null,
-            parts.start_zone || null,
-            parts.end_zone || null,
-            parts.end_subzone || null,
+            a.start_zone ?? parts.start_zone ?? null,
+            a.end_zone ?? parts.end_zone ?? null,
+            a.end_subzone ?? parts.end_subzone ?? null,
             a.set_number ?? null,
             a.note ?? null,
-            a.attack_zone ?? parts.start_zone ?? null
+            a.attack_zone ?? parts.start_zone ?? null,
+            a.start_x ?? null,
+            a.start_y ?? null,
+            a.mid_x ?? null,
+            a.mid_y ?? null,
+            a.end_x ?? null,
+            a.end_y ?? null,
+            a.is_auto ? 1 : 0
           );
         });
 
@@ -201,8 +209,9 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
           const stmt = db.prepare(
             `INSERT INTO volley_actions
               (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation,
-               type, start_zone, end_zone, end_subzone, set_number, note, attack_zone, deleted, dirty, local_updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)`
+               type, start_zone, end_zone, end_subzone, set_number, note, attack_zone,
+               start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto, deleted, dirty, local_updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)`
           );
 
           rows.forEach((a, i) => {
@@ -219,12 +228,19 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
               a.action || parts.action,
               a.evaluation || parts.evaluation,
               parts.type || null,
-              parts.start_zone || null,
-              parts.end_zone || null,
-              parts.end_subzone || null,
+              a.start_zone ?? parts.start_zone ?? null,
+              a.end_zone ?? parts.end_zone ?? null,
+              a.end_subzone ?? parts.end_subzone ?? null,
               a.set_number ?? setNumber,
               a.note ?? null,
               a.attack_zone ?? parts.start_zone ?? null,
+              a.start_x ?? null,
+              a.start_y ?? null,
+              a.mid_x ?? null,
+              a.mid_y ?? null,
+              a.end_x ?? null,
+              a.end_y ?? null,
+              a.is_auto ? 1 : 0,
               now
             );
           });
@@ -257,6 +273,17 @@ router.delete('/:videoId/actions', authenticateToken, (req, res) => {
   });
 });
 
+function parseSetOffsets(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 // Get sync settings for a video (returns defaults if none yet)
 router.get('/:videoId/sync', authenticateToken, (req, res) => {
   const { videoId } = req.params;
@@ -267,6 +294,7 @@ router.get('/:videoId/sync', authenticateToken, (req, res) => {
         sync: {
           video_id: Number(videoId),
           sync_offset: 0,
+          set_offsets: {},
           anchor_action_id: null,
           anchor_timecode: null,
           anchor_system_time: null,
@@ -275,23 +303,30 @@ router.get('/:videoId/sync', authenticateToken, (req, res) => {
         },
       });
     }
-    res.json({ sync: row });
+    res.json({
+      sync: {
+        ...row,
+        set_offsets: parseSetOffsets(row.set_offsets),
+      },
+    });
   });
 });
 
 // Save sync settings for a video (upsert)
 router.put('/:videoId/sync', authenticateToken, (req, res) => {
   const { videoId } = req.params;
-  const { sync_offset, anchor_action_id, anchor_timecode, anchor_system_time, lead_in, lead_out } = req.body || {};
+  const { sync_offset, set_offsets, anchor_action_id, anchor_timecode, anchor_system_time, lead_in, lead_out } = req.body || {};
+  const setOffsetsJson = JSON.stringify(parseSetOffsets(set_offsets));
 
   verifyVideo(req, res, (video) => {
     db.run(
       `INSERT OR REPLACE INTO volley_sync
-        (video_id, sync_offset, anchor_action_id, anchor_timecode, anchor_system_time, lead_in, lead_out)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (video_id, sync_offset, set_offsets, anchor_action_id, anchor_timecode, anchor_system_time, lead_in, lead_out)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         videoId,
         sync_offset ?? 0,
+        setOffsetsJson,
         anchor_action_id ?? null,
         anchor_timecode ?? null,
         anchor_system_time ?? null,
@@ -300,9 +335,14 @@ router.put('/:videoId/sync', authenticateToken, (req, res) => {
       ],
       function (err) {
         if (err) return res.status(500).json({ error: 'Failed to save sync' });
-        db.get('SELECT * FROM volley_sync WHERE video_id = ?', [videoId], (err, row) => {
-          if (err) return res.status(500).json({ error: 'Database error' });
-          res.json({ sync: row });
+        db.get('SELECT * FROM volley_sync WHERE video_id = ?', [videoId], (err2, row) => {
+          if (err2) return res.status(500).json({ error: 'Database error' });
+          res.json({
+            sync: {
+              ...row,
+              set_offsets: parseSetOffsets(row?.set_offsets),
+            },
+          });
         });
       }
     );
@@ -413,7 +453,7 @@ router.put('/:videoId/setups', authenticateToken, (req, res) => {
 
 // --- Événements de match : temps morts et remplacements --------------------
 
-const EVENT_KINDS = ['timeout', 'substitution', 'note'];
+const EVENT_KINDS = ['timeout', 'substitution', 'note', 'sanction', 'challenge', 'delay', 'point_adjust'];
 const EVENT_TEAMS = ['home', 'away'];
 
 function safeParsePayload(raw) {
@@ -467,6 +507,38 @@ router.post('/:videoId/events', authenticateToken, (req, res) => {
     const text = String(payload?.text || '').trim().slice(0, 5).toUpperCase();
     if (!text) return res.status(400).json({ error: 'Code libre vide.' });
     cleanPayload = { text };
+  } else if (kind === 'sanction') {
+    const card = ['Y', 'R', 'E', 'D'].includes(String(payload?.card || '').toUpperCase())
+      ? String(payload.card).toUpperCase()
+      : 'Y';
+    const player = payload?.player != null && payload.player !== '' ? Number(payload.player) : null;
+    cleanPayload = {
+      card,
+      player,
+      reason: String(payload?.reason || '').trim().slice(0, 80),
+      awardOpponentPoint: card === 'R',
+    };
+  } else if (kind === 'delay') {
+    const card = String(payload?.card || 'Y').toUpperCase() === 'R' ? 'R' : 'Y';
+    cleanPayload = {
+      card,
+      reason: String(payload?.reason || 'Retard de jeu').trim().slice(0, 80),
+      awardOpponentPoint: card === 'R',
+    };
+  } else if (kind === 'challenge') {
+    const outcome = ['won', 'lost', 'replay'].includes(String(payload?.outcome || ''))
+      ? String(payload.outcome)
+      : 'won';
+    cleanPayload = {
+      outcome,
+      reason: String(payload?.reason || 'Video Check').trim().slice(0, 80),
+    };
+  } else if (kind === 'point_adjust') {
+    const delta = Number(payload?.delta) || 1;
+    cleanPayload = {
+      delta,
+      reason: String(payload?.reason || 'Décision arbitrale').trim().slice(0, 80),
+    };
   }
 
   const setNumber = Number(set_number) > 0 ? Number(set_number) : null;
@@ -582,6 +654,82 @@ router.delete('/:videoId/claims/:setNumber', authenticateToken, (req, res) => {
       }
     );
   });
+});
+
+
+// ---------------------------------------------------------------------------
+// Analyse Multi-Matchs & Scouting Adversaire (Points 5 & 7)
+// Récupère en une seule requête les vidéos, actions, événements et setups
+// pour une liste de videoIds sélectionnés.
+// ---------------------------------------------------------------------------
+router.post('/multi-match-data', authenticateToken, (req, res) => {
+  const rawIds = Array.isArray(req.body?.videoIds) ? req.body.videoIds : [];
+  const videoIds = rawIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0);
+  if (videoIds.length === 0) {
+    return res.json({ matches: [] });
+  }
+
+  const placeholders = videoIds.map(() => '?').join(',');
+  db.all(
+    `SELECT v.*, m.status AS match_status, m.finished_at,
+            COALESCE(m.home_team_id, v.home_team_id) AS resolved_home_team_id,
+            COALESCE(m.away_team_id, v.away_team_id) AS resolved_away_team_id
+       FROM videos v
+       LEFT JOIN volley_matches m ON m.video_id = v.id
+      WHERE v.id IN (${placeholders}) AND COALESCE(v.deleted, 0) = 0
+      ORDER BY v.created_at DESC, v.id DESC`,
+    videoIds,
+    (err, videos) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!videos || videos.length === 0) return res.json({ matches: [] });
+
+      db.all(
+        `SELECT * FROM volley_actions
+          WHERE video_id IN (${placeholders}) AND COALESCE(deleted, 0) = 0
+          ORDER BY video_id ASC, action_index ASC`,
+        videoIds,
+        (err2, allActions) => {
+          if (err2) return res.status(500).json({ error: 'Database error' });
+
+          db.all(
+            `SELECT * FROM volley_events
+              WHERE video_id IN (${placeholders}) AND COALESCE(deleted, 0) = 0
+              ORDER BY video_id ASC, COALESCE(set_number, 1) ASC, COALESCE(point_number, 0) ASC, id ASC`,
+            videoIds,
+            (err3, allEvents) => {
+              if (err3) return res.status(500).json({ error: 'Database error' });
+
+              let pending = videos.length;
+              const matchesMap = new Map();
+
+              videos.forEach((v) => {
+                const vActions = (allActions || []).filter((a) => Number(a.video_id) === Number(v.id));
+                const vEvents = (allEvents || [])
+                  .filter((ev) => Number(ev.video_id) === Number(v.id))
+                  .map(withPayload);
+
+                getSetups(`video:${v.id}`, (errS, setups) => {
+                  matchesMap.set(Number(v.id), {
+                    video: v,
+                    actions: vActions,
+                    events: vEvents,
+                    setups: setups || {},
+                  });
+                  pending -= 1;
+                  if (pending === 0) {
+                    const ordered = videoIds
+                      .map((id) => matchesMap.get(id))
+                      .filter(Boolean);
+                    res.json({ matches: ordered });
+                  }
+                });
+              });
+            }
+          );
+        }
+      );
+    }
+  );
 });
 
 module.exports = router;

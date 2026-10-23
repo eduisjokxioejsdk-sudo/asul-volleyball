@@ -1,6 +1,6 @@
-/* ============================================================
-   ASUL â€” Warm Productivity UI
-   Deep warm charcoal Â· Soft cream text Â· Amber accent
+﻿/* ============================================================
+   ASUL Ã¢â‚¬â€ Warm Productivity UI
+   Deep warm charcoal Ã‚Â· Soft cream text Ã‚Â· Amber accent
    Optimized for 5h+ eye comfort (low contrast, warm tones)
    ============================================================ */
 
@@ -11,48 +11,56 @@
   box-sizing: border-box;
 }
 
-/* === Color Palette â€” Warm & Low Contrast === */
+/* === Color Palette â€” Pro High-Tech Volleyball (Noir / Gris / Bleu Ã‰lectrique) === */
 :root {
-  --bg-deep: #151311;
-  --bg-primary: #1b1917;
-  --bg-secondary: #201e1b;
-  --bg-tertiary: #262420;
-  --bg-card: rgba(32, 30, 27, 0.88);
-  --bg-card-hover: rgba(38, 36, 32, 0.94);
-  --bg-glass: rgba(32, 30, 27, 0.78);
-  --bg-glass-border: rgba(232, 224, 213, 0.06);
+  --bg-deep: #080a0f;
+  --bg-primary: #0d1117;
+  --bg-secondary: #131923;
+  --bg-tertiary: #1b2333;
+  --bg-card: rgba(19, 25, 35, 0.88);
+  --bg-card-hover: rgba(27, 35, 51, 0.95);
+  --bg-glass: rgba(13, 17, 23, 0.85);
+  --bg-glass-border: rgba(56, 189, 248, 0.14);
 
-  /* Accent: warm amber instead of aggressive red */
-  --accent: #c8965c;
-  --accent-soft: #d4a76a;
-  --accent-dark: #a07542;
-  --accent-glow: 0 0 8px rgba(200, 150, 92, 0.15), 0 0 16px rgba(200, 150, 92, 0.06);
-  --accent-glow-strong: 0 0 12px rgba(200, 150, 92, 0.2), 0 0 24px rgba(200, 150, 92, 0.08);
+  /* Primary Accent: Electric Azure / Cyber Blue */
+  --accent: #0ea5e9;
+  --accent-soft: #38bdf8;
+  --accent-dark: #0284c7;
+  --accent-glow: 0 0 12px rgba(14, 165, 233, 0.35), 0 0 24px rgba(14, 165, 233, 0.12);
+  --accent-glow-strong: 0 0 16px rgba(56, 189, 248, 0.5), 0 0 32px rgba(14, 165, 233, 0.25);
 
-  --accent-team2: #7a7874;
-  --accent-team2-glow: 0 0 6px rgba(122, 120, 116, 0.12);
+  --accent-team2: #64748b;
+  --accent-team2-glow: 0 0 8px rgba(100, 116, 139, 0.2);
 
-  /* Text: warm cream instead of pure white */
-  --text-primary: #e8e0d5;
-  --text-secondary: #d4ccc0;
-  --text-muted: #a09888;
-  --text-accent: #c8965c;
-  --text-team2: #bfb9ae;
+  /* Volleyball Semantic Colors */
+  --color-point: #22c55e;
+  --color-fault: #ef4444;
+  --color-positive: #f59e0b;
+  --color-setter: #0ea5e9;
+  --color-block: #a855f7;
+  --color-defense: #06b6d4;
 
-  --border-subtle: rgba(232, 224, 213, 0.06);
-  --border-hover: rgba(232, 224, 213, 0.12);
-  --border-accent: rgba(200, 150, 92, 0.25);
-  --border-team2: rgba(122, 120, 116, 0.2);
+  /* Text: High Contrast Crisp White & Clean Slates */
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #8b949e;
+  --text-accent: #38bdf8;
+  --text-team2: #94a3b8;
 
-  --gradient-primary: linear-gradient(135deg, #1b1917 0%, #201e1b 50%, #1b1917 100%);
-  --gradient-card: linear-gradient(145deg, rgba(32, 30, 27, 0.92) 0%, rgba(38, 36, 32, 0.8) 100%);
-  --gradient-accent: linear-gradient(135deg, #c8965c 0%, #a07542 100%);
-  --gradient-mixed: linear-gradient(135deg, #c8965c 0%, #7a7874 100%);
-  --gradient-glow: radial-gradient(ellipse at 50% 0%, rgba(200, 150, 92, 0.04) 0%, transparent 60%);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(56, 189, 248, 0.35);
+  --border-accent: rgba(14, 165, 233, 0.45);
+  --border-team2: rgba(100, 116, 139, 0.3);
 
-  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.3);
-  --shadow-accent: 0 0 12px rgba(200, 150, 92, 0.08);
+  --gradient-primary: linear-gradient(135deg, #0d1117 0%, #131923 50%, #0d1117 100%);
+  --gradient-card: linear-gradient(145deg, rgba(19, 25, 35, 0.95) 0%, rgba(27, 35, 51, 0.85) 100%);
+  --gradient-accent: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  --gradient-mixed: linear-gradient(135deg, #0ea5e9 0%, #64748b 100%);
+  --gradient-glow: radial-gradient(ellipse at 50% 0%, rgba(14, 165, 233, 0.08) 0%, transparent 65%);
+
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.55);
+  --shadow-accent: 0 0 16px rgba(14, 165, 233, 0.2);
 
   --radius-sm: 6px;
   --radius: 10px;
@@ -95,7 +103,7 @@ html, body, #root {
   z-index: 1;
 }
 
-/* === Animations â€” subtle & slow for eye comfort === */
+/* === Animations Ã¢â‚¬â€ subtle & slow for eye comfort === */
 
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -195,7 +203,7 @@ html, body, #root {
   background: var(--bg-deep);
   padding: 28px;
   position: relative;
-  /* La page de connexion peut elle aussi déborder : on la laisse défiler. */
+  /* La page de connexion peut elle aussi dÃ©border : on la laisse dÃ©filer. */
   overflow: auto;
 }
 
@@ -343,7 +351,7 @@ html, body, #root {
   border-radius: var(--radius-sm);
 }
 
-/* Primary Button â€” Amber */
+/* Primary Button Ã¢â‚¬â€ Amber */
 .btn-primary {
   background: var(--accent);
   color: #151311;
@@ -821,14 +829,14 @@ html, body, #root {
 }
 
 /* ============================================================
-   Video Dashboard — full-viewport workspace
+   Video Dashboard â€” full-viewport workspace
    ============================================================ */
 .video-dashboard {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--bg-deep);
-  /* Les pages restent défilables dans les deux sens : rien n'est tronqué. */
+  /* Les pages restent dÃ©filables dans les deux sens : rien n'est tronquÃ©. */
   overflow: auto;
 }
 
@@ -857,7 +865,7 @@ html, body, #root {
   height: 100%;
 }
 
-/* === Video Tabs — compact toolbar === */
+/* === Video Tabs â€” compact toolbar === */
 .video-tabs,
 .video-tabs-bar {
   display: flex;
@@ -1650,7 +1658,7 @@ select:disabled {
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* Points â€” Bold numbers */
+/* Points Ã¢â‚¬â€ Bold numbers */
 .timeline-number-bold {
   width: 32px;
   text-align: center;
@@ -1686,8 +1694,8 @@ select:disabled {
   opacity: 0.85;
 }
 
-/* Événements de match marqués sur la frise : temps morts (T1 / T2) et
-   remplacements (R1 / R2), posés au niveau du point où ils surviennent. */
+/* Ã‰vÃ©nements de match marquÃ©s sur la frise : temps morts (T1 / T2) et
+   remplacements (R1 / R2), posÃ©s au niveau du point oÃ¹ ils surviennent. */
 .timeline-event-badges {
   position: absolute;
   bottom: -15px;
@@ -1725,7 +1733,7 @@ select:disabled {
   color: #7fbcf5;
 }
 
-/* Équipe 2 : bordure pointillée, pour distinguer les deux camps d'un œil. */
+/* Ã‰quipe 2 : bordure pointillÃ©e, pour distinguer les deux camps d'un Å“il. */
 .timeline-event.away {
   border-style: dashed;
 }
@@ -1737,7 +1745,7 @@ select:disabled {
 }
 
 /* ============================================================
-   SET BADGES â€” timeline & view sidebar
+   SET BADGES Ã¢â‚¬â€ timeline & view sidebar
    ============================================================ */
 
 .timeline-sets-indicator {
@@ -1815,7 +1823,7 @@ select:disabled {
 }
 
 /* ============================================================
-   SET TIMELINE ROWS â€” one per set
+   SET TIMELINE ROWS Ã¢â‚¬â€ one per set
    ============================================================ */
 
 .set-timeline-row {
@@ -2137,7 +2145,7 @@ html, body, #root, .app, .page-shell {
   opacity: 0.8;
 }
 
-/* === Barre des tâches en arrière-plan (téléchargements / exports) === */
+/* === Barre des tÃ¢ches en arriÃ¨re-plan (tÃ©lÃ©chargements / exports) === */
 .bg-tasks-bar {
   position: fixed;
   right: 16px;
@@ -2186,7 +2194,7 @@ html, body, #root, .app, .page-shell {
   font-size: 11px;
   font-weight: 700;
   color: var(--bg-deep, #151311);
-  background: var(--accent, #c8965c);
+  background: var(--accent, #0ea5e9);
   border-radius: 999px;
 }
 
@@ -2302,12 +2310,12 @@ html, body, #root, .app, .page-shell {
 
 .bg-task-progress-bar {
   height: 100%;
-  background: var(--gradient-accent, linear-gradient(135deg, #c8965c 0%, #a07542 100%));
+  background: var(--gradient-accent, linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%));
   border-radius: 999px;
 }
 
 /* ============================================================
-   Sélecteur de mode (accueil)
+   SÃ©lecteur de mode (accueil)
    ============================================================ */
 .mode-selector {
   display: flex;
@@ -2359,8 +2367,8 @@ html, body, #root, .app, .page-shell {
 .dv-nav {
   gap: 10px;
   flex-wrap: nowrap;
-  /* Les boutons d'action (dont « Fenêtres ») restent collés au bord droit, y
-     compris quand la barre passe à la ligne : sinon le menu s'ouvre hors écran
+  /* Les boutons d'action (dont Â« FenÃªtres Â») restent collÃ©s au bord droit, y
+     compris quand la barre passe Ã  la ligne : sinon le menu s'ouvre hors Ã©cran
      sur la gauche et son contenu devient illisible. */
   justify-content: flex-end;
   row-gap: 6px;
@@ -2519,8 +2527,8 @@ html, body, #root, .app, .page-shell {
   fill: rgba(200, 150, 92, 0.24);
 }
 
-/* La vidéo occupe la majeure partie de l'écran ; le panneau de codage
-   reste à droite et la page défile si le contenu est long. */
+/* La vidÃ©o occupe la majeure partie de l'Ã©cran ; le panneau de codage
+   reste Ã  droite et la page dÃ©file si le contenu est long. */
 .dv-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(340px, 32vw, 460px);
@@ -2537,7 +2545,7 @@ html, body, #root, .app, .page-shell {
   gap: 8px;
 }
 
-/* Vidéo : très grande, ratio 16/9, sans dépasser la fenêtre */
+/* VidÃ©o : trÃ¨s grande, ratio 16/9, sans dÃ©passer la fenÃªtre */
 .dv-player-col .video-player-wrapper {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -2564,7 +2572,7 @@ html, body, #root, .app, .page-shell {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
-  /* Pas de confinement : c'est la page entière qui défile (verticalement et
+  /* Pas de confinement : c'est la page entiÃ¨re qui dÃ©file (verticalement et
      horizontalement), donc les longues listes/tableaux restent accessibles. */
   overflow: visible;
 }
@@ -2647,7 +2655,7 @@ html, body, #root, .app, .page-shell {
   border-top: 1px solid var(--border-subtle);
 }
 
-/* Tableaux compacts du rapport (ventilations, zones, rotations…) */
+/* Tableaux compacts du rapport (ventilations, zones, rotationsâ€¦) */
 .report-compact {
   font-size: 12px;
 }
@@ -2757,7 +2765,7 @@ html, body, #root, .app, .page-shell {
   justify-content: flex-end;
 }
 
-/* Le document imprimable n'apparaît que pendant l'impression. */
+/* Le document imprimable n'apparaÃ®t que pendant l'impression. */
 .report-print {
   display: none;
 }
@@ -2905,7 +2913,7 @@ html, body, #root, .app, .page-shell {
   text-align: center;
 }
 
-/* Rappel des raccourcis de gestion vidéo (touches réelles uniquement) */
+/* Rappel des raccourcis de gestion vidÃ©o (touches rÃ©elles uniquement) */
 .dv-shortcuts {
   display: flex;
   flex-wrap: wrap;
@@ -3208,7 +3216,7 @@ html, body, #root, .app, .page-shell {
   margin-bottom: 10px;
 }
 
-/* Console permissive : blocs de 5 + aperçu */
+/* Console permissive : blocs de 5 + aperÃ§u */
 .dv-buffer-block {
   font-family: var(--font-mono);
   padding: 2px 6px;
@@ -3250,7 +3258,7 @@ html, body, #root, .app, .page-shell {
   color: #f87171;
 }
 
-/* Séquences (point par point) */
+/* SÃ©quences (point par point) */
 .dv-seq-summary {
   font-size: 12px;
   color: var(--text-muted);
@@ -3530,7 +3538,7 @@ html, body, #root, .app, .page-shell {
   margin-top: 2px;
 }
 
-/* Conteneur pleine largeur de la page live (le codage + le terrain côte à côte) */
+/* Conteneur pleine largeur de la page live (le codage + le terrain cÃ´te Ã  cÃ´te) */
 .dv-live-body {
   max-width: 1320px;
   margin: 0 auto;
@@ -3560,7 +3568,7 @@ html, body, #root, .app, .page-shell {
   outline-offset: 1px;
 }
 
-/* Paramètres : assignations + membres */
+/* ParamÃ¨tres : assignations + membres */
 .dv-assign-list {
   display: flex;
   flex-wrap: wrap;
@@ -3649,7 +3657,7 @@ html, body, #root, .app, .page-shell {
 
 
 /* ==========================================================================
-   ASUL — Terrain de match 2D (MatchBoard) + aide au codage + bilan de match
+   ASUL â€” Terrain de match 2D (MatchBoard) + aide au codage + bilan de match
    ========================================================================== */
 
 .mb-board {
@@ -3964,7 +3972,7 @@ html, body, #root, .app, .page-shell {
   color: var(--accent);
 }
 
-/* Bilan de match standardisé */
+/* Bilan de match standardisÃ© */
 .report-wrap {
   overflow-x: auto;
   border: 1px solid var(--border-subtle);
@@ -3993,7 +4001,7 @@ table.report td {
   margin-bottom: 24px;
 }
 
-/* Cartes de fiche : presque la taille des cartes vidéo (aperçu + 2 boutons). */
+/* Cartes de fiche : presque la taille des cartes vidÃ©o (aperÃ§u + 2 boutons). */
 .tj-home-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -4027,7 +4035,7 @@ table.report td {
   cursor: pointer;
 }
 
-/* Aperçu décoratif : mini terrain, filet et trois flèches types. */
+/* AperÃ§u dÃ©coratif : mini terrain, filet et trois flÃ¨ches types. */
 .tj-home-thumb {
   display: block;
   height: 104px;
@@ -4096,8 +4104,8 @@ table.report td {
   gap: 12px;
 }
 
-/* La barre reste collée en haut de la zone de défilement : les boutons
-   Services / Attaque et la légende restent accessibles pendant qu'on descend
+/* La barre reste collÃ©e en haut de la zone de dÃ©filement : les boutons
+   Services / Attaque et la lÃ©gende restent accessibles pendant qu'on descend
    dans les terrains des joueurs. */
 .tj-toolbar {
   display: flex;
@@ -4111,7 +4119,7 @@ table.report td {
   background: var(--bg-deep);
 }
 
-/* Réglage du raccourci Services ↔ Attaque : fenêtre compacte. */
+/* RÃ©glage du raccourci Services â†” Attaque : fenÃªtre compacte. */
 .tj-shortcuts-modal {
   max-width: 460px;
   padding: 24px;
@@ -4122,7 +4130,7 @@ table.report td {
   font-size: 18px;
 }
 
-/* Menu de filtre de la consultation : issues affichées sur les terrains. */
+/* Menu de filtre de la consultation : issues affichÃ©es sur les terrains. */
 .tj-filter-menu {
   position: relative;
 }
@@ -4142,7 +4150,7 @@ table.report td {
   overflow-y: auto;
 }
 
-/* Bouton trop près du bord gauche (barre passée à la ligne) : menu vers la droite. */
+/* Bouton trop prÃ¨s du bord gauche (barre passÃ©e Ã  la ligne) : menu vers la droite. */
 .tj-filter-dropdown.open-right {
   right: auto;
   left: 0;
@@ -4227,7 +4235,7 @@ table.report td {
   flex: 1;
 }
 
-/* Rappel de la touche qui bascule Services ↔ Attaque. */
+/* Rappel de la touche qui bascule Services â†” Attaque. */
 .tj-toolbar-key {
   display: inline-flex;
   align-items: center;
@@ -4365,8 +4373,8 @@ table.report td {
   touch-action: none;
 }
 
-/* Teinte du terrain selon la frappe marquée : bleuté pour le service, ambré
-   pour l'attaque — impossible de confondre les deux onglets, y compris en
+/* Teinte du terrain selon la frappe marquÃ©e : bleutÃ© pour le service, ambrÃ©
+   pour l'attaque â€” impossible de confondre les deux onglets, y compris en
    version agrandie. */
 .tj-court-svg.tj-kind-serve {
   background: rgba(88, 124, 172, 0.16);
@@ -4443,18 +4451,18 @@ table.report td {
   box-shadow: inset 0 0 0 1px var(--border-accent);
 }
 
-/* Consultation : aucun tracé possible, le curseur reste neutre. */
+/* Consultation : aucun tracÃ© possible, le curseur reste neutre. */
 .tj-card.readonly .tj-court-svg {
   cursor: default;
 }
 
-/* Consultation : le terrain sert à désigner une zone de flèches au glissement. */
+/* Consultation : le terrain sert Ã  dÃ©signer une zone de flÃ¨ches au glissement. */
 .tj-card.readonly .tj-court-svg.selectable {
   cursor: crosshair;
 }
 
-/* Zone désignée : cadre violet, les flèches traversées passent en violet
-   « flashy » (les autres s'effacent) — impossible à confondre avec le code
+/* Zone dÃ©signÃ©e : cadre violet, les flÃ¨ches traversÃ©es passent en violet
+   Â« flashy Â» (les autres s'effacent) â€” impossible Ã  confondre avec le code
    couleur des issues. */
 .tj-sel-rect {
   fill: rgba(192, 38, 255, 0.16);
@@ -4493,8 +4501,8 @@ table.report td {
   color: #ffffff;
 }
 
-/* Mode consultation : le bouton « Consulter » clignote cinq secondes à
-   l'ouverture de la fiche, pour signaler le mode d'ouverture par défaut. */
+/* Mode consultation : le bouton Â« Consulter Â» clignote cinq secondes Ã 
+   l'ouverture de la fiche, pour signaler le mode d'ouverture par dÃ©faut. */
 @keyframes tjModeBlink {
   0%, 100% {
     box-shadow: 0 0 0 0 rgba(192, 38, 255, 0);
@@ -4571,7 +4579,7 @@ table.report td {
   display: grid;
 
 /* ============================================================
-   Mise à jour de l'application (bandeau + « Quoi de neuf »)
+   Mise Ã  jour de l'application (bandeau + Â« Quoi de neuf Â»)
    ============================================================ */
 .update-banner {
   display: flex;
@@ -4842,7 +4850,7 @@ table.report tbody tr:hover td {
   color: #14120f;
 }
 
-/* --- Page plein écran : bilan de match (tableau complet) --- */
+/* --- Page plein Ã©cran : bilan de match (tableau complet) --- */
 .dv-fullpage {
   position: fixed;
   inset: 0;
@@ -4995,7 +5003,7 @@ table.report tbody tr:hover td {
 }
 
 /* ==========================================================================
-   Terrain de volley (SVG) — petite frise sous la vidéo
+   Terrain de volley (SVG) â€” petite frise sous la vidÃ©o
    ========================================================================== */
 .volley-court {
   display: block;
@@ -5029,19 +5037,19 @@ table.report tbody tr:hover td {
 }
 
 /* ==========================================================================
-   Canevas de codage : les fenêtres (vidéo, zone de code, score, terrain,
+   Canevas de codage : les fenÃªtres (vidÃ©o, zone de code, score, terrain,
    positions, actions, raccourcis, aide) remplacent l'ancienne grille fixe.
    ========================================================================== */
 
 /* Terrain en grand : le plafond de hauteur du terrain ne s'applique plus dans
-   la fenêtre « terrain » (la version compacte garde son propre plafond). */
+   la fenÃªtre Â« terrain Â» (la version compacte garde son propre plafond). */
 .floating-panel .volley-court {
   max-height: none;
   min-height: 200px;
 }
 
-/* Colonne unique des onglets autres que le codage (séquences, playlist, bilan,
-   distribution, paramètres) : le codage utilise le canevas de fenêtres. */
+/* Colonne unique des onglets autres que le codage (sÃ©quences, playlist, bilan,
+   distribution, paramÃ¨tres) : le codage utilise le canevas de fenÃªtres. */
 .dv-main-col {
   display: flex;
   flex-direction: column;
@@ -5052,7 +5060,7 @@ table.report tbody tr:hover td {
   min-width: 0;
 }
 
-/* Vitesse de lecture affichée dans la barre de titre de la fenêtre vidéo */
+/* Vitesse de lecture affichÃ©e dans la barre de titre de la fenÃªtre vidÃ©o */
 .dv-speed-badge {
   padding: 1px 6px;
   border-radius: 6px;
@@ -5065,8 +5073,8 @@ table.report tbody tr:hover td {
 }
 
 /* ==========================================================================
-   Fenêtres de la page de codage : déplaçables (barre de titre), redimension-
-   nables (bords droit/bas + coin), fermables (sauf vidéo et zone de code).
+   FenÃªtres de la page de codage : dÃ©plaÃ§ables (barre de titre), redimension-
+   nables (bords droit/bas + coin), fermables (sauf vidÃ©o et zone de code).
    ========================================================================== */
 
 .dv-canvas {
@@ -5085,6 +5093,20 @@ table.report tbody tr:hover td {
   border-radius: 12px;
   box-shadow: var(--shadow-card);
   overflow: hidden;
+  isolation: isolate;
+  z-index: 2;
+}
+
+.floating-panel.panel-video {
+  z-index: 1;
+}
+
+.floating-panel.active {
+  z-index: 10;
+}
+
+.floating-panel.panel-video.active {
+  z-index: 1;
 }
 
 .floating-panel:hover {
@@ -5194,7 +5216,7 @@ table.report tbody tr:hover td {
   height: 18px;
 }
 
-/* Coin de redimensionnement : petit repère visuel permanent */
+/* Coin de redimensionnement : petit repÃ¨re visuel permanent */
 .fp-handle-se::after {
   content: '';
   position: absolute;
@@ -5212,7 +5234,7 @@ table.report tbody tr:hover td {
   display: none;
 }
 
-/* Fenêtre vidéo : l'image remplit le cadre */
+/* FenÃªtre vidÃ©o : l'image remplit le cadre */
 .floating-panel.panel-video .fp-body {
   display: flex;
   flex-direction: column;
@@ -5238,7 +5260,7 @@ table.report tbody tr:hover td {
   display: block;
 }
 
-/* Fenêtre terrain : le terrain s'étire dans le cadre */
+/* FenÃªtre terrain : le terrain s'Ã©tire dans le cadre */
 .floating-panel.panel-court .fp-body {
   display: flex;
   flex-direction: column;
@@ -5251,7 +5273,7 @@ table.report tbody tr:hover td {
   max-height: none;
 }
 
-/* Surbrillance du joueur dont le numéro est en cours de saisie */
+/* Surbrillance du joueur dont le numÃ©ro est en cours de saisie */
 @keyframes vcPulse {
   0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
@@ -5261,7 +5283,7 @@ table.report tbody tr:hover td {
   animation: vcPulse 1.1s ease-in-out infinite;
 }
 
-/* Menu « Fenêtres » */
+/* Menu Â« FenÃªtres Â» */
 .dv-panels-menu {
   position: relative;
 }
@@ -5277,13 +5299,13 @@ table.report tbody tr:hover td {
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
-  /* Le menu ne dépasse jamais le bas de la fenêtre : il devient défilable. */
+  /* Le menu ne dÃ©passe jamais le bas de la fenÃªtre : il devient dÃ©filable. */
   max-height: calc(100vh - 110px);
   overflow-y: auto;
 }
 
-/* Bouton trop près du bord gauche (barre d'outils passée à la ligne) :
-   le menu s'ouvre vers la droite pour rester entièrement lisible. */
+/* Bouton trop prÃ¨s du bord gauche (barre d'outils passÃ©e Ã  la ligne) :
+   le menu s'ouvre vers la droite pour rester entiÃ¨rement lisible. */
 .dv-panels-dropdown.open-right {
   right: auto;
   left: 0;
@@ -5368,7 +5390,7 @@ table.report tbody tr:hover td {
   color: var(--text-muted);
 }
 
-/* Profils de fenêtres : enregistrer / appliquer une disposition */
+/* Profils de fenÃªtres : enregistrer / appliquer une disposition */
 .dv-panels-profiles {
   display: flex;
   flex-direction: column;
@@ -5413,7 +5435,7 @@ table.report tbody tr:hover td {
   white-space: nowrap;
 }
 
-/* Réglage des raccourcis clavier (onglet Paramètres) */
+/* RÃ©glage des raccourcis clavier (onglet ParamÃ¨tres) */
 .sc-settings {
   display: flex;
   flex-direction: column;
@@ -5467,7 +5489,7 @@ table.report tbody tr:hover td {
 }
 
 /* ==========================================================================
-   Défilement : plus aucune page tronquée, tout reste accessible
+   DÃ©filement : plus aucune page tronquÃ©e, tout reste accessible
    ========================================================================== */
 html,
 body {
@@ -5479,7 +5501,7 @@ body {
   overflow-y: auto;
 }
 
-/* Les conteneurs laissent passer le contenu : c'est la page qui défile */
+/* Les conteneurs laissent passer le contenu : c'est la page qui dÃ©file */
 .video-dashboard,
 .vd-workspace,
 .vd-main,
@@ -5501,7 +5523,7 @@ body {
   max-width: 100%;
 }
 
-/* Barres d'outils : retour à la ligne plutôt que débordement */
+/* Barres d'outils : retour Ã  la ligne plutÃ´t que dÃ©bordement */
 .video-tabs,
 .dv-nav,
 .navbar {
@@ -5519,7 +5541,7 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* Contenus longs : ils se replient au lieu de déborder */
+/* Contenus longs : ils se replient au lieu de dÃ©border */
 .dv-seq-line,
 .dv-rally,
 .dv-preview-line,
@@ -5535,7 +5557,7 @@ body {
   white-space: nowrap;
 }
 
-/* Sur petit écran, les fenêtres modales rentrent dans la page */
+/* Sur petit Ã©cran, les fenÃªtres modales rentrent dans la page */
 @media (max-width: 900px) {
   .modal {
     max-width: 94vw !important;
@@ -5581,7 +5603,7 @@ body {
 }
 
 /* ============================================================================
-   Caméra du match : flux vidéo différé (téléphone → serveur → PCs)
+   CamÃ©ra du match : flux vidÃ©o diffÃ©rÃ© (tÃ©lÃ©phone â†’ serveur â†’ PCs)
    ========================================================================== */
 
 .live-camera {
@@ -5680,7 +5702,7 @@ body {
   color: var(--danger, #e05252);
 }
 
-/* Écran du téléphone (rôle « caméra ») */
+/* Ã‰cran du tÃ©lÃ©phone (rÃ´le Â« camÃ©ra Â») */
 
 .live-camera-page .vd-main {
   display: flex;
@@ -5737,7 +5759,7 @@ body {
   color: #ff8787;
 }
 
-/* La vidéo en direct n'a pas sa place sur une feuille de match imprimée. */
+/* La vidÃ©o en direct n'a pas sa place sur une feuille de match imprimÃ©e. */
 @media print {
   .live-camera,
   .live-camera-page {
@@ -5746,7 +5768,7 @@ body {
 }
 
 /* ============================================================================
-   Formation (leçons) — style « Duolingo »
+   Formation (leÃ§ons) â€” style Â« Duolingo Â»
    ========================================================================== */
 .ls-path-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .ls-path-head p { max-width: 520px; }
@@ -5791,10 +5813,10 @@ body {
 .ls-done-badge { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); font-weight: 800; font-size: 18px; }
 
 /* ============================================================================
-   ============  ASUL MODERN — refonte UI (hors page de codage)  ==============
-   Thème sombre haute lisibilité · accent bleu/rouge ASUL · animations ·
-   décor 3D léger (transforms CSS + SVG). Actif seulement sous .asul-modern :
-   la page de codage DataVolley reste sur le thème d'origine.
+   ============  ASUL MODERN â€” refonte UI (hors page de codage)  ==============
+   ThÃ¨me sombre haute lisibilitÃ© Â· accent bleu/rouge ASUL Â· animations Â·
+   dÃ©cor 3D lÃ©ger (transforms CSS + SVG). Actif seulement sous .asul-modern :
+   la page de codage DataVolley reste sur le thÃ¨me d'origine.
    ========================================================================== */
 .asul-modern {
   --bg-deep: #070b16;
@@ -5852,7 +5874,7 @@ body {
   background: var(--bg-deep);
 }
 
-/* Fond animé : aurore + trame lumineuse */
+/* Fond animÃ© : aurore + trame lumineuse */
 .asul-modern::before {
   content: '';
   position: fixed;
@@ -5919,7 +5941,7 @@ body {
 .asul-modern .btn-danger { background: linear-gradient(135deg, #e84848, #b32e2e); color: #fff; }
 .asul-modern .btn-success { background: linear-gradient(135deg, #2fbf72, #1f8f54); color: #fff; }
 
-/* --- Sélecteur de mode --- */
+/* --- SÃ©lecteur de mode --- */
 .asul-modern .mode-selector {
   background: rgba(12, 19, 36, 0.6);
   border: 1px solid var(--border-subtle);
@@ -5938,7 +5960,7 @@ body {
 .asul-modern h1, .asul-modern h2 { letter-spacing: -0.025em; }
 .asul-modern .videos-header h2, .asul-modern .sub-section-header { font-weight: 800; color: var(--text-primary); }
 
-/* --- Cartes (vidéos / live) : profondeur 3D au survol --- */
+/* --- Cartes (vidÃ©os / live) : profondeur 3D au survol --- */
 .asul-modern .video-card,
 .asul-modern .live-card {
   background: var(--gradient-card);
@@ -5958,7 +5980,7 @@ body {
 .asul-modern .video-card-thumbnail { border-bottom: 1px solid var(--border-subtle); }
 .asul-modern .video-card-body h3 { font-size: 16px; font-weight: 700; color: var(--text-primary); }
 
-/* --- Sections « live » --- */
+/* --- Sections Â« live Â» --- */
 .asul-modern .live-section {
   background: var(--gradient-card);
   border: 1px solid var(--border-subtle);
@@ -6020,7 +6042,7 @@ body {
 .asul-modern .auth-link a { color: var(--accent-soft); font-weight: 700; }
 .asul-modern .error-message { background: rgba(232, 72, 72, 0.14); border: 1px solid rgba(232, 72, 72, 0.4); color: #ffb3b3; border-radius: 12px; }
 
-/* --- Héro 3D (Accueil / Entraînement) --- */
+/* --- HÃ©ro 3D (Accueil / EntraÃ®nement) --- */
 .asul-hero {
   position: relative;
   overflow: hidden;
@@ -6066,7 +6088,7 @@ body {
 .asul-hero p { color: var(--text-secondary); max-width: 540px; font-size: 15.5px; margin: 0; }
 .asul-hero-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
 
-/* Ballon animé (décor 3D léger) */
+/* Ballon animÃ© (dÃ©cor 3D lÃ©ger) */
 .asul-ball-stage { flex: 0 0 210px; width: 210px; height: 210px; display: flex; align-items: center; justify-content: center; perspective: 700px; }
 .asul-ball { width: 156px; height: 156px; animation: asul-ball-float 5.5s ease-in-out infinite; filter: drop-shadow(0 26px 30px rgba(0, 0, 0, 0.55)); }
 .asul-ball svg { width: 100%; height: 100%; display: block; }
@@ -6075,7 +6097,7 @@ body {
   50% { transform: translateY(10px) rotateY(14deg) rotate(6deg); }
 }
 
-/* --- Leçons (Formation) : pastilles 3D --- */
+/* --- LeÃ§ons (Formation) : pastilles 3D --- */
 .asul-modern .ls-node {
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.4);
   border-width: 2px;
@@ -6095,7 +6117,7 @@ body {
 
 
 /* ============================================================
-   Rapport global des trajectoires (toutes les fiches d'une équipe)
+   Rapport global des trajectoires (toutes les fiches d'une Ã©quipe)
    ============================================================ */
 .tj-report-bar {
   display: flex;
@@ -6128,7 +6150,7 @@ body {
   font-size: 13px;
 }
 
-/* Tri des attaques par poste de départ (zone 4, 3, 2 ou arrière). */
+/* Tri des attaques par poste de dÃ©part (zone 4, 3, 2 ou arriÃ¨re). */
 .tj-zone-filter {
   display: inline-flex;
   align-items: center;
@@ -6150,7 +6172,7 @@ body {
   font-size: 12px;
 }
 
-/* Pastilles des matchs réunis par le rapport (une par fiche). */
+/* Pastilles des matchs rÃ©unis par le rapport (une par fiche). */
 .tj-report-matches {
   display: flex;
   align-items: center;
@@ -6186,8 +6208,8 @@ body {
   font-weight: 800;
 }
 
-/* Onglet « Tout » du rapport : services et attaque réunis — teinte neutre,
-   entre le bleu du service et l'ambré de l'attaque. */
+/* Onglet Â« Tout Â» du rapport : services et attaque rÃ©unis â€” teinte neutre,
+   entre le bleu du service et l'ambrÃ© de l'attaque. */
 .tj-court-svg.tj-kind-all {
   background: rgba(140, 160, 180, 0.14);
 }
@@ -6216,11 +6238,11 @@ body {
 
 
 /* ==========================================================================
-   MODES DE CODAGE (façon DataVolley) — barre des modes, filtres, liste des
-   codes, fenêtre de rotation, Consultation, Correction, Analyse.
+   MODES DE CODAGE (faÃ§on DataVolley) â€” barre des modes, filtres, liste des
+   codes, fenÃªtre de rotation, Consultation, Correction, Analyse.
    ========================================================================== */
 
-/* --- Barre des modes (Saisie · Consultation · Correction · Analyse) ------- */
+/* --- Barre des modes (Saisie Â· Consultation Â· Correction Â· Analyse) ------- */
 .dvm-bar {
   display: flex;
   align-items: center;
@@ -6344,8 +6366,8 @@ body {
 }
 
 
-/* --- Liste des codes (colonne de droite de l'écran de saisie) ------------- */
-/* UNE SEULE zone de défilement par écran : ici c'est .dvc qui défile
+/* --- Liste des codes (colonne de droite de l'Ã©cran de saisie) ------------- */
+/* UNE SEULE zone de dÃ©filement par Ã©cran : ici c'est .dvc qui dÃ©file
    (Consultation / Correction ; en Saisie, c'est .fp-body). */
 .dvc {
   display: flex;
@@ -6500,8 +6522,8 @@ body {
   padding: 4px 6px 6px;
 }
 
-/* Barre d'outils de la liste : replier / déplier, compteurs, suivi de lecture.
-   Elle reste collée en bas de la zone de défilement. */
+/* Barre d'outils de la liste : replier / dÃ©plier, compteurs, suivi de lecture.
+   Elle reste collÃ©e en bas de la zone de dÃ©filement. */
 .dvc-toolbar {
   position: sticky;
   bottom: 0;
@@ -6582,7 +6604,7 @@ body {
   background: rgba(224, 82, 82, 0.16);
 }
 
-/* Édition directe d'un code (double-clic dans la liste) */
+/* Ã‰dition directe d'un code (double-clic dans la liste) */
 .dvc-edit-hint {
   font-size: 10px;
   font-style: italic;
@@ -6623,7 +6645,7 @@ body {
   padding: 2px 6px;
 }
 
-/* En Saisie, la liste vit dans .fp-body : c'est LUI qui défile, pas .dvc. */
+/* En Saisie, la liste vit dans .fp-body : c'est LUI qui dÃ©file, pas .dvc. */
 .fp-body .dvc {
   flex: none;
   overflow: visible;
@@ -6642,7 +6664,7 @@ body {
 }
 
 
-/* --- Directions d'attaque (terrain à 2 zones, flèches) -------------------- */
+/* --- Directions d'attaque (terrain Ã  2 zones, flÃ¨ches) -------------------- */
 .dirc {
   display: flex;
   flex-direction: column;
@@ -6707,7 +6729,7 @@ body {
   color: var(--text-primary);
 }
 
-/* --- Terrain de direction d'attaque (fenêtre séparée, 2 clics) ----------- */
+/* --- Terrain de direction d'attaque (fenÃªtre sÃ©parÃ©e, 2 clics) ----------- */
 .adc {
   display: flex;
   flex-direction: column;
@@ -6820,7 +6842,7 @@ body {
 }
 
 
-/* --- Fenêtre de rotation (terrain 6 + 6, score, service) ------------------ */
+/* --- FenÃªtre de rotation (terrain 6 + 6, score, service) ------------------ */
 .dvr {
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
@@ -6992,7 +7014,7 @@ body {
 }
 
 
-/* --- Modes Consultation / Correction : deux colonnes (scène + panneau) ---- */
+/* --- Modes Consultation / Correction : deux colonnes (scÃ¨ne + panneau) ---- */
 .dvx-consult,
 .dvx-correct {
   display: grid;
@@ -7029,7 +7051,7 @@ body {
   gap: 10px;
   min-width: 0;
   max-height: calc(100vh - 150px);
-  /* Une seule zone de défilement : c'est .dvc (la liste des codes) qui défile. */
+  /* Une seule zone de dÃ©filement : c'est .dvc (la liste des codes) qui dÃ©file. */
   overflow: hidden;
   padding-right: 2px;
 }
@@ -7156,7 +7178,7 @@ body {
 .rally-item {
 
 
-/* --- Calque de dessin sur la vidéo --------------------------------------- */
+/* --- Calque de dessin sur la vidÃ©o --------------------------------------- */
 
 .video-annot-layer {
   position: relative;
@@ -7400,7 +7422,7 @@ body {
 }
 
 
-/* --- Correction : calage, complétion, contrôle des codes ------------------ */
+/* --- Correction : calage, complÃ©tion, contrÃ´le des codes ------------------ */
 .dvx-sync,
 .dvx-review {
   border: 1px solid var(--border-subtle);
@@ -7554,7 +7576,7 @@ body {
   font-weight: 700;
 }
 
-/* --- Analyse : grille menu / fenêtre / descente vers les actions ---------- */
+/* --- Analyse : grille menu / fenÃªtre / descente vers les actions ---------- */
 .dv-main-analyse {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr) 320px;
@@ -7654,7 +7676,7 @@ body {
   font-size: 11px;
 }
 
-/* --- Fenêtre de commandes (Échap) ---------------------------------------- */
+/* --- FenÃªtre de commandes (Ã‰chap) ---------------------------------------- */
 .dv-command {
   max-width: 460px;
 }
@@ -7724,3 +7746,1714 @@ body {
   }
 }
 
+
+/* ============================================================
+   ASUL PRO 4.0 â€” FUTURISTIC VOLLEY COCKPIT & 4 APPS DESIGN SYSTEM
+   Noir Abyssal Â· Gris Graphisme Â· Bleu Ã‰lectrique Â· Accents Volley
+   ============================================================ */
+
+/* --- Navigation Globale UnifiÃ©e --- */
+.app-global-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 24px;
+  background: rgba(8, 10, 15, 0.92);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.16);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  gap: 16px;
+}
+
+.nav-brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.brand-logo-glow {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 0 16px rgba(14, 165, 233, 0.45);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.brand-ball-icon {
+  animation: pulseBall 3s infinite ease-in-out;
+}
+
+@keyframes pulseBall {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 2px #fff); }
+  50% { transform: scale(1.08); filter: drop-shadow(0 0 6px #38bdf8); }
+}
+
+.brand-titles {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-main {
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #f8fafc;
+  line-height: 1.1;
+}
+
+.brand-pro {
+  color: #38bdf8;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.brand-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #0ea5e9;
+  text-transform: uppercase;
+}
+
+/* --- Menu des 4 Apps --- */
+.nav-apps-menu {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(19, 25, 35, 0.7);
+  padding: 4px 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-app-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.nav-app-btn:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.nav-app-btn.active {
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.15);
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 0 14px rgba(14, 165, 233, 0.25);
+}
+
+.nav-tag-new {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 1px 5px;
+  background: #0284c7;
+  color: #fff;
+  border-radius: 4px;
+  margin-left: 2px;
+}
+
+/* --- Section Droite --- */
+.nav-right-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.nav-match-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(22, 27, 34, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.nav-match-selector .match-label {
+  color: #0ea5e9;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.nav-match-selector .match-select {
+  background: transparent;
+  border: none;
+  color: #f8fafc;
+  font-size: 0.82rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  max-width: 170px;
+}
+
+.nav-match-selector .match-select option {
+  background: #0d1117;
+  color: #f8fafc;
+}
+
+.nav-teams-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+}
+
+.nav-teams-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.nav-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 20px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.status-dot-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+  animation: pulseDot 2s infinite ease-in-out;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.status-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #22c55e;
+  letter-spacing: 0.05em;
+}
+
+.nav-user-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 8px 4px 5px;
+  border-radius: 20px;
+}
+
+.user-initial {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #0ea5e9;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.user-fullname {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.user-logout-btn {
+  color: #94a3b8;
+  padding: 2px;
+  transition: color 0.15s;
+}
+
+.user-logout-btn:hover {
+  color: #ef4444;
+}
+
+/* --- Cockpit 4 Apps (Page Accueil / Hub) --- */
+.hub-cockpit-section {
+  margin-bottom: 36px;
+}
+
+.hub-cockpit-title {
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #38bdf8;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-cockpit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+}
+
+.hub-app-card {
+  background: linear-gradient(145deg, rgba(19, 25, 35, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.14);
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+
+.hub-app-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #0ea5e9, transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.hub-app-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 8px 30px rgba(14, 165, 233, 0.2);
+}
+
+.hub-app-card:hover::before {
+  opacity: 1;
+}
+
+.hub-card-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  font-size: 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.icon-dv { background: linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(2, 132, 199, 0.4)); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); }
+.icon-traj { background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(126, 34, 206, 0.4)); color: #c084fc; border-color: rgba(192, 132, 252, 0.3); }
+.icon-video { background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(8, 145, 178, 0.4)); color: #22d3ee; border-color: rgba(34, 211, 238, 0.3); }
+.icon-train { background: linear-gradient(135deg, rgba(234, 179, 8, 0.2), rgba(202, 138, 4, 0.4)); color: #facc15; border-color: rgba(250, 204, 21, 0.3); }
+
+.hub-card-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.hub-card-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 0 0 8px 0;
+}
+
+.hub-card-desc {
+  font-size: 0.83rem;
+  color: #94a3b8;
+  line-height: 1.45;
+  margin-bottom: 18px;
+  flex: 1;
+}
+
+.hub-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 14px;
+  margin-top: auto;
+}
+
+.hub-card-metric {
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.hub-card-metric strong {
+  color: #38bdf8;
+}
+
+.hub-card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0ea5e9;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: gap 0.2s;
+}
+
+.hub-app-card:hover .hub-card-btn {
+  color: #38bdf8;
+  gap: 10px;
+}
+
+/* --- Styles Centre VidÃ©o & Montages MP4 --- */
+.video-center-page {
+  min-height: 100vh;
+  background: #080a0f;
+  color: #f8fafc;
+}
+
+.video-center-content {
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.vc-hero-banner {
+  background: linear-gradient(135deg, rgba(19, 25, 35, 0.9) 0%, rgba(13, 17, 23, 0.95) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 16px;
+  padding: 28px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.vc-hero-meta {
+  max-width: 700px;
+  position: relative;
+  z-index: 2;
+}
+
+.vc-tag {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 4px 10px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.vc-title {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: #f8fafc;
+  margin: 0 0 10px 0;
+}
+
+.vc-desc {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin: 0 0 16px 0;
+}
+
+.vc-quick-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.vc-stat-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+}
+
+.vc-stat-chip.highlight {
+  background: rgba(14, 165, 233, 0.15);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+}
+
+.vc-stat-chip .num {
+  font-weight: 800;
+  color: #f8fafc;
+  margin-right: 4px;
+}
+
+.vc-hero-actions {
+  position: relative;
+  z-index: 2;
+}
+
+.vc-upload-btn {
+  padding: 12px 24px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+}
+
+.vc-tabs-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 12px;
+}
+
+.vc-tabs-left {
+  display: flex;
+  gap: 8px;
+}
+
+.vc-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #94a3b8;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.vc-tab-btn:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.vc-tab-btn.active {
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.15);
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.vc-videos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.vc-video-card {
+  background: rgba(19, 25, 35, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+}
+
+.vc-card-thumb {
+  height: 140px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vc-card-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(14, 165, 233, 0.8);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.vc-play-overlay {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(14, 165, 233, 0.25);
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #38bdf8;
+  box-shadow: 0 0 16px rgba(14, 165, 233, 0.4);
+}
+
+.vc-card-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.vc-card-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 0 0 6px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vc-teams-label {
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.vc-teams-label .vs {
+  color: #0ea5e9;
+  font-weight: 800;
+  font-size: 0.72rem;
+}
+
+.vc-card-footer-meta {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-bottom: 16px;
+}
+
+.vc-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.btn-action-dv {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.btn-action-traj {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.3);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.btn-action-montage {
+  background: rgba(6, 182, 212, 0.15);
+  color: #22d3ee;
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+/* Bouton Supprimer moderne (Centre VidÃ©o & Cartes) */
+.btn-action-delete {
+  background: rgba(239, 68, 68, 0.08) !important;
+  color: #f87171 !important;
+  border: 1px solid rgba(239, 68, 68, 0.25) !important;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 9px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-left: auto;
+}
+
+.btn-action-delete:hover {
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: #ef4444 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+  transform: translateY(-1px);
+}
+
+.vc-card-del-corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.6;
+}
+
+.vc-video-card:hover .vc-card-del-corner {
+  opacity: 1;
+}
+
+.vc-card-del-corner:hover {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.45);
+  transform: scale(1.08);
+}
+
+/* --- Table des Montages VidÃ©o --- */
+.vc-montages-table-wrap {
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(19, 25, 35, 0.9);
+}
+
+.vc-montages-table {
+  width: 100%;
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.vc-montages-table th {
+  background: rgba(13, 17, 23, 0.95);
+  color: #94a3b8;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vc-montages-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+
+.badge-clips {
+  background: rgba(14, 165, 233, 0.18);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.status-badge.ready { background: rgba(34, 197, 94, 0.18); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.4); }
+.status-badge.busy { background: rgba(14, 165, 233, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
+.status-badge.err { background: rgba(239, 68, 68, 0.18); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); }
+
+.vc-player-box {
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 24px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.player-head {
+  background: #0f172a;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  color: #fff;
+}
+
+.vc-preview-video {
+  width: 100%;
+  max-height: 480px;
+  display: block;
+}
+
+.empty-state-dark {
+  text-align: center;
+  padding: 60px 20px;
+  border: 1px dashed rgba(56, 189, 248, 0.2);
+  border-radius: 16px;
+  background: rgba(19, 25, 35, 0.5);
+}
+
+.empty-state-dark .empty-icon {
+  color: #0ea5e9;
+  margin-bottom: 16px;
+}
+
+.empty-state-dark h3 {
+  font-size: 1.25rem;
+  color: #f8fafc;
+  margin: 0 0 8px 0;
+}
+
+.empty-state-dark p {
+  color: #94a3b8;
+  max-width: 440px;
+  margin: 0 auto 20px auto;
+  font-size: 0.9rem;
+}
+
+.trajectory-hub-body {
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* ============================================================
+   Hub â€” 5 Modes & Vitrine de PrÃ©sentation
+   ============================================================ */
+.hub-cockpit-grid.hub-five-modes {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.hub-showcase-section {
+  padding: 40px 24px;
+  background: rgba(13, 17, 23, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  border-radius: 16px;
+  backdrop-filter: blur(12px);
+}
+
+.hub-showcase-header {
+  text-align: center;
+  max-width: 680px;
+  margin: 0 auto 32px;
+}
+
+.hub-showcase-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #38bdf8;
+  margin-bottom: 8px;
+}
+
+.hub-showcase-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 0 0 10px;
+}
+
+.hub-showcase-desc {
+  color: #94a3b8;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.hub-features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 18px;
+}
+
+.hub-feature-box {
+  background: rgba(19, 25, 35, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.25s ease;
+}
+
+.hub-feature-box:hover {
+  border-color: rgba(56, 189, 248, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.hub-feature-box .feature-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.hub-feature-box h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0 0 8px;
+}
+
+.hub-feature-box p {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* ============================================================
+   Data Volley â€” Page de sÃ©lection des matchs
+   ============================================================ */
+.dv-matches-page {
+  min-height: 100vh;
+  background: #080a0f;
+  color: #f8fafc;
+}
+
+.dv-matches-content {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 28px 24px 60px;
+}
+
+.dv-matches-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 28px 32px;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.12) 0%, rgba(13, 17, 23, 0.8) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 16px;
+  margin-bottom: 28px;
+}
+
+.dv-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #38bdf8;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.dv-hero-title {
+  font-size: 1.8rem;
+  font-weight: 900;
+  margin: 0 0 8px;
+  color: #fff;
+}
+
+.dv-hero-desc {
+  color: #94a3b8;
+  max-width: 620px;
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.dv-controls-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.dv-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dv-crumb-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.88rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.dv-crumb-btn:hover, .dv-crumb-btn.active {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.dv-crumb-sep {
+  color: #475569;
+}
+
+.dv-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dv-search-input {
+  background: rgba(19, 25, 35, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.86rem;
+  color: #fff;
+  min-width: 240px;
+}
+
+.dv-folders-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.dv-folder-chip {
+  background: rgba(19, 25, 35, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid #0ea5e9;
+  border-radius: 8px;
+  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  transition: all 0.2s;
+}
+
+.dv-folder-chip:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(56, 189, 248, 0.3);
+  transform: translateY(-1px);
+}
+
+.dv-matches-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.dv-match-card {
+  background: rgba(19, 25, 35, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dv-match-card:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 16px rgba(14, 165, 233, 0.2);
+}
+
+.dv-card-thumb {
+  position: relative;
+  height: 128px;
+  background: linear-gradient(135deg, #091220 0%, #0f172a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dv-thumb-overlay {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(14, 165, 233, 0.25);
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #38bdf8;
+  transition: all 0.2s;
+}
+
+.dv-match-card:hover .dv-thumb-overlay {
+  transform: scale(1.1);
+  background: rgba(14, 165, 233, 0.45);
+}
+
+.dv-thumb-status {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.dv-thumb-status.active {
+  background: rgba(14, 165, 233, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.dv-thumb-status.done {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.dv-card-del-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dv-card-del-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fff;
+  border-color: #ef4444;
+}
+
+.dv-card-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.dv-card-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #f1f5f9;
+  margin: 0 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dv-card-teams {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  margin-bottom: 10px;
+}
+
+.dv-card-teams .vs-badge {
+  font-size: 0.68rem;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.dv-card-meta {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-bottom: 16px;
+}
+
+.dv-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.btn-coder-now {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* ============================================================
+   Centre VidÃ©o â€” Mode Consultation & Filtres Interactifs
+   ============================================================ */
+.vc-consult-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.vc-consult-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(19, 25, 35, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 12px;
+}
+
+.vc-match-headline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vc-match-headline .match-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.vc-match-headline .match-teams-badge {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.vc-consult-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 980px) {
+  .vc-consult-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vc-player-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vc-video-frame {
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  aspect-ratio: 16 / 9;
+  max-height: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vc-active-player {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.vc-player-controls-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(19, 25, 35, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+}
+
+.vc-controls-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vc-time-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #94a3b8;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.84rem;
+}
+
+.vc-speed-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.speed-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.speed-pill.active {
+  background: #0ea5e9;
+  color: #fff;
+  border-color: #38bdf8;
+}
+
+.vc-actions-shelf {
+  background: rgba(19, 25, 35, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.shelf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.shelf-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #38bdf8;
+  font-size: 0.9rem;
+}
+
+.shelf-nav-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.shelf-clips-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.shelf-clip-card {
+  background: rgba(13, 17, 23, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.shelf-clip-card:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.shelf-clip-card.selected {
+  background: rgba(14, 165, 233, 0.18);
+  border-color: #38bdf8;
+  box-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
+}
+
+.clip-time {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.clip-code {
+  font-family: var(--font-mono, monospace);
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #f8fafc;
+}
+
+.clip-eval-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  border: 1px solid transparent;
+  width: fit-content;
+}
+
+.clip-desc {
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+.shelf-empty {
+  padding: 24px;
+  text-align: center;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.vc-filter-card {
+  background: rgba(19, 25, 35, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 12px;
+  padding: 18px;
+  position: sticky;
+  top: 80px;
+}
+
+.filter-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #38bdf8;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.filter-header h3 {
+  font-size: 0.95rem;
+  margin: 0;
+  color: #f8fafc;
+}
+
+.btn-reset-filters {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: #f87171;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.filter-section {
+  margin-bottom: 16px;
+}
+
+.filter-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.filter-chips-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-chip {
+  background: rgba(13, 17, 23, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-chip:hover {
+  background: rgba(30, 41, 59, 0.8);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.filter-chip.active {
+  background: rgba(14, 165, 233, 0.2);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+.filter-summary-box {
+  background: rgba(13, 17, 23, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+  margin-top: 18px;
+}
+
+.summary-title {
+  display: block;
+  font-size: 0.74rem;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.summary-count {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #38bdf8;
+}
+
+.summary-sub {
+  display: block;
+  font-size: 0.74rem;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+/* ============================================================
+   Trajectoires â€” Liaison VidÃ©o
+   ============================================================ */
+.tj-video-link-section {
+  margin: 8px 0 12px;
+}
+
+.tj-video-link-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-dv-linked {
+  background: rgba(14, 165, 233, 0.18) !important;
+  color: #38bdf8 !important;
+  border: 1px solid rgba(56, 189, 248, 0.4) !important;
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-dv-linked:hover {
+  background: rgba(14, 165, 233, 0.35) !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.btn-unlink {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.btn-unlink:hover {
+  color: #ef4444;
+}
+
+.tj-link-select-wrap {
+  width: 100%;
+}
+
+.tj-video-select {
+  width: 100%;
+  background: rgba(13, 17, 23, 0.85);
+  border: 1px dashed rgba(56, 189, 248, 0.3);
+  color: #94a3b8;
+  font-size: 0.78rem;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tj-video-select:hover {
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+/* ============================================================
+   Bouton DÃ©connexion Moderne & Profil Utilisateur
+   ============================================================ */
+.nav-user-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #f87171;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nav-logout-btn:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
+  transform: translateY(-1px);
+}
+
+/* ============================================================
+   SÃ©lecteur de Filtre par Ã‰quipe (Data Volley & Centre VidÃ©o)
+   ============================================================ */
+.team-filter-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+
+.dv-team-filter-select {
+  background: transparent;
+  border: none;
+  color: #38bdf8;
+  font-size: 0.85rem;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
+}
+
+.dv-team-filter-select option {
+  background: #0d1117;
+  color: #f8fafc;
+}
+
+/* ============================================================
+   CrÃ©ation rapide d'Ã©quipe Ã  la volÃ©e (Upload & Live)
+   ============================================================ */
+.btn-inline-add-team {
+  background: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-inline-add-team:hover {
+  background: rgba(14, 165, 233, 0.3);
+  color: #fff;
+}
+
+.quick-team-creator {
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.quick-team-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+  color: #38bdf8;
+}
+
+.live-create-panel {
+  margin-top: 16px;
+  background: rgba(13, 17, 23, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.live-create-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}

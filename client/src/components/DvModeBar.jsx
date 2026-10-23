@@ -6,12 +6,14 @@
 
 import { ChartColumn, CirclePlay, Keyboard, Pencil, Settings } from './icons';
 
-/** Les 4 modes, dans l'ordre de travail d'un match. */
+/** Les 4 modes, dans l'ordre de travail d'un match.
+ *  Raccourcis réels : F1 (saisie), F3 (consultation), F4 (correction),
+ *  F5 (analyse). F2 reste « afficher / masquer les fenêtres ». */
 export const DV_MODES = [
-  { key: 'saisie', label: 'Saisie', icon: Keyboard, hint: 'Saisir les codes pendant le match' },
-  { key: 'consultation', label: 'Consultation', icon: CirclePlay, hint: 'Relire les points enchaînés, sans les temps morts' },
-  { key: 'correction', label: 'Correction', icon: Pencil, hint: 'Caler la vidéo, corriger les codes, compléter le match' },
-  { key: 'analyse', label: 'Analyse', icon: ChartColumn, hint: 'Feuille de match, compétences, rotations, zones, distribution' },
+  { key: 'saisie', label: 'Play-by-Play · Saisie', icon: Keyboard, kbd: 'F1', hint: 'Saisir les codes pendant le match' },
+  { key: 'consultation', label: 'Banc / Coach', icon: CirclePlay, kbd: 'F3', hint: 'Mode Banc / Coach Tablet : rotation en cours, front d’attaque, alertes tactiques et relecture' },
+  { key: 'correction', label: 'Correction', icon: Pencil, kbd: 'F4', hint: 'Caler la vidéo, corriger les codes, compléter le match' },
+  { key: 'analyse', label: 'Analyse', icon: ChartColumn, kbd: 'F5', hint: 'Feuille de match, Side-out (SO), Break Point (BP), rotations, zones, Setter Call' },
 ];
 
 /**
@@ -26,7 +28,6 @@ export default function DvModeBar({ mode, onMode, onSettings, settingsOpen = fal
   return (
     <div className="dvm-bar" role="tablist" aria-label="Modes de codage">
       {DV_MODES.map((m) => {
-        const Icon = m.icon;
         const active = mode === m.key;
         return (
           <button
@@ -38,7 +39,8 @@ export default function DvModeBar({ mode, onMode, onSettings, settingsOpen = fal
             onClick={() => onMode(m.key)}
             title={m.hint}
           >
-            <Icon size={13} /> {m.label}
+            <span>{m.label}</span>
+            {m.kbd && <kbd>{m.kbd}</kbd>}
             {m.key === 'correction' && issuesBadge > 0 && (
               <span className="dvm-badge" title={`${issuesBadge} anomalie(s) à corriger`}>
                 {issuesBadge}
@@ -50,12 +52,12 @@ export default function DvModeBar({ mode, onMode, onSettings, settingsOpen = fal
       {onSettings && (
         <button
           type="button"
-          className={`dvm-btn dvm-icon ${settingsOpen ? 'active' : ''}`}
+          className={`dvm-btn dvm-settings ${settingsOpen ? 'active' : ''}`}
           onClick={onSettings}
-          title="Paramètres (raccourcis clavier, fenêtres de codage)"
+          title="Paramètres et raccourcis"
           aria-pressed={settingsOpen}
         >
-          <Settings size={14} />
+          <Settings size={12} /> Paramètres
         </button>
       )}
     </div>

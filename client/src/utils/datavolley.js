@@ -196,62 +196,147 @@ export function typeLabel(action, sym) {
 // Table par défaut issue du standard openvolley (ov_default_attack_table).
 // side : L (aile gauche) · C (centre) · R (aile droite) — set : passe associée.
 // ---------------------------------------------------------------------------
-export const DV_ATTACK_COMBOS = [
-  { code: 'X1', position: 3, side: 'R', type: 'Q', label: 'A Quick', desc: '1re vitesse au centre (A).', set: 'C' },
-  { code: 'X2', position: 2, side: 'L', type: 'Q', label: 'Quick derrière', desc: '1re vitesse derrière le passeur.', set: 'C' },
-  { code: 'X3', position: 3, side: 'L', type: 'M', label: '3 par attaquant poste 2', desc: 'Attaque en 3 côté droit.', set: 'B' },
-  { code: 'XB', position: 8, side: 'C', type: 'M', label: 'B Pipe', desc: 'Pipe après 1re vitesse.', set: 'P' },
-  { code: 'XC', position: 3, side: 'R', type: 'Q', label: 'E Quick', desc: '1re vitesse E.', set: 'C' },
-  { code: 'XD', position: 3, side: 'R', type: 'Q', label: 'Quick flottant B', desc: '1re vitesse B flottante.', set: 'C' },
-  { code: 'XF', position: 2, side: 'L', type: 'N', label: 'Slide par l’opposé', desc: 'Slide joué par l’opposé.', set: 'B' },
-  { code: 'XG', position: 3, side: 'R', type: 'Q', label: 'Soup ball', desc: 'Balle difficile rejouée en 1re.', set: 'C' },
-  { code: 'XL', position: 2, side: 'C', type: 'Q', label: 'A Quick poste 2', desc: '1re vitesse A au poste 2.', set: 'C' },
-  { code: 'XM', position: 3, side: 'C', type: 'Q', label: 'B Quick poste 3', desc: '1re vitesse B au centre.', set: 'C' },
-  { code: 'XO', position: 2, side: 'L', type: 'Q', label: 'C Quick par l’opposé', desc: '1re vitesse C par l’opposé.', set: 'B' },
-  { code: 'XP', position: 8, side: 'C', type: 'M', label: 'Pipe', desc: 'Attaque arrière au centre (6 m).', set: 'P' },
-  { code: 'XQ', position: 2, side: 'L', type: 'M', label: 'Mezza Dietro', desc: 'Demi-attaque derrière.', set: 'B' },
-  { code: 'XR', position: 8, side: 'C', type: 'M', label: 'C Pipe', desc: 'Pipe côté droit.', set: 'P' },
-  { code: 'XS', position: 2, side: 'L', type: 'Q', label: 'D Quick', desc: '1re vitesse D.', set: 'C' },
-  { code: 'XT', position: 3, side: 'R', type: 'M', label: '3 par attaquant poste 4', desc: 'Attaque en 3 côté gauche.', set: 'F' },
-  { code: 'XZ', position: 4, side: 'R', type: 'Q', label: 'B Quick court', desc: '1re vitesse B courte.', set: 'C' },
-  { code: 'X0', position: 7, side: 'C', type: 'T', label: 'Arrière D', desc: 'Attaque arrière côté droit.', set: 'F' },
-  { code: 'C0', position: 7, side: 'C', type: 'U', label: 'Moyenne arrière D', desc: 'Balle moyenne arrière droit.', set: 'F' },
-  { code: 'C5', position: 4, side: 'R', type: 'U', label: 'Moyenne 4', desc: 'Balle moyenne à l’aile gauche.', set: 'F' },
-  { code: 'C6', position: 2, side: 'L', type: 'U', label: 'Moyenne rouge', desc: 'Balle moyenne côté droit.', set: 'B' },
-  { code: 'C8', position: 9, side: 'C', type: 'U', label: 'Moyenne arrière A', desc: 'Balle moyenne arrière centre.', set: 'B' },
-  { code: 'CB', position: 2, side: 'L', type: 'N', label: 'Slide près du passeur', desc: 'Slide à côté du passeur.', set: 'C' },
-  { code: 'CD', position: 2, side: 'L', type: 'N', label: 'Slide loin du passeur', desc: 'Slide éloigné du passeur.', set: 'C' },
-  { code: 'CF', position: 2, side: 'L', type: 'N', label: 'Slide proche du passeur', desc: 'Slide serré contre le passeur.', set: 'C' },
-  { code: 'II', position: 4, side: 'R', type: 'M', label: 'Attaque 4 arrière', desc: 'Attaque de l’aile gauche arrière.', set: 'F' },
-  { code: 'JJ', position: 2, side: 'L', type: 'M', label: 'Arrière AW', desc: 'Attaque arrière côté droit.', set: 'B' },
-  { code: 'PP', position: 3, side: 'L', type: 'O', label: 'Attaque du passeur', desc: 'Le passeur attaque au 2e contact.', set: 'S' },
-  { code: 'P2', position: 3, side: 'C', type: 'O', label: 'Attaque 2e contact', desc: 'Attaque jouée sur le 2e contact.', set: '-' },
-  { code: 'PR', position: 3, side: 'C', type: 'O', label: 'Overpass frappé', desc: 'Balle de réception frappée directement.', set: '-' },
-  { code: 'VB', position: 8, side: 'C', type: 'H', label: 'B Pipe haute', desc: 'Pipe haute au centre.', set: 'P' },
-  { code: 'VJ', position: 4, side: 'R', type: 'H', label: 'Haute 4 arrière', desc: 'Balle haute aile gauche arrière.', set: 'F' },
-  { code: 'VP', position: 8, side: 'C', type: 'H', label: 'Pipe haute', desc: 'Balle haute arrière centre.', set: 'P' },
-  { code: 'VR', position: 8, side: 'C', type: 'H', label: 'C Pipe haute', desc: 'Pipe haute côté droit.', set: 'P' },
-  { code: 'V0', position: 7, side: 'C', type: 'H', label: 'Haute arrière D', desc: 'Balle haute arrière droit.', set: 'F' },
-  { code: 'V3', position: 3, side: 'C', type: 'O', label: 'Haute poste 3', desc: 'Balle haute au centre avant.', set: '-' },
-  { code: 'V4', position: 2, side: 'L', type: 'H', label: 'Haute arrière court', desc: 'Balle haute courte côté droit.', set: 'B' },
-  { code: 'V5', position: 4, side: 'R', type: 'H', label: 'Haute poste 4', desc: 'Balle haute à l’aile gauche.', set: 'F' },
-  { code: 'V6', position: 2, side: 'L', type: 'H', label: 'Haute poste 2', desc: 'Balle haute côté droit.', set: 'B' },
-  { code: 'V8', position: 9, side: 'C', type: 'H', label: 'Haute arrière A', desc: 'Balle haute arrière centre.', set: 'B' },
+export const DV_ATTACK_COMBOS_DEFAULT = [
+  { code: 'X1', position: 3, side: 'R', type: 'Q', tempo: '1st', color: '#f59e0b', label: 'A Quick', desc: '1re vitesse au centre devant le passeur (A).', set: 'C' },
+  { code: 'X2', position: 2, side: 'L', type: 'Q', tempo: '1st', color: '#f97316', label: 'Quick derrière (B/1p)', desc: '1re vitesse derrière le passeur.', set: 'C' },
+  { code: 'X7', position: 3, side: 'R', type: 'Q', tempo: '1st', color: '#eab308', label: 'Tendue 3m (Seven)', desc: '1re vitesse tendue écartée en zone 3/4.', set: 'C' },
+  { code: 'X3', position: 3, side: 'L', type: 'M', tempo: '2nd', color: '#38bdf8', label: '3 par attaquant poste 2', desc: 'Attaque en 3 côté droit.', set: 'B' },
+  { code: 'XB', position: 8, side: 'C', type: 'M', tempo: '2nd', color: '#a855f7', label: 'B Pipe', desc: 'Pipe après 1re vitesse.', set: 'P' },
+  { code: 'XC', position: 3, side: 'R', type: 'Q', tempo: '1st', color: '#f59e0b', label: 'E Quick', desc: '1re vitesse E.', set: 'C' },
+  { code: 'XD', position: 3, side: 'R', type: 'Q', tempo: '1st', color: '#f59e0b', label: 'Quick flottant B', desc: '1re vitesse B flottante.', set: 'C' },
+  { code: 'XF', position: 2, side: 'L', type: 'N', tempo: '1st', color: '#ec4899', label: 'Slide par l’opposé', desc: 'Slide joué par l’opposé.', set: 'B' },
+  { code: 'XG', position: 3, side: 'R', type: 'Q', tempo: '1st', color: '#f59e0b', label: 'Soup ball', desc: 'Balle difficile rejouée en 1re.', set: 'C' },
+  { code: 'XL', position: 2, side: 'C', type: 'Q', tempo: '1st', color: '#f59e0b', label: 'A Quick poste 2', desc: '1re vitesse A au poste 2.', set: 'C' },
+  { code: 'XM', position: 3, side: 'C', type: 'Q', tempo: '1st', color: '#f59e0b', label: 'B Quick poste 3', desc: '1re vitesse B au centre.', set: 'C' },
+  { code: 'XO', position: 2, side: 'L', type: 'Q', tempo: '1st', color: '#f97316', label: 'C Quick par l’opposé', desc: '1re vitesse C par l’opposé.', set: 'B' },
+  { code: 'XP', position: 8, side: 'C', type: 'M', tempo: '2nd', color: '#a855f7', label: 'Pipe (6m)', desc: 'Attaque arrière au centre (6 m).', set: 'P' },
+  { code: 'XQ', position: 2, side: 'L', type: 'M', tempo: '2nd', color: '#38bdf8', label: 'Mezza Dietro', desc: 'Demi-attaque derrière.', set: 'B' },
+  { code: 'XR', position: 8, side: 'C', type: 'M', tempo: '2nd', color: '#a855f7', label: 'C Pipe', desc: 'Pipe côté droit.', set: 'P' },
+  { code: 'XS', position: 2, side: 'L', type: 'Q', tempo: '1st', color: '#f97316', label: 'D Quick', desc: '1re vitesse D.', set: 'C' },
+  { code: 'XT', position: 3, side: 'R', type: 'M', tempo: '2nd', color: '#38bdf8', label: '3 par attaquant poste 4', desc: 'Attaque en 3 côté gauche.', set: 'F' },
+  { code: 'XZ', position: 4, side: 'R', type: 'Q', tempo: '1st', color: '#f59e0b', label: 'B Quick court', desc: '1re vitesse B courte.', set: 'C' },
+  { code: 'X0', position: 7, side: 'C', type: 'T', tempo: '2nd', color: '#06b6d4', label: 'Arrière D (Poste 5)', desc: 'Attaque arrière côté gauche.', set: 'F' },
+  { code: 'X5', position: 4, side: 'R', type: 'T', tempo: '2nd', color: '#10b981', label: 'Super en 4 (Tendue)', desc: 'Balle accélérée tendue à l’aile gauche (Poste 4).', set: 'F' },
+  { code: 'X6', position: 2, side: 'L', type: 'T', tempo: '2nd', color: '#06b6d4', label: 'Super en 2 (Back)', desc: 'Balle accélérée tendue à l’aile droite (Poste 2).', set: 'B' },
+  { code: 'X8', position: 9, side: 'C', type: 'T', tempo: '2nd', color: '#06b6d4', label: 'Arrière A (Poste 1)', desc: 'Attaque arrière rapide en zone 1.', set: 'B' },
+  { code: 'C0', position: 7, side: 'C', type: 'U', tempo: '2nd', color: '#38bdf8', label: 'Moyenne arrière D', desc: 'Balle moyenne arrière droit.', set: 'F' },
+  { code: 'C5', position: 4, side: 'R', type: 'U', tempo: '2nd', color: '#10b981', label: 'Moyenne 4', desc: 'Balle moyenne à l’aile gauche.', set: 'F' },
+  { code: 'C6', position: 2, side: 'L', type: 'U', tempo: '2nd', color: '#06b6d4', label: 'Moyenne rouge (2)', desc: 'Balle moyenne côté droit.', set: 'B' },
+  { code: 'C8', position: 9, side: 'C', type: 'U', tempo: '2nd', color: '#38bdf8', label: 'Moyenne arrière A (1)', desc: 'Balle moyenne arrière droite.', set: 'B' },
+  { code: 'CB', position: 2, side: 'L', type: 'N', tempo: '1st', color: '#ec4899', label: 'Slide près du passeur', desc: 'Slide à côté du passeur.', set: 'C' },
+  { code: 'CD', position: 2, side: 'L', type: 'N', tempo: '1st', color: '#ec4899', label: 'Slide loin du passeur', desc: 'Slide éloigné du passeur.', set: 'C' },
+  { code: 'CF', position: 2, side: 'L', type: 'N', tempo: '1st', color: '#ec4899', label: 'Slide proche du passeur', desc: 'Slide serré contre le passeur.', set: 'C' },
+  { code: 'II', position: 4, side: 'R', type: 'M', tempo: '2nd', color: '#10b981', label: 'Attaque 4 arrière', desc: 'Attaque de l’aile gauche arrière.', set: 'F' },
+  { code: 'JJ', position: 2, side: 'L', type: 'M', tempo: '2nd', color: '#06b6d4', label: 'Arrière AW', desc: 'Attaque arrière côté droit.', set: 'B' },
+  { code: 'PP', position: 3, side: 'L', type: 'O', tempo: '1st', color: '#fbbf24', label: 'Attaque du passeur (2e main)', desc: 'Le passeur attaque au 2e contact.', set: 'S' },
+  { code: 'P2', position: 3, side: 'C', type: 'O', tempo: '1st', color: '#fbbf24', label: 'Attaque 2e contact', desc: 'Attaque jouée sur le 2e contact.', set: '-' },
+  { code: 'PR', position: 3, side: 'C', type: 'O', tempo: '1st', color: '#f43f5e', label: 'Overpass frappé', desc: 'Balle de réception frappée directement.', set: '-' },
+  { code: 'VB', position: 8, side: 'C', type: 'H', tempo: '3rd', color: '#a855f7', label: 'B Pipe haute', desc: 'Pipe haute au centre.', set: 'P' },
+  { code: 'VJ', position: 4, side: 'R', type: 'H', tempo: '3rd', color: '#64748b', label: 'Haute 4 arrière', desc: 'Balle haute aile gauche arrière.', set: 'F' },
+  { code: 'VP', position: 8, side: 'C', type: 'H', tempo: '3rd', color: '#a855f7', label: 'Pipe haute', desc: 'Balle haute arrière centre.', set: 'P' },
+  { code: 'VR', position: 8, side: 'C', type: 'H', tempo: '3rd', color: '#a855f7', label: 'C Pipe haute', desc: 'Pipe haute côté droit.', set: 'P' },
+  { code: 'V0', position: 7, side: 'C', type: 'H', tempo: '3rd', color: '#64748b', label: 'Haute arrière D', desc: 'Balle haute arrière gauche.', set: 'F' },
+  { code: 'V3', position: 3, side: 'C', type: 'O', tempo: '3rd', color: '#64748b', label: 'Haute poste 3', desc: 'Balle haute au centre avant.', set: '-' },
+  { code: 'V4', position: 2, side: 'L', type: 'H', tempo: '3rd', color: '#64748b', label: 'Haute arrière court', desc: 'Balle haute courte côté droit.', set: 'B' },
+  { code: 'V5', position: 4, side: 'R', type: 'H', tempo: '3rd', color: '#10b981', label: 'Haute poste 4', desc: 'Balle haute à l’aile gauche.', set: 'F' },
+  { code: 'V6', position: 2, side: 'L', type: 'H', tempo: '3rd', color: '#06b6d4', label: 'Haute poste 2', desc: 'Balle haute côté droit.', set: 'B' },
+  { code: 'V8', position: 9, side: 'C', type: 'H', tempo: '3rd', color: '#06b6d4', label: 'Haute arrière A (1)', desc: 'Balle haute arrière droite.', set: 'B' },
 ];
 
+const CUSTOM_COMBOS_STORAGE_KEY = 'pancake_custom_attack_combos_v1';
+
+function readCustomCombosFromStorage() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
+    const raw = window.localStorage.getItem(CUSTOM_COMBOS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export const DV_ATTACK_COMBOS = [...DV_ATTACK_COMBOS_DEFAULT];
+
 /** Index des combinaisons d'attaque par code (majuscules). */
-export const DV_ATTACK_COMBO_MAP = DV_ATTACK_COMBOS.reduce((acc, c) => {
-  acc[c.code] = c;
-  return acc;
-}, {});
+export const DV_ATTACK_COMBO_MAP = {};
+export const DV_ATTACK_COMBO_KEYS = [];
+
+export function rebuildAttackComboIndex() {
+  const custom = readCustomCombosFromStorage();
+  const mergedMap = {};
+  for (const c of DV_ATTACK_COMBOS_DEFAULT) {
+    mergedMap[String(c.code).toUpperCase()] = { ...c, isCustom: false };
+  }
+  for (const c of custom) {
+    if (!c || !c.code || String(c.code).length !== 2) continue;
+    const code = String(c.code).toUpperCase();
+    mergedMap[code] = {
+      code,
+      position: Number(c.position) || 4,
+      side: c.side || 'C',
+      type: c.type || 'M',
+      tempo: c.tempo || '2nd',
+      color: c.color || '#f59e0b',
+      label: c.label || `Combo ${code}`,
+      desc: c.desc || 'Combinaison personnalisée.',
+      set: c.set || 'C',
+      isCustom: true,
+    };
+  }
+  // Synchronise DV_ATTACK_COMBOS, DV_ATTACK_COMBO_MAP et DV_ATTACK_COMBO_KEYS en place
+  DV_ATTACK_COMBOS.length = 0;
+  for (const k of Object.keys(DV_ATTACK_COMBO_MAP)) delete DV_ATTACK_COMBO_MAP[k];
+  DV_ATTACK_COMBO_KEYS.length = 0;
+  for (const item of Object.values(mergedMap)) {
+    DV_ATTACK_COMBOS.push(item);
+    DV_ATTACK_COMBO_MAP[item.code] = item;
+    DV_ATTACK_COMBO_KEYS.push(item.code);
+  }
+  return DV_ATTACK_COMBOS;
+}
+
+rebuildAttackComboIndex();
+
+export function getAttackCombos() {
+  return rebuildAttackComboIndex();
+}
+
+export function saveCustomAttackCombo(combo) {
+  if (!combo || !combo.code || String(combo.code).trim().length !== 2) return DV_ATTACK_COMBOS;
+  const code = String(combo.code).trim().toUpperCase();
+  const current = readCustomCombosFromStorage().filter((c) => String(c.code).toUpperCase() !== code);
+  current.push({
+    code,
+    position: Number(combo.position) || 4,
+    side: combo.side || 'C',
+    type: combo.type || 'M',
+    tempo: combo.tempo || '2nd',
+    color: combo.color || '#f59e0b',
+    label: String(combo.label || `Combo ${code}`).trim(),
+    desc: String(combo.desc || '').trim(),
+    set: combo.set || 'C',
+  });
+  try {
+    window.localStorage.setItem(CUSTOM_COMBOS_STORAGE_KEY, JSON.stringify(current));
+  } catch { /* ignore */ }
+  return rebuildAttackComboIndex();
+}
+
+export function deleteCustomAttackCombo(code) {
+  const target = String(code || '').toUpperCase();
+  const current = readCustomCombosFromStorage().filter((c) => String(c.code).toUpperCase() !== target);
+  try {
+    window.localStorage.setItem(CUSTOM_COMBOS_STORAGE_KEY, JSON.stringify(current));
+  } catch { /* ignore */ }
+  return rebuildAttackComboIndex();
+}
 
 /** Infos d'une combinaison d'attaque (ou null). */
 export function attackComboInfo(code) {
   return DV_ATTACK_COMBO_MAP[String(code || '').toUpperCase()] || null;
 }
-
-/** Clés des combinaisons d'attaque (ordre d'affichage). */
-export const DV_ATTACK_COMBO_KEYS = DV_ATTACK_COMBOS.map((c) => c.code);
 
 /** Vrai si les 2 caractères forment une combinaison d'attaque connue. */
 export function isAttackCombo(twoChars) {
@@ -260,25 +345,25 @@ export function isAttackCombo(twoChars) {
 
 // ---------------------------------------------------------------------------
 // APPELS PASSEUR (champ « Cmb/Call » DataVolley, positions 7-8) — codes K.
-// Le passeur annonce la combinaison du jeu. Ils occupent le MÊME emplacement que
-// les combinaisons d'attaque, mais se placent après l'action « E » (passe) :
-//   *07EK1#  -> n°07, passe avec appel « K1 », évaluation « # ».
-// Les significations de K0..K9 sont propres à chaque club ; on donne donc des
-// libellés neutres, adaptables.
+// Le passeur annonce la course de fixation du central. Ils occupent le MÊME
+// emplacement que les combinaisons d'attaque, mais se placent après l'action « E » :
+//   *07EK1#  -> n°07, passe avec appel « K1 » (Fixation Devant), évaluation « # ».
 // ---------------------------------------------------------------------------
 export const DV_SETTER_CALLS = [
-  { code: 'K1', label: 'Appel 1', desc: 'Premier appel du passeur (souvent 1re vitesse).' },
-  { code: 'K2', label: 'Appel 2', desc: 'Deuxième appel du passeur.' },
-  { code: 'K3', label: 'Appel 3', desc: 'Troisième appel du passeur.' },
-  { code: 'K4', label: 'Appel 4', desc: 'Quatrième appel du passeur.' },
-  { code: 'K5', label: 'Appel 5', desc: 'Cinquième appel du passeur.' },
-  { code: 'K6', label: 'Appel 6', desc: 'Sixième appel du passeur.' },
-  { code: 'K7', label: 'Appel 7', desc: 'Septième appel du passeur.' },
-  { code: 'K8', label: 'Appel 8', desc: 'Huitième appel du passeur.' },
-  { code: 'K9', label: 'Appel 9', desc: 'Neuvième appel du passeur.' },
-  { code: 'K0', label: 'Appel 0', desc: 'Appel zéro du passeur.' },
-  { code: 'KM', label: 'Appel M', desc: 'Appel « M » du passeur.' },
-  { code: 'KP', label: 'Appel P', desc: 'Appel « P » du passeur.' },
+  { code: 'K1', middlePos: 3, color: '#f59e0b', label: 'Appel 1 (Fixation Devant)', desc: 'Central en 1re vitesse devant le passeur (A Quick / X1).' },
+  { code: 'K2', middlePos: 2, color: '#f97316', label: 'Fixation Derrière (K2)', desc: 'Central derrière le passeur / 1 pied (B Quick / Slide / X2).' },
+  { code: 'K7', middlePos: 4, color: '#eab308', label: 'Fixation Tendue 3m (K7)', desc: 'Central écarté à 3m devant le passeur (Seven / X7).' },
+  { code: 'KE', middlePos: 0, color: '#71717a', label: 'Sans Central (KE)', desc: 'Pas de course du central (central au sol ou hors système).' },
+  { code: 'KC', middlePos: 3, color: '#ec4899', label: 'Croix / Combo (KC)', desc: 'Course croisée entre central et ailier.' },
+  { code: 'KM', middlePos: 3, color: '#38bdf8', label: 'Fixation Flottante (KM)', desc: 'Central en lecture flottante devant/derrière.' },
+  { code: 'KP', middlePos: 3, color: '#a855f7', label: 'Fixation + Pipe (KP)', desc: 'Appel synchronisé central + Pipe en zone 6.' },
+  { code: 'K3', middlePos: 3, color: '#06b6d4', label: 'Appel 3 (K3)', desc: 'Troisième appel du passeur.' },
+  { code: 'K4', middlePos: 4, color: '#10b981', label: 'Appel 4 (K4)', desc: 'Quatrième appel du passeur.' },
+  { code: 'K5', middlePos: 4, color: '#10b981', label: 'Appel 5 (K5)', desc: 'Cinquième appel du passeur.' },
+  { code: 'K6', middlePos: 2, color: '#06b6d4', label: 'Appel 6 (K6)', desc: 'Sixième appel du passeur.' },
+  { code: 'K8', middlePos: 3, color: '#64748b', label: 'Appel 8 (K8)', desc: 'Huitième appel du passeur.' },
+  { code: 'K9', middlePos: 2, color: '#64748b', label: 'Appel 9 (K9)', desc: 'Neuvième appel du passeur.' },
+  { code: 'K0', middlePos: 0, color: '#64748b', label: 'Appel 0 (K0)', desc: 'Appel zéro du passeur.' },
 ];
 
 /** Index des appels passeur par code (majuscules). */
@@ -299,6 +384,39 @@ export const DV_SETTER_CALL_KEYS = DV_SETTER_CALLS.map((c) => c.code);
 export function isSetterCall(twoChars) {
   return !!DV_SETTER_CALL_MAP[String(twoChars || '').toUpperCase()];
 }
+
+// ---------------------------------------------------------------------------
+// CODES ÉTENDUS DATAVOLLEY 4 (positions 9-14, après l'évaluation)
+//   1) Nombre de contreurs (0..4) : ex. *09AV54#2 (attaque gagnante contre 2)
+//   2) Type de frappe post-éval (H=Frappée, P=Placée/Feinte, T=Tendue/Tip)
+//   3) Code spécial (B=Block-out, O=Out/Dehors, N=Filet, Z=Faute ligne/arbitre)
+// ---------------------------------------------------------------------------
+export const DV_BLOCKER_COUNTS = [
+  { code: '0', label: '0 Contreur', short: '0 Ctr', desc: 'Attaque sans contre en face (0 bloc).' },
+  { code: '1', label: '1 Contreur (1v1)', short: '1 Ctr', desc: 'Attaque face à 1 seul contreur.' },
+  { code: '2', label: '2 Contreurs', short: '2 Ctr', desc: 'Attaque face à un double contre.' },
+  { code: '3', label: '3 Contreurs', short: '3 Ctr', desc: 'Attaque face à un triple contre.' },
+  { code: '4', label: 'Bloc ouvert (Trou)', short: 'Trou', desc: 'Balle passée dans l’intervalle entre deux contreurs.' },
+];
+
+export const DV_BLOCKER_KEYS = DV_BLOCKER_COUNTS.map((b) => b.code);
+
+export const DV_EXTENDED_HIT_TYPES = [
+  { code: 'H', label: 'Frappée (Hard)', short: 'Hard' },
+  { code: 'P', label: 'Feinte / Placée (Tip)', short: 'Tip' },
+  { code: 'T', label: 'Roulette / Tendue', short: 'Roll' },
+];
+
+export const DV_EXTENDED_HIT_KEYS = DV_EXTENDED_HIT_TYPES.map((h) => h.code);
+
+export const DV_EXTENDED_SPECIALS = [
+  { code: 'B', label: 'Block-Out', short: 'BlkOut', desc: 'Point ou faute via les mains du contre (block-out).' },
+  { code: 'O', label: 'Out (Dehors)', short: 'Out', desc: 'Balle envoyée directement hors des limites.' },
+  { code: 'N', label: 'Filet (Net)', short: 'Filet', desc: 'Balle dans le filet ou faute de filet.' },
+  { code: 'Z', label: 'Ligne / Arbitre', short: 'Ligne', desc: 'Faute de ligne (3m/service) ou décision arbitrale.' },
+];
+
+export const DV_EXTENDED_SPECIAL_KEYS = DV_EXTENDED_SPECIALS.map((s) => s.code);
 
 // ---------------------------------------------------------------------------
 // ZONES — numérotation officielle DataVolley : grille 3 × 3 depuis son camp,
@@ -433,6 +551,9 @@ export function scanCode(str, start = 0, opts = {}) {
     end_zone: '',
     end_subzone: '',
     evaluation: '',
+    num_blockers: '',
+    kill_type: '',
+    special_code: '',
     issues: [],
     complete: false,
   };
@@ -541,6 +662,35 @@ export function scanCode(str, start = 0, opts = {}) {
     } else {
       out.issues.push('bad_eval');
     }
+    // Codes étendus DataVolley 4 après l'évaluation (positions 9-14) :
+    //   - num_blockers : 0..4 (si ce n'est pas le début d'un nouveau code sans '*')
+    //   - kill_type    : H, P, T (type de frappe post-éval)
+    //   - special_code : B (block-out), O (out), N (filet), Z (ligne/arbitre)
+    if (action === 'A' || action === 'B' || action === 'S') {
+      let extGuard = 0;
+      while (i < s.length && extGuard < 3) {
+        extGuard += 1;
+        const ch = s[i];
+        if (!ch || ch === '*' || ch === 'a' || ch === DV_COMBINED_SEPARATOR) break;
+        const up = ch.toUpperCase();
+        if (!out.num_blockers && DV_BLOCKER_KEYS.includes(ch) && !/^\d{1,2}[SRABDEF]/i.test(s.slice(i))) {
+          out.num_blockers = ch;
+          i += 1;
+          continue;
+        }
+        if (!out.kill_type && DV_EXTENDED_HIT_KEYS.includes(up) && !/^\d{1,2}[SRABDEF]/i.test(s.slice(i))) {
+          out.kill_type = up;
+          i += 1;
+          continue;
+        }
+        if (!out.special_code && DV_EXTENDED_SPECIAL_KEYS.includes(up) && !/^\d{1,2}[SRABDEF]/i.test(s.slice(i))) {
+          out.special_code = up;
+          i += 1;
+          continue;
+        }
+        break;
+      }
+    }
   } else if (opts.evaluationOptional) {
     out.complete = true; // consultation : l'évaluation est facultative
   } else {
@@ -584,11 +734,16 @@ export function formatCode(fields) {
   }
   if (f.end_subzone) parts.push(f.end_subzone);
   parts.push(f.evaluation || '');
+  if (f.num_blockers !== undefined && f.num_blockers !== null && f.num_blockers !== '') {
+    parts.push(String(f.num_blockers));
+  }
+  if (f.kill_type) parts.push(String(f.kill_type).toUpperCase());
+  if (f.special_code) parts.push(String(f.special_code).toUpperCase());
   return parts.join('');
 }
 
 /** Construit un code canonique à partir de champs séparés. */
-export function buildCode({ team, teamKey, playerNumber, action, type, evaluation, startZone, endZone, endSubzone }) {
+export function buildCode({ team, teamKey, playerNumber, action, type, evaluation, startZone, endZone, endSubzone, numBlockers, killType, specialCode }) {
   return formatCode({
     team: team || teamIdFromKey(teamKey),
     teamKey,
@@ -599,6 +754,9 @@ export function buildCode({ team, teamKey, playerNumber, action, type, evaluatio
     start_zone: startZone || '',
     end_zone: endZone || '',
     end_subzone: endSubzone || '',
+    num_blockers: numBlockers ?? '',
+    kill_type: killType || '',
+    special_code: specialCode || '',
   });
 }
 
@@ -623,6 +781,9 @@ export function parseCode(code) {
     end_zone: sc.end_zone,
     end_subzone: sc.end_subzone,
     evaluation: sc.evaluation,
+    num_blockers: sc.num_blockers,
+    kill_type: sc.kill_type,
+    special_code: sc.special_code,
   };
 }
 
@@ -643,6 +804,9 @@ export function decomposeCode(code) {
     end_zone: sc.end_zone,
     end_subzone: sc.end_subzone,
     evaluation: sc.evaluation,
+    num_blockers: sc.num_blockers,
+    kill_type: sc.kill_type,
+    special_code: sc.special_code,
   };
 }
 
@@ -716,13 +880,28 @@ export function describeCode(code, opts) {
   }
   if (sc.end_subzone) gesture.push(`sous-zone ${sc.end_subzone}`);
 
+  const extDetails = [];
+  if (sc.num_blockers !== undefined && sc.num_blockers !== '') {
+    const blk = DV_BLOCKER_COUNTS.find((b) => b.code === String(sc.num_blockers));
+    extDetails.push(blk ? blk.label : `${sc.num_blockers} contreur(s)`);
+  }
+  if (sc.kill_type) {
+    const kt = DV_EXTENDED_HIT_TYPES.find((h) => h.code === sc.kill_type);
+    extDetails.push(kt ? kt.label : sc.kill_type);
+  }
+  if (sc.special_code) {
+    const sp = DV_EXTENDED_SPECIALS.find((x) => x.code === sc.special_code);
+    extDetails.push(sp ? sp.label : sc.special_code);
+  }
+
   const who = `n°${String(sc.player_number).padStart(2, '0')} de ${team}`;
   const evalPart = ev
     ? ` « ${ev.label} »${ev.desc ? ' — ' + ev.desc : ''}`
     : sc.evaluation
       ? ` « ${sc.evaluation} »`
       : '';
-  return `Le ${who} : ${gesture.join(' ')}${evalPart}`;
+  const extPart = extDetails.length ? ` [${extDetails.join(' · ')}]` : '';
+  return `Le ${who} : ${gesture.join(' ')}${evalPart}${extPart}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -985,20 +1164,33 @@ export function expectedForBuffer(buffer) {
   if (!isKnownAction(action)) return { type: 'action', allowed: DV_ACTION_KEYS.slice() };
 
   const rest = text.slice(idx + 1);
-  const hasType = !!resolveTypeAlias(action, rest[0]);
+  const sc = scanCode(text, 0);
+  if (sc.evaluation) {
+    const extAllowed = [];
+    if (action === 'A' || action === 'B' || action === 'S') {
+      if (!sc.num_blockers) extAllowed.push(...DV_BLOCKER_KEYS);
+      if (!sc.kill_type) extAllowed.push(...DV_EXTENDED_HIT_KEYS);
+      if (!sc.special_code) extAllowed.push(...DV_EXTENDED_SPECIAL_KEYS);
+    }
+    return { type: 'suffix', allowed: extAllowed, combos: [], calls: [], hasEvaluation: true };
+  }
+
+  const hasComboOrCall = !!(sc.combo || sc.call);
+  const hasType = hasComboOrCall || !!resolveTypeAlias(action, rest[0]);
   let zoneCount = 0;
-  let k = hasType ? 1 : 0;
+  let k = hasComboOrCall ? 2 : hasType ? 1 : 0;
   while (zoneCount < 2 && /[1-9]/.test(rest[k])) {
     zoneCount += 1;
     k += 1;
   }
-  const hasSub = zoneCount === 2 && DV_SUBZONE_KEYS.includes(String(rest[k] || '').toUpperCase());
+  const hasSub = (zoneCount === 2 || (sc.combo && zoneCount === 1)) && DV_SUBZONE_KEYS.includes(String(rest[k] || '').toUpperCase());
 
   const allowed = [];
   if (!hasType) allowed.push(...dvTypeKeys(action));
   if (!hasSub) {
-    if (zoneCount < 2) allowed.push(...DV_ZONE_KEYS);
-    else allowed.push(...DV_SUBZONE_KEYS);
+    const maxZones = sc.combo ? 1 : 2;
+    if (zoneCount < maxZones) allowed.push(...DV_ZONE_KEYS);
+    if (zoneCount === 2 || (sc.combo && zoneCount === 1)) allowed.push(...DV_SUBZONE_KEYS);
   }
   allowed.push(...DV_EVAL_KEYS);
   if ((action === 'S' || action === 'A') && !DV_EVAL_KEYS.includes(rest[rest.length - 1])) {
@@ -1008,7 +1200,7 @@ export function expectedForBuffer(buffer) {
   const combos = action === 'A' && rest.length === 0 ? DV_ATTACK_COMBO_KEYS.slice() : [];
   // Appels passeur : proposés juste après une passe.
   const calls = action === 'E' && rest.length === 0 ? DV_SETTER_CALL_KEYS.slice() : [];
-  return { type: 'suffix', allowed, combos, calls };
+  return { type: 'suffix', allowed, combos, calls, hasEvaluation: false };
 }
 
 /**

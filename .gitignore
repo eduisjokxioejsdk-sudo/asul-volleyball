@@ -58,6 +58,10 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Brouillons de travail (notes / plans internes, jamais versionnes)
+.cline_texts.txt
+.plan.txt
+
 # Artefacts de build / fichiers générés (jamais versionnés)
 client/public/viewer.html
 desktop/dist-*/

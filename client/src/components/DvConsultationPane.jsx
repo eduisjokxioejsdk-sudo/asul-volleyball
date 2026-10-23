@@ -1,48 +1,25 @@
 // ============================================================================
 // MODE CONSULTATION — relire un match codé sans les temps morts.
 // À gauche la vidéo (elle enchaîne les points toute seule), sous la vidéo les
-// commandes de lecture ; à droite les filtres et le déroulé cliquable.
-// La vidéo est fournie par la page de codage : un seul lecteur à la fois.
+// commandes de lecture ; à droite les filtres, la playlist multi-matchs et le
+// déroulé cliquable.
 // ============================================================================
 
-import { useMemo } from 'react';
-import { ChevronLeft, Clock, Pause, Play } from './icons';
+import { useMemo, useState } from 'react';
+import { ChevronLeft, Clock, Film, Pause, Play } from './icons';
 import DvCodeList from './DvCodeList';
 import DvFilterPanel from './DvFilterPanel';
 import DvRotationWindow from './DvRotationWindow';
-import RallyPlaylist from './RallyPlaylist';
+import PlaylistManagerModal from './PlaylistManagerModal';
 import { formatTimecode } from '../utils/datavolley';
 import { EMPTY_FILTERS, actionShortLabel, reviewTotals } from '../utils/codingTools';
 
-const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 
-/**
- * @param {Object} props
- * @param {React.ReactNode} props.videoNode - le lecteur (rendu une seule fois par la page)
- * @param {Array} props.points - points retenus par les filtres (rallyes)
- * @param {Array} props.segments - segments jouables (buildPointSegments)
- * @param {number} props.duration - durée de la vidéo
- * @param {number} props.activeIndex - action_index du point en cours (-1 hors point)
- * @param {boolean} props.playing
- * @param {number} props.rate
- * @param {Set<string>} [props.matchedUids] - actions qui correspondent aux filtres
- * @param {Object} props.filters
- * @param {Function} props.onFilters - (patch) => void
- * @param {Function} props.onResetFilters
- * @param {Object} [props.options] - { players, sets, zones, actions, evaluations }
- * @param {number} [props.resultCount] - nombre d'actions retenues
- * @param {Function} props.onSeekAction - (action) => void
- * @param {Function} [props.onSeekPoint] - (rally) => void (début du point)
- * @param {Function} props.onTogglePlay
- * @param {Function} props.onRate - (rate) => void
- * @param {Function} props.onStep - (dir) => void
- * @param {Object} props.rotationView - état du terrain au point lu
- * @param {number} props.currentTime - position courante de la vidéo (secondes)
- * @param {boolean} props.loop - lecture en boucle activée
- * @param {Function} props.onToggleLoop - () => void
- */
 export default function DvConsultationPane({
   videoNode,
+  videoId = null,
+  videoTitle = '',
   points,
   segments,
   duration,
@@ -60,6 +37,7 @@ export default function DvConsultationPane({
   onTogglePlay,
   onRate,
   onStep,
+  onFrameStep,
   rotationView,
   currentTime = 0,
   team1,
@@ -73,7 +51,14 @@ export default function DvConsultationPane({
   actionSet,
   loop = false,
   onToggleLoop,
+  onOpenMontage,
+  leadIn = 4,
+  leadOut = 3,
+  onSyncPatch,
+  onOpenDetachedVideo,
+  popoutOpen = false,
 }) {
+  const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
   const totals = useMemo(() => reviewTotals(segments, duration), [segments, duration]);
 
   const activePoint = useMemo(() => {
@@ -98,15 +83,21 @@ export default function DvConsultationPane({
       <div className="dvx-main">
         <div className="dvx-stage">{videoNode}</div>
 
-        <div className="dvx-transport">
+        <div className="dvx-transport" style={{ flexWrap: 'wrap', gap: 6 }}>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStep?.(-1)} title="Point précédent (←)">
-            <ChevronLeft size={14} /> Point précédent
+            <ChevronLeft size={14} /> Point préc.
+          </button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onFrameStep?.(-1)} title="Image par image en arrière (,)">
+            ⏮ -1 img
           </button>
           <button type="button" className="btn btn-primary btn-sm" onClick={onTogglePlay} title="Lecture / pause (Espace)">
             {playing ? <Pause size={14} /> : <Play size={14} />} {playing ? 'Pause' : 'Lecture'}
           </button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onFrameStep?.(1)} title="Image par image en avant (.)">
+            +1 img ⏭
+          </button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => onStep?.(1)} title="Point suivant (→)">
-            Point suivant
+            Point suiv.
           </button>
           <span className="dvx-rate">
             Vitesse
@@ -121,6 +112,53 @@ export default function DvConsultationPane({
               </button>
             ))}
           </span>
+
+          {/* Contrôles Pre-Roll / Post-Roll & Boucle clip (Point 21) */}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-secondary)' }}>
+            Pré:
+            <input
+              type="number"
+              min="0"
+              max="15"
+              step="0.5"
+              value={leadIn}
+              onChange={(e) => onSyncPatch?.({ lead_in: Number(e.target.value) })}
+              style={{ width: 46, padding: '2px 4px', borderRadius: 4, fontSize: 11 }}
+              title="Marge avant l'action (Pre-roll en secondes)"
+            />
+            s · Post:
+            <input
+              type="number"
+              min="0"
+              max="15"
+              step="0.5"
+              value={leadOut}
+              onChange={(e) => onSyncPatch?.({ lead_out: Number(e.target.value) })}
+              style={{ width: 46, padding: '2px 4px', borderRadius: 4, fontSize: 11 }}
+              title="Marge après l'action (Post-roll en secondes)"
+            />
+            s
+          </span>
+
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setPlaylistModalOpen(true)}
+            title="Ouvrir le gestionnaire de Playlists Multi-Matchs"
+          >
+            <Film size={13} /> Playlists Multi-Matchs
+          </button>
+
+          {onOpenDetachedVideo && (
+            <button
+              type="button"
+              className={`btn btn-sm ${popoutOpen ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={onOpenDetachedVideo}
+              title="Ouvrir optionnellement le lecteur vidéo sur un 2e écran synchronisé"
+            >
+              🖥️ 2e écran {popoutOpen ? '(Actif)' : ''}
+            </button>
+          )}
         </div>
 
         <div className="dvx-progress">
@@ -199,17 +237,21 @@ export default function DvConsultationPane({
           </div>
         )}
 
-        <RallyPlaylist
+        <PlaylistManagerModal
+          inline
+          videoId={videoId}
+          videoTitle={videoTitle}
           rallies={points}
           segments={segments}
           activeIndex={activeIndex}
           onSeekPoint={onSeekPoint}
-          currentTime={currentTime}
           playing={playing}
           onTogglePlay={onTogglePlay}
           loop={loop}
           onToggleLoop={onToggleLoop}
           onStep={onStep}
+          leadIn={leadIn}
+          leadOut={leadOut}
         />
 
         <DvCodeList
@@ -223,6 +265,17 @@ export default function DvConsultationPane({
           emptyText="Aucun point ne correspond aux filtres."
         />
       </aside>
+
+      <PlaylistManagerModal
+        open={playlistModalOpen}
+        onClose={() => setPlaylistModalOpen(false)}
+        videoId={videoId}
+        videoTitle={videoTitle}
+        rallies={points}
+        segments={segments}
+        leadIn={leadIn}
+        leadOut={leadOut}
+      />
     </div>
   );
 }

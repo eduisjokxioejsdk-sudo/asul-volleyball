@@ -191,15 +191,9 @@ check('60 points construits', smokeRallies.length === 60, `${smokeRallies.length
 // --- Directions : terrain à 2 clics -----------------------------------------
 console.log('\n== Directions d’attaque ==');
 {
-  const mod = await vite.ssrLoadModule('/src/components/DirectionCourt.jsx');
-  const Picker = mod.default;
+  const mod = await vite.ssrLoadModule('/src/components/AttackCourt.jsx');
   const Map = mod.DirectionMap;
   try {
-    const html = renderToString(
-      React.createElement(Picker, { startZone: '4', endZone: '5', onChange: noop })
-    );
-    check('DirectionCourt se rend', /dirc-court/.test(html) && /FILET/.test(html));
-    check('les 2 zones sont affichées', /Départ/.test(html) && /Arrivée/.test(html));
     const mapHtml = renderToString(
       React.createElement(Map, {
         rows: [
@@ -210,7 +204,7 @@ console.log('\n== Directions d’attaque ==');
     );
     check('DirectionMap se rend', /4 → 5|direction/.test(mapHtml) && /FILET/.test(mapHtml));
   } catch (err) {
-    check('DirectionCourt se rend', false, `${err.name}: ${err.message}`);
+    check('DirectionMap se rend', false, `${err.name}: ${err.message}`);
   }
 
   // Fenêtre séparée : terrain complet, trajectoire + historique transparent.

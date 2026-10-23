@@ -6,7 +6,6 @@
 
 import { DvKeyPad, DvSyntaxHelp } from './DvKeypad';
 import { describeCode, describeIssues, validateAction } from '../utils/datavolley';
-import { Grid3x3, CircleHelp, Volleyball, Zap } from './icons';
 
 const describeDefault = (it) => {
   if (it.valid) return describeCode(it.code);
@@ -69,7 +68,14 @@ export default function CodingConsole({
 
   return (
     <>
-      <h4>Console de codage</h4>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <h4 style={{ margin: 0 }}>Play-by-Play · Saisie</h4>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#a1a1aa' }}>
+          <span>Valider</span><kbd>Entrée</kbd>
+          <span>Effacer</span><kbd>⌫</kbd>
+          <span>Vider</span><kbd>Échap</kbd>
+        </span>
+      </div>
       {hint}
       <div className="dv-buffer" role="log" aria-live="polite" aria-label="Tampon de saisie">
         {chunks.length === 0 ? (
@@ -91,28 +97,28 @@ export default function CodingConsole({
           ))}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
         <button
           type="button"
           className="btn btn-secondary btn-sm"
           title="Insérer le code attendu dans le tampon"
           onClick={onInsertNextServe}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
           disabled={disabled}
         >
-          <Volleyball size={13} /> Attendu : {nextServe || '—'}
+          Attendu : <span className="pk-mono">{nextServe || '—'}</span>
         </button>
-        <label className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+        <label className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: disabled ? 'not-allowed' : 'pointer' }}>
           <input type="checkbox" checked={autoServe} onChange={onToggleAutoServe} disabled={disabled} />
           Pré-remplir le serveur
         </label>
         {aides && (
           <>
             <button type="button" className="btn btn-secondary btn-sm" onClick={onToggleKeypad} aria-expanded={showKeypad} disabled={disabled}>
-              <Grid3x3 size={13} /> Clavier
+              Clavier
             </button>
             <button type="button" className="btn btn-secondary btn-sm" onClick={onToggleHelp} aria-expanded={showHelp} disabled={disabled}>
-              <CircleHelp size={13} /> Aide-mémoire
+              Aide-mémoire
             </button>
           </>
         )}
@@ -129,7 +135,7 @@ export default function CodingConsole({
       )}
       {aides && showHelp && <DvSyntaxHelp />}
       <button className="btn btn-primary btn-block" onClick={onCommit} disabled={disabled || chunks.length === 0}>
-        <Zap size={14} /> {commitLabel}
+        {commitLabel} <kbd>Entrée</kbd>
       </button>
       {warnings}
       {aftermath}

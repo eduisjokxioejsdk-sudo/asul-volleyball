@@ -6,7 +6,7 @@
 // (actions + remplacements + synchronisation) et donc les mêmes calculs.
 //
 // Tout ce fichier est PUR (aucun accès réseau ni DOM) : les règles sont
-// vérifiées par client/scripts/coding-tools.spec.mjs.
+// vérifiées par client/scripts/coding-tools.spec.mjs et Vitest.
 // ============================================================================
 
 import {
@@ -238,7 +238,7 @@ export function countByAction(actions) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. CONTRÔLE DES CODES (mode Correction)
+// 3. CONTRÔLE DES CODES (mode Correction + Contrôle Live Point 15)
 // ---------------------------------------------------------------------------
 
 export const CODE_ISSUE_LABELS = {
@@ -251,14 +251,17 @@ export const CODE_ISSUE_LABELS = {
   missing_serve: 'le point ne commence pas par un service',
   reception_without_serve: 'réception qui ne suit pas un service',
   unknown_player: 'numéro de joueur absent de la fiche équipe',
-  // Contrôles enrichis de la 3.1.0 — toujours des AVERTISSEMENTS, jamais bloquants.
+  // Contrôles enrichis de la 3.1.0 & Point 15 — toujours des AVERTISSEMENTS ou ERREURS RÈGLEMENT.
   player_not_in_six: 'joueur absent du six',
-  wrong_server: 'service par une équipe qui n’avait pas le service',
+  wrong_server: 'service par une équipe ou un joueur qui n’avait pas le service (P1)',
   sub_without_out: 'remplacement sans sortant sur le terrain',
   attack_without_direction: 'attaque sans direction',
   serve_without_direction: 'service sans direction',
   point_not_closed: 'point non clos en fin de set',
   missing_set: 'set manquant',
+  libero_front_attack: 'libéro en attaque avant ou au contre (interdit FIVB)',
+  libero_serve: 'service par un libéro (interdit en règlement FIVB/FFVB)',
+  double_point_ending: 'double action terminale dans le même échange',
 };
 
 /**
@@ -268,9 +271,11 @@ export const CODE_ISSUE_LABELS = {
  * @param {Array} actions
  * @param {Object} [opts]
  * @param {Object} [opts.roster] - { home: [numéros], away: [numéros] }
+ * @param {Object} [opts.homeConfig] - { players: [...], libero: number }
+ * @param {Object} [opts.awayConfig] - { players: [...], libero: number }
  * @param {boolean} [opts.requireTimecode] - signale les actions non calées
  * @param {boolean} [opts.requireEvaluation] - signale les actions non notées
- * @param {boolean} [opts.enriched] - active les sept contrôles enrichis (3.1.0)
+ * @param {boolean} [opts.enriched] - active les contrôles enrichis
  * @param {Object} [opts.matchState] - état rejoué (computeMatchState)
  * @param {Object} [opts.setups] - six de départ (si matchState absent)
  * @param {Array} [opts.events] - temps morts / remplacements enregistrés
@@ -286,18 +291,40 @@ export function codeIssues(actions, opts = {}) {
       action_index: action?.action_index ?? null,
       code: action?.code ?? '',
       issue,
+      kind: issue,
       severity,
       label: CODE_ISSUE_LABELS[issue] || issue,
       ...extra,
     });
   };
 
-  const rosterNumbers = (team) => {
+  const extractNumbers = (team) => {
     const r = opts.roster?.[team];
-    if (!r || !r.length) return null;
-    return new Set(r.map((n) => Number(n)));
+    if (r && r.length) return new Set(r.map((n) => Number(n?.number ?? n)));
+    const cfg = team === 'away' ? opts.awayConfig : opts.homeConfig;
+    if (cfg?.players?.length) {
+      return new Set(cfg.players.map((p) => Number(p?.number ?? p)).filter((n) => n > 0));
+    }
+    return null;
   };
-  const known = { home: rosterNumbers('home'), away: rosterNumbers('away') };
+  const known = { home: extractNumbers('home'), away: extractNumbers('away') };
+
+  const extractLiberos = (team) => {
+    const set = new Set();
+    if (opts.liberos?.[team]) set.add(Number(opts.liberos[team]));
+    const cfg = team === 'away' ? opts.awayConfig : opts.homeConfig;
+    if (cfg?.libero) set.add(Number(cfg.libero));
+    if (cfg?.libero2) set.add(Number(cfg.libero2));
+    if (Array.isArray(cfg?.players)) {
+      for (const p of cfg.players) {
+        if (p && (p.is_libero || p.role === 'Libéro' || p.role === 'L')) {
+          set.add(Number(p.number));
+        }
+      }
+    }
+    return set;
+  };
+  const liberosSet = { home: extractLiberos('home'), away: extractLiberos('away') };
 
   for (const a of list) {
     if (!a) continue;
@@ -311,21 +338,58 @@ export function codeIssues(actions, opts = {}) {
     if (opts.requireTimecode && a.timecode == null) push(a, 'no_timecode', 'warning');
     const set = known[a.team];
     if (set && a.player_number != null && !set.has(Number(a.player_number))) push(a, 'unknown_player', 'warning');
+
+    // Contrôles Libéro (Point 15) :
+    const teamLibs = liberosSet[a.team];
+    if (teamLibs && a.player_number != null && teamLibs.has(Number(a.player_number))) {
+      if (a.action === 'S') {
+        push(a, 'libero_serve', 'error');
+      }
+      if (a.action === 'B') {
+        push(a, 'libero_front_attack', 'error');
+      }
+      if (a.action === 'A') {
+        push(a, 'libero_front_attack', 'error');
+      }
+    }
   }
 
   const rallies = groupActionsIntoRallies(list);
+  const useEnriched = opts.enriched || !!opts.setups || !!opts.homeConfig || !!opts.awayConfig;
   const matchState =
     opts.matchState ||
-    (opts.enriched ? computeMatchState(rallies, opts.setups || {}, {}, opts.events || []) : null);
+    (useEnriched ? computeMatchState(rallies, opts.setups || {}, {}, opts.events || []) : null);
   const states = matchState?.states || [];
   rallies.forEach((rally, i) => {
     const acts = rally.actions || [];
     if (!acts.length) return;
     const first = acts[0];
     // Si le premier code est illisible, on ne peut rien conclure sur le point.
-    if (validateAction(first.code).valid && first.action !== 'S') push(first, 'missing_serve');
-    for (let k = 1; k < acts.length; k += 1) {
-      if (acts[k].action === 'R' && acts[k - 1].action !== 'S') push(acts[k], 'reception_without_serve', 'warning');
+    if (validateAction(first.code).valid && first.action !== 'S') {
+      push(first, 'missing_serve');
+      if (i > 0) {
+        const prevRally = rallies[i - 1];
+        const prevLast = prevRally?.actions?.[prevRally.actions.length - 1];
+        if (
+          prevLast &&
+          isTerminalEvaluation(prevLast.action, prevLast.evaluation) &&
+          isTerminalEvaluation(first.action, first.evaluation)
+        ) {
+          push(first, 'double_point_ending', 'warning');
+        }
+      }
+    }
+    let terminalCount = 0;
+    for (let k = 0; k < acts.length; k += 1) {
+      if (k > 0 && acts[k].action === 'R' && acts[k - 1].action !== 'S') {
+        push(acts[k], 'reception_without_serve', 'warning');
+      }
+      if (isTerminalEvaluation(acts[k].action, acts[k].evaluation)) {
+        terminalCount += 1;
+        if (terminalCount > 1) {
+          push(acts[k], 'double_point_ending', 'warning');
+        }
+      }
     }
     const last = acts[acts.length - 1];
     const closed = isTerminalEvaluation(last.action, last.evaluation) || !!getPointWinner(rally);
@@ -336,9 +400,9 @@ export function codeIssues(actions, opts = {}) {
   });
 
   // -------------------------------------------------------------------------
-  // Contrôles enrichis (3.1.0) — tous des avertissements.
+  // Contrôles enrichis (3.1.0 & Point 15) — tous des avertissements.
   // -------------------------------------------------------------------------
-  if (opts.enriched) {
+  if (useEnriched) {
     const events = opts.events || [];
     const hasAny = (lineup) => !!lineup && Object.values(lineup).some((v) => Number(v) > 0);
     const contains = (lineup, number) => !!lineup && Object.values(lineup).some((v) => Number(v) === Number(number));
@@ -352,7 +416,7 @@ export function codeIssues(actions, opts = {}) {
     const firstActionOfPoint = (pointNumber) =>
       (rallies.find((r) => Number(r.pointNumber) === Number(pointNumber))?.actions || [])[0] || null;
 
-    // 1. Joueur absent du six (désactivé si aucun six n'est enregistré).
+    // 1. Joueur absent du six & contrôle du serveur en P1.
     for (const rally of rallies) {
       const snap = snapshotAt(rally.pointNumber);
       if (!snap) continue;
@@ -361,8 +425,12 @@ export function codeIssues(actions, opts = {}) {
         const team = a.team === 'away' ? 'away' : 'home';
         const lineup = team === 'away' ? snap.awayLineup : snap.homeLineup;
         if (!hasAny(lineup)) continue;
-        if (Number(opts.liberos?.[team]) === Number(a.player_number)) continue;
+        if (liberosSet[team]?.has(Number(a.player_number))) continue;
         if (!contains(lineup, a.player_number)) push(a, 'player_not_in_six', 'warning');
+        // Vérification P1 au service :
+        if (a.action === 'S' && lineup.P1 != null && Number(lineup.P1) > 0 && Number(a.player_number) !== Number(lineup.P1)) {
+          push(a, 'wrong_server', 'warning', { detail: `attendu P1 : n°${lineup.P1}` });
+        }
       }
     }
 
@@ -392,10 +460,12 @@ export function codeIssues(actions, opts = {}) {
     }
 
     // 4 & 5. Directions : une attaque ou un service sans aucune zone.
-    for (const a of list) {
-      if (!a) continue;
-      if (a.action === 'A' && !a.start_zone && !a.end_zone) push(a, 'attack_without_direction', 'warning');
-      if (a.action === 'S' && !a.end_zone) push(a, 'serve_without_direction', 'warning');
+    if (opts.enriched) {
+      for (const a of list) {
+        if (!a) continue;
+        if (a.action === 'A' && !a.start_zone && !a.end_zone) push(a, 'attack_without_direction', 'warning');
+        if (a.action === 'S' && !a.end_zone) push(a, 'serve_without_direction', 'warning');
+      }
     }
 
     // 6. Point non clos au moment où le set change.
@@ -463,22 +533,23 @@ export function nextIssue(issues, fromIndex = -1) {
 
 
 // ---------------------------------------------------------------------------
-// 4. FENÊTRE DE COMMANDES (Échap) — ce qui n'est pas du jeu
+// 4. FENÊTRE DE COMMANDES (Échap) — ce qui n'est pas du jeu (Point 4)
 // ---------------------------------------------------------------------------
 
 export const COMMAND_HELP = [
-  { code: 'T', desc: 'Temps mort de l’équipe à domicile' },
-  { code: 'aT', desc: 'Temps mort de l’équipe extérieure' },
-  { code: 'C5.12', desc: 'Remplacement domicile : n°5 sort, n°12 entre' },
-  { code: 'aC5.12', desc: 'Remplacement extérieur : n°5 sort, n°12 entre' },
+  { code: 'T / aT', desc: 'Temps mort (domicile / extérieur)' },
+  { code: 'C5.12 / aC5.12', desc: 'Remplacement : n°5 sort, n°12 entre' },
+  { code: '*CY07 / aCR07', desc: 'Sanction joueur : Carton Jaune (CY), Rouge (CR +1 pt adv.), Expulsion (CE), Disqualif. (CD)' },
+  { code: '*DY / aDR', desc: 'Sanction retard de jeu : Avertissement (DY) ou Pénalité +1 pt adv. (DR)' },
+  { code: '*VC+ / *VC- / *VCR', desc: 'Video Check (Challenge) : Gagné (+), Perdu (-), Balle à rejouer (R)' },
+  { code: '*P / aP', desc: 'Point attribué manuellement par l’arbitre (+1 pt & service)' },
   { code: '>texte', desc: 'Code libre (remarque) ajouté au déroulé' },
 ];
 
 /**
  * Analyse une commande saisie dans la fenêtre de commandes.
  * @param {string} text
- * @returns {{kind:'none'|'timeout'|'substitution'|'note'|'unknown', team?:string,
- *            out?:number, in?:number, text?:string, error?:string}}
+ * @returns {Object}
  */
 export function parseCommand(text) {
   const raw = String(text ?? '').trim();
@@ -490,11 +561,44 @@ export function parseCommand(text) {
     return { kind: 'note', text: body.slice(0, 5).toUpperCase(), team: 'home' };
   }
 
-  const team = /^a/i.test(raw) && raw.length > 1 ? 'away' : 'home';
-  const body = team === 'away' ? raw.slice(1).trim() : raw;
+  let team = 'home';
+  let body = raw;
+  if (/^\*/.test(raw)) {
+    team = 'home';
+    body = raw.slice(1).trim();
+  } else if (/^a/i.test(raw) && raw.length > 1) {
+    team = 'away';
+    body = raw.slice(1).trim();
+  }
 
-  // Temps mort : T / aT (les espaces et la casse sont tolérés).
+  // Temps mort : T / aT / *T
   if (/^t$/i.test(body)) return { kind: 'timeout', team };
+
+  // Point d'arbitre : *P / aP / P
+  if (/^p$/i.test(body)) return { kind: 'point_adjust', team };
+
+  // Sanction joueur/coach : CY07, CR07, CE07, CD07 (numéro optionnel pour coach)
+  const sanctionMatch = body.match(/^c([yred])\s*(\d{1,2}|c)?$/i);
+  if (sanctionMatch) {
+    const card = sanctionMatch[1].toUpperCase();
+    const pRaw = sanctionMatch[2];
+    const player = pRaw && /^\d+$/.test(pRaw) ? Number(pRaw) : (pRaw ? 'Coach' : null);
+    return { kind: 'sanction', team, card, player };
+  }
+
+  // Retard de jeu : DY, DR
+  const delayMatch = body.match(/^d([yr])$/i);
+  if (delayMatch) {
+    return { kind: 'delay', team, card: delayMatch[1].toUpperCase() };
+  }
+
+  // Video Check / Challenge : VC+, VC-, VCR, VC=
+  const vcMatch = body.match(/^vc([+\-=r])$/i);
+  if (vcMatch) {
+    const sym = vcMatch[1].toUpperCase();
+    const outcome = sym === '+' ? 'won' : sym === 'R' ? 'replay' : 'lost';
+    return { kind: 'challenge', team, outcome, symbol: sym };
+  }
 
   // Remplacement : C + sortant + séparateur + entrant (C5.12, C5-12, C5 12).
   const sub = body.match(/^c\s*(\d{1,2})\s*[.\-/:]\s*(\d{1,2})$/i);
@@ -508,13 +612,13 @@ export function parseCommand(text) {
 
   return {
     kind: 'unknown',
-    error: `Commande inconnue « ${raw} ». Attendu : T, aT, C5.12, aC5.12 ou >texte.`,
+    error: `Commande inconnue « ${raw} ». Exemples : T, C5.12, *CY07, *CR07, *DY, *VC+, *P ou >texte.`,
   };
 }
 
 /**
- * Traduit une commande en événement enregistrable (temps mort, remplacement ou
- * code libre) au point en cours.
+ * Traduit une commande en événement enregistrable (temps mort, remplacement,
+ * sanction, retard, challenge, ajustement point ou code libre) au point en cours.
  * @returns {Object|null} corps à envoyer à l'API, ou null si la commande est vide
  */
 export function commandToEvent(command, ctx = {}) {
@@ -527,6 +631,18 @@ export function commandToEvent(command, ctx = {}) {
   if (command.kind === 'timeout') return { ...base, kind: 'timeout' };
   if (command.kind === 'substitution') {
     return { ...base, kind: 'substitution', payload: { out: command.out, in: command.in } };
+  }
+  if (command.kind === 'sanction') {
+    return { ...base, kind: 'sanction', payload: { card: command.card, player: command.player ?? null } };
+  }
+  if (command.kind === 'delay') {
+    return { ...base, kind: 'delay', payload: { card: command.card } };
+  }
+  if (command.kind === 'challenge') {
+    return { ...base, kind: 'challenge', payload: { outcome: command.outcome, symbol: command.symbol } };
+  }
+  if (command.kind === 'point_adjust') {
+    return { ...base, kind: 'point_adjust', payload: { delta: 1 } };
   }
   if (command.kind === 'note') return { ...base, kind: 'note', payload: { text: command.text } };
   return null;
@@ -760,7 +876,7 @@ export function accordionReduce(state, event = {}) {
     }
     case 'collapseAll':
       return { open: null, all: false };
-    case 'expandAll':
+        case 'expandAll':
       return { open: null, all: true };
     case 'auto': {
       if (event.follow === false) return s;
@@ -776,7 +892,7 @@ export function accordionReduce(state, event = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// 6 ter. DIRECTIONS D'ATTAQUE (3.1.0)
+// 6 ter. DIRECTIONS D'ATTAQUE (3.1.0 + Coordonnées 100x100 Point 14)
 // ---------------------------------------------------------------------------
 
 /** Direction d'une action : zones de départ et d'arrivée, et clé lisible. */
@@ -784,21 +900,30 @@ export function directionOf(action) {
   if (!action) return null;
   const start = String(action.start_zone || action.attack_zone || '');
   const end = String(action.end_zone || '');
-  if (!start && !end) return null;
-  return { start, end, key: `${start || '?'} → ${end || '?'}` };
+  if (!start && !end && action.start_x == null && action.end_x == null) return null;
+  return {
+    start,
+    end,
+    endSubzone: action.end_subzone || '',
+    startX: action.start_x ?? null,
+    startY: action.start_y ?? null,
+    midX: action.mid_x ?? null,
+    midY: action.mid_y ?? null,
+    endX: action.end_x ?? null,
+    endY: action.end_y ?? null,
+    key: `${start || '?'} → ${end || '?'}${action.end_subzone || ''}`,
+  };
 }
 
 /** Attaque sans aucune direction (ni départ, ni arrivée). */
 export function attacksWithoutDirection(actions) {
-  return (actions || []).filter((a) => a?.action === 'A' && !a.start_zone && !a.end_zone);
+  return (actions || []).filter((a) => a?.action === 'A' && !a.start_zone && !a.end_zone && a.start_x == null);
 }
 
 /**
- * Code réécrit avec les deux zones, sans changer de format : les directions
- * restent dans les champs start_zone / end_zone (les matchs déjà codés restent
- * valides et l'export .dvw écrit le code complet).
+ * Code réécrit avec les deux zones (et sous-zone éventuelle), sans changer de format.
  */
-export function codeWithDirection(action, startZone, endZone) {
+export function codeWithDirection(action, startZone, endZone, endSubzone) {
   if (!action) return '';
   return formatCode({
     team: action.team,
@@ -807,26 +932,36 @@ export function codeWithDirection(action, startZone, endZone) {
     type: action.type,
     combo: action.combo,
     call: action.call,
-    end_subzone: action.end_subzone,
+    end_subzone: endSubzone !== undefined ? String(endSubzone || '') : action.end_subzone,
     evaluation: action.evaluation,
     start_zone: String(startZone || ''),
     end_zone: String(endZone || ''),
   });
 }
 
-/** Applique une direction à une action (uid) : code + champs start/end zone. */
-export function applyDirection(actions, uid, startZone, endZone) {
+/** Applique une direction (zones + coordonnées 100×100 optionnelles) à une action (uid). */
+export function applyDirection(actions, uid, startZone, endZone, coords = null) {
   return (actions || []).map((a) => {
     if (a?.uid !== uid) return a;
-    const code = codeWithDirection(a, startZone, endZone);
+    const subzone = coords?.endSubzone !== undefined ? coords.endSubzone : a.end_subzone;
+    const code = codeWithDirection(a, startZone, endZone, subzone);
     const fields = decomposeCode(code);
-    return {
+    const updated = {
       ...a,
       ...fields,
       code,
       start_zone: fields.start_zone || '',
       end_zone: fields.end_zone || '',
     };
+    if (coords) {
+      if (coords.start_x !== undefined) updated.start_x = coords.start_x;
+      if (coords.start_y !== undefined) updated.start_y = coords.start_y;
+      if (coords.mid_x !== undefined) updated.mid_x = coords.mid_x;
+      if (coords.mid_y !== undefined) updated.mid_y = coords.mid_y;
+      if (coords.end_x !== undefined) updated.end_x = coords.end_x;
+      if (coords.end_y !== undefined) updated.end_y = coords.end_y;
+    }
+    return updated;
   });
 }
 
@@ -841,12 +976,13 @@ export function attackDirectionRows(actions) {
     if (a?.action !== 'A') continue;
     const d = directionOf(a);
     if (!d) continue;
-    const row = map.get(d.key) || { key: d.key, start: d.start, end: d.end, total: 0, points: 0, errors: 0, blocked: 0 };
+    const key = `${d.start || '?'} → ${d.end || '?'}`;
+    const row = map.get(key) || { key, start: d.start, end: d.end, total: 0, points: 0, errors: 0, blocked: 0 };
     row.total += 1;
     if (a.evaluation === '#') row.points += 1;
     if (a.evaluation === '=') row.errors += 1;
     if (a.evaluation === '/') row.blocked += 1;
-    map.set(d.key, row);
+    map.set(key, row);
   }
   return [...map.values()]
     .map((r) => ({
@@ -875,19 +1011,6 @@ export const ANALYSIS_FILTERS = {
 
 /**
  * Actions correspondant à une cellule d'analyse (« Click to Rally »).
- *
- * @param {Array} actions
- * @param {Object} spec - critères de la cellule (team, player, action,
- *        evaluation, zone, set, combo, type, query, situation, rotation,
- *        pointNumbers)
- * @param {Object} [opts]
- * @param {Function} [opts.setOf] - (action) => set
- * @param {Function} [opts.situationOf] - (action) => '+' | 0 | '-'
- * @param {Function} [opts.rotationOf] - (action) => 1..6
- * @param {Function} [opts.pointOf] - (action) => numéro de point
- * @param {Function} [opts.comboOf]
- * @param {Function} [opts.typeOf]
- * @returns {Array}
  */
 export function drillDown(actions, spec = {}, opts = {}) {
   const list = searchCodes(
@@ -953,4 +1076,3 @@ export const FUNCTION_EVALUATIONS = [
 ];
 
 export { buildPointSegments };
-

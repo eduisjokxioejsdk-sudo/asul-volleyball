@@ -254,6 +254,7 @@ db.serialize(() => {
     end_zone TEXT,
     end_subzone TEXT,
     attack_zone TEXT,
+    set_number INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (session_id) REFERENCES live_sessions(id)
   )`);
@@ -373,12 +374,107 @@ db.serialize(() => {
 
   db.run('CREATE INDEX IF NOT EXISTS idx_trajectory_shots_match ON trajectory_shots (match_id, team_side, kind)');
 
+  // Montages vidéo (générateur de compilations d'actions / rallies)
+  db.run(`CREATE TABLE IF NOT EXISTS video_montages (
+    id TEXT PRIMARY KEY,
+    video_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'pending',
+    progress INTEGER DEFAULT 0,
+    progress_step TEXT,
+    clip_count INTEGER DEFAULT 0,
+    output_filename TEXT,
+    output_filepath TEXT,
+    file_size INTEGER,
+    duration REAL,
+    error_message TEXT,
+    settings TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME,
+    FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+  )`);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_video_montages_video ON video_montages (video_id, user_id)');
+
   // Les playlists de séance (versions 2.1 et 2.2) ont été retirées : le système
   // n'existe plus dans l'application. La table est supprimée des postes qui
   // l'auraient créée, pour ne pas laisser de données orphelines.
   db.run('DROP TABLE IF EXISTS playlists', (err) => {
     if (!err) console.log('[ASUL] Table « playlists » retirée (système supprimé en 3.0.1).');
   });
+
+  // Playlists vidéo persistantes multi-matchs (DataVolley 4 Pro — Point 19)
+  db.run(`CREATE TABLE IF NOT EXISTS dv_playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS dv_playlist_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playlist_id INTEGER NOT NULL,
+    video_id INTEGER NOT NULL,
+    action_id INTEGER,
+    code TEXT,
+    team1_name TEXT,
+    team2_name TEXT,
+    set_number INTEGER DEFAULT 1,
+    timecode REAL NOT NULL DEFAULT 0,
+    lead_in REAL DEFAULT 3,
+    lead_out REAL DEFAULT 4,
+    note TEXT,
+    position INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (playlist_id) REFERENCES dv_playlists(id) ON DELETE CASCADE,
+    FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+  )`);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_dv_playlist_items_pl ON dv_playlist_items (playlist_id, position)');
+
+  // Mode Entraînement (Point 13 — séances et ateliers sans score ni rotation)
+  db.run(`CREATE TABLE IF NOT EXISTS practice_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    team_id INTEGER,
+    team_name TEXT,
+    video_id INTEGER,
+    drill_type TEXT DEFAULT 'all',
+    notes TEXT,
+    session_date TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS practice_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    action_index INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    timecode REAL,
+    player_number INTEGER,
+    action TEXT,
+    evaluation TEXT,
+    type TEXT,
+    start_zone TEXT,
+    end_zone TEXT,
+    end_subzone TEXT,
+    start_x REAL,
+    start_y REAL,
+    end_x REAL,
+    end_y REAL,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES practice_sessions(id) ON DELETE CASCADE
+  )`);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_practice_actions_session ON practice_actions (session_id, action_index)');
 
   // Colonnes de partage des trajectoires : `created_by` (email du créateur) et
   // les UUID d'équipe (pour re-lier l'effectif quand l'équipe arrive après la
@@ -390,6 +486,7 @@ db.serialize(() => {
     if (!names.includes('created_by')) db.run('ALTER TABLE trajectory_matches ADD COLUMN created_by TEXT');
     if (!names.includes('home_team_uuid')) db.run('ALTER TABLE trajectory_matches ADD COLUMN home_team_uuid TEXT');
     if (!names.includes('away_team_uuid')) db.run('ALTER TABLE trajectory_matches ADD COLUMN away_team_uuid TEXT');
+    if (!names.includes('video_id')) db.run('ALTER TABLE trajectory_matches ADD COLUMN video_id INTEGER');
   });
 
   // Colonnes d'UUID d'équipe sur les matchs (codage DataVolley), pour la même
@@ -418,6 +515,21 @@ db.serialize(() => {
     }
     if (!columnNames.includes('filepath_proxy')) {
       db.run('ALTER TABLE videos ADD COLUMN filepath_proxy TEXT');
+    }
+    if (!columnNames.includes('home_team_id')) {
+      db.run('ALTER TABLE videos ADD COLUMN home_team_id INTEGER');
+    }
+    if (!columnNames.includes('away_team_id')) {
+      db.run('ALTER TABLE videos ADD COLUMN away_team_id INTEGER');
+    }
+    if (!columnNames.includes('filename_angle2')) {
+      db.run('ALTER TABLE videos ADD COLUMN filename_angle2 TEXT');
+    }
+    if (!columnNames.includes('filepath_angle2')) {
+      db.run('ALTER TABLE videos ADD COLUMN filepath_angle2 TEXT');
+    }
+    if (!columnNames.includes('angle2_offset')) {
+      db.run('ALTER TABLE videos ADD COLUMN angle2_offset REAL DEFAULT 0');
     }
   });
 
@@ -498,6 +610,14 @@ db.serialize(() => {
       ['start_zone', 'TEXT'],
       ['end_zone', 'TEXT'],
       ['end_subzone', 'TEXT'],
+      ['start_x', 'REAL'],
+      ['start_y', 'REAL'],
+      ['mid_x', 'REAL'],
+      ['mid_y', 'REAL'],
+      ['end_x', 'REAL'],
+      ['end_y', 'REAL'],
+      ['is_auto', 'INTEGER DEFAULT 0'],
+      ['set_number', 'INTEGER'],
     ];
     db.all(`PRAGMA table_info(${table})`, (err, columns) => {
       if (err) return;
@@ -518,6 +638,24 @@ db.serialize(() => {
     if (!names.length) return;
     if (!names.includes('role')) db.run("ALTER TABLE team_players ADD COLUMN role TEXT DEFAULT 'universal'");
     if (!names.includes('serve_type')) db.run('ALTER TABLE team_players ADD COLUMN serve_type TEXT');
+    if (!names.includes('license_number')) db.run('ALTER TABLE team_players ADD COLUMN license_number TEXT');
+    if (!names.includes('first_name')) db.run('ALTER TABLE team_players ADD COLUMN first_name TEXT');
+    if (!names.includes('last_name')) db.run('ALTER TABLE team_players ADD COLUMN last_name TEXT');
+    if (!names.includes('secondary_role')) db.run('ALTER TABLE team_players ADD COLUMN secondary_role TEXT');
+    if (!names.includes('height_cm')) db.run('ALTER TABLE team_players ADD COLUMN height_cm INTEGER');
+    if (!names.includes('birth_year')) db.run('ALTER TABLE team_players ADD COLUMN birth_year INTEGER');
+    if (!names.includes('handedness')) db.run("ALTER TABLE team_players ADD COLUMN handedness TEXT DEFAULT 'R'");
+    if (!names.includes('is_captain')) db.run('ALTER TABLE team_players ADD COLUMN is_captain INTEGER DEFAULT 0');
+    if (!names.includes('is_libero')) db.run('ALTER TABLE team_players ADD COLUMN is_libero INTEGER DEFAULT 0');
+    if (!names.includes('active')) db.run('ALTER TABLE team_players ADD COLUMN active INTEGER DEFAULT 1');
+  });
+
+  // Migrate volley_sync : offsets vidéo par set (Point 22)
+  db.all('PRAGMA table_info(volley_sync)', (err, columns) => {
+    if (err) return;
+    const names = (columns || []).map((c) => c.name);
+    if (!names.length) return;
+    if (!names.includes('set_offsets')) db.run("ALTER TABLE volley_sync ADD COLUMN set_offsets TEXT DEFAULT '{}'");
   });
 
   // Migrate teams : libéro, joueur remplacé, puis colonnes de la synchronisation

@@ -1,3 +1,5 @@
+import AppNavigation from '../components/AppNavigation';
+import PancakeLogo from '../components/PancakeLogo';
 // ============================================================================
 // Fiche de trajectoire d'un match.
 //   • équipes partagées avec le reste de l'application (onglet Trajectoires) ;
@@ -274,6 +276,7 @@ export default function TrajectoryDashboard({ user }) {
               </form>
             ) : (
               <>
+                <PancakeLogo size={18} />
                 <strong>{match.name}</strong>
                 <span className="dv-teams">
                   <House size={12} /> {teamNameOf('home')}

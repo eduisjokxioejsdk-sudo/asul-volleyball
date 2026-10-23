@@ -101,7 +101,7 @@ export default function MatchReportTable({ report, sets = [], activeSets = [], o
         </table>
       </div>
       <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-        Eff = efficacité ((points − fautes [− contrées à l’attaque]) / total). Pos% = réceptions «&nbsp;#&nbsp;» et
+        Eff% = efficacité ((points − fautes [− contrées à l’attaque]) / total). Pos% = réceptions «&nbsp;#&nbsp;» et
         «&nbsp;+&nbsp;». Exc% = réceptions parfaites.
       </p>
     </div>

@@ -23,11 +23,14 @@ const CODING_KEYS = [
   { keys: ['Entrée'], label: 'valider le point' },
   { keys: ['Échap'], label: 'vider le tampon' },
   { keys: ['Retour'], label: 'effacer un caractère' },
+  { keys: ['Ctrl', 'Maj', 'C'], label: 'fenêtre de commandes' },
+  { keys: ['[', ']'], label: 'fin de point (equipe 1 / 2)' },
 ];
 
 /** Raccourcis d'affichage (fenêtres de codage). */
 const LAYOUT_KEYS = [
   { keys: ['F2'], label: 'afficher / masquer les fenêtres' },
+  { keys: ['↑', '↓'], label: 'vitesse de lecture' },
 ];
 
 /**

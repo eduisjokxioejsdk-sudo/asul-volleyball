@@ -13,6 +13,7 @@ import {
   DV_ACTION_KEYS,
   DV_EVAL_KEYS,
   DV_TYPES,
+  DV_BLOCKER_COUNTS,
   attackComboInfo,
   setterCallInfo,
   decomposeCode,
@@ -80,6 +81,9 @@ export function emptySkillAgg() {
     byCall: {},       // appels passeur (K1, K2…)
     comboStats: {},   // détail par combinaison (total, points, fautes…)
     callStats: {},    // détail par appel passeur
+    byBlockers: {},   // attaque face à 0, 1, 2, 3 contreurs ou 4 (trou)
+    byKillType: {},   // type de frappe post-éval (H, P, T)
+    bySpecial: {},    // code spécial post-éval (B=Block-out, O=Out, N=Filet, Z=Ligne)
     byDirection: {},  // attaque : détail par direction « départ→arrivée »
     byZone: {},        // zone de départ (service : zone cible lue en end_zone)
     byEndZone: {},
@@ -132,13 +136,19 @@ export function addSkillAction(agg, a) {
   if (agg.byEval[ev] != null) agg.byEval[ev] += 1;
   if (a.type) agg.byType[a.type] = (agg.byType[a.type] || 0) + 1;
 
-  // Combinaison d'attaque / appel passeur : champ fourni, sinon déduit du code.
+  // Combinaison d'attaque / appel passeur / codes étendus : champ fourni, sinon déduit du code.
   let combo = a.combo || '';
   let call = a.call || '';
-  if (!combo && !call && a.code) {
+  let numBlockers = a.num_blockers !== undefined && a.num_blockers !== null ? String(a.num_blockers) : '';
+  let killType = a.kill_type || '';
+  let specialCode = a.special_code || '';
+  if ((!combo && !call && !numBlockers && !killType && !specialCode) && a.code) {
     const d = decomposeCode(a.code);
-    combo = d.combo || '';
-    call = d.call || '';
+    combo = combo || d.combo || '';
+    call = call || d.call || '';
+    numBlockers = numBlockers || (d.num_blockers !== undefined && d.num_blockers !== null ? String(d.num_blockers) : '');
+    killType = killType || d.kill_type || '';
+    specialCode = specialCode || d.special_code || '';
   }
   const outcome = outcomeOf(a.action, ev);
   const isPoint = outcome === 'point';
@@ -160,6 +170,20 @@ export function addSkillAction(agg, a) {
     if (isPoint) cs.points += 1;
     if (ev === '=') cs.errors += 1;
     if (isPositive) cs.positive += 1;
+  }
+  if (numBlockers !== '') {
+    const bs = (agg.byBlockers[numBlockers] = agg.byBlockers[numBlockers] || emptyTacticStat());
+    bs.total += 1;
+    if (isPoint) bs.points += 1;
+    if (ev === '=') bs.errors += 1;
+    if (isBlocked) bs.blocked += 1;
+    if (isPositive) bs.positive += 1;
+  }
+  if (killType) {
+    agg.byKillType[killType] = (agg.byKillType[killType] || 0) + 1;
+  }
+  if (specialCode) {
+    agg.bySpecial[specialCode] = (agg.bySpecial[specialCode] || 0) + 1;
   }
 
   // Zone utile selon la compétence : service → zone cible (end_zone) ;
@@ -220,6 +244,12 @@ export function mergeSkillAgg(target, source) {
     const t = (target.callStats[k] = target.callStats[k] || emptyTacticStat());
     for (const key of Object.keys(t)) t[key] += s[key] || 0;
   }
+  for (const [k, s] of Object.entries(source.byBlockers || {})) {
+    const t = (target.byBlockers[k] = target.byBlockers[k] || emptyTacticStat());
+    for (const key of Object.keys(t)) t[key] += s[key] || 0;
+  }
+  for (const [k, v] of Object.entries(source.byKillType || {})) target.byKillType[k] = (target.byKillType[k] || 0) + v;
+  for (const [k, v] of Object.entries(source.bySpecial || {})) target.bySpecial[k] = (target.bySpecial[k] || 0) + v;
   for (const [k, s] of Object.entries(source.byDirection || {})) {
     const t = (target.byDirection[k] = target.byDirection[k] || emptyTacticStat());
     for (const key of Object.keys(t)) t[key] += s[key] || 0;
@@ -339,17 +369,31 @@ function attackOutcomeOf(a) {
 
 /**
  * Première attaque suivant une réception de la même équipe dans un rallye.
- * @returns {{action:Object, situation:string}|null}
+ * Supporte R → A ainsi que R → E → A (quand la passe E est codée entre les deux).
+ * @returns {{action:Object, situation:string, reception:Object, setAction:Object|null}|null}
  */
 export function firstReceptionAttack(rallyActions, team) {
   const acts = rallyActions || [];
-  for (let i = 1; i < acts.length; i += 1) {
-    const prev = acts[i - 1];
+  let rec = null;
+  let setAct = null;
+  for (let i = 0; i < acts.length; i += 1) {
     const cur = acts[i];
-    if (cur.action !== 'A' || cur.team !== team) continue;
-    if (prev.action === 'R' && prev.team === team) {
-      const situation = receptionToSituation(prev.evaluation);
-      if (situation) return { action: cur, situation };
+    if (cur.team !== team) {
+      if (rec) break; // la balle a retraversé le filet avant une attaque
+      continue;
+    }
+    if (cur.action === 'R' && !rec) {
+      rec = cur;
+      continue;
+    }
+    if (rec && cur.action === 'E') {
+      setAct = cur;
+      continue;
+    }
+    if (rec && cur.action === 'A') {
+      const situation = receptionToSituation(rec.evaluation);
+      if (situation) return { action: cur, situation, reception: rec, setAction: setAct };
+      return null;
     }
   }
   return null;
@@ -386,19 +430,38 @@ export function computeSituations(rallies) {
   return result;
 }
 // ---------------------------------------------------------------------------
-// Complexe I / II : side-out (après réception) vs transition (après service)
+// Complexe I / II : side-out (après réception), FBSO (1st Ball Side-Out),
+// Transition Side-Out (point gagné en réception après rallye) & Break Point (K2)
 // ---------------------------------------------------------------------------
 
 export function emptyComplex() {
   return {
-    // Complexe I : l'équipe reçoit le service (elle n'a pas servi).
+    // Complexe I global : l'équipe reçoit le service (elle n'a pas servi).
     sideOut: { total: 0, won: 0, pct: 0 },
-    // Complexe II : l'équipe a servi (elle doit défendre puis marquer).
+    // First Ball Side-Out (FBSO) : point gagné dès la 1re attaque de réception.
+    fbso: { total: 0, won: 0, pct: 0 },
+    // Side-Out en Transition : point gagné par l'équipe en réception après que la 1re attaque a été défendue.
+    transitionSideOut: { total: 0, won: 0, pct: 0 },
+    // Complexe II (Break Point) : l'équipe a servi (elle doit défendre puis marquer).
     transition: { total: 0, won: 0, pct: 0 },
   };
 }
 
-/** Complexe I / II par équipe, déduits du serveur de chaque échange. */
+/** Vrai si l'équipe en réception gagne le point directement sur sa 1re attaque (FBSO). */
+function isFirstBallSideOutWin(rally, receiverSide, winnerSide) {
+  if (winnerSide !== receiverSide) return false;
+  const acts = rally?.actions || [];
+  const receiverAttacks = acts.filter((a) => a.team === receiverSide && a.action === 'A');
+  if (receiverAttacks.length !== 1) return false;
+  const firstAtt = receiverAttacks[0];
+  if (firstAtt.evaluation === '#') return true;
+  // Ou bien l'adversaire commet une faute de contre/défense immédiate sur cette 1re attaque sans contre-attaquer
+  const serverSide = receiverSide === 'home' ? 'away' : 'home';
+  const serverAttacks = acts.filter((a) => a.team === serverSide && a.action === 'A');
+  return serverAttacks.length === 0;
+}
+
+/** Complexe I / II + FBSO par équipe, déduits du serveur de chaque échange. */
 export function computeComplex(rallies) {
   const result = { home: emptyComplex(), away: emptyComplex() };
   for (const rally of rallies || []) {
@@ -412,12 +475,32 @@ export function computeComplex(rallies) {
     const winnerSide = winner === 'team1' ? 'home' : 'away';
     result[serverSide].transition.total += 1;
     result[receiverSide].sideOut.total += 1;
-    if (winnerSide === serverSide) result[serverSide].transition.won += 1;
-    else result[receiverSide].sideOut.won += 1;
+    result[receiverSide].fbso.total += 1;
+
+    const isFbso = isFirstBallSideOutWin(rally, receiverSide, winnerSide);
+    const hasReceiverAttack = (rally.actions || []).some((a) => a.team === receiverSide && a.action === 'A');
+    if (hasReceiverAttack && !isFbso) {
+      result[receiverSide].transitionSideOut.total += 1;
+    }
+
+    if (winnerSide === serverSide) {
+      result[serverSide].transition.won += 1;
+    } else {
+      result[receiverSide].sideOut.won += 1;
+      if (isFbso) {
+        result[receiverSide].fbso.won += 1;
+      } else if (hasReceiverAttack) {
+        result[receiverSide].transitionSideOut.won += 1;
+      }
+    }
   }
   for (const side of ['home', 'away']) {
     const c = result[side];
     c.sideOut.pct = c.sideOut.total ? Math.round((c.sideOut.won / c.sideOut.total) * 1000) / 10 : 0;
+    c.fbso.pct = c.fbso.total ? Math.round((c.fbso.won / c.fbso.total) * 1000) / 10 : 0;
+    c.transitionSideOut.pct = c.transitionSideOut.total
+      ? Math.round((c.transitionSideOut.won / c.transitionSideOut.total) * 1000) / 10
+      : 0;
     c.transition.pct = c.transition.total ? Math.round((c.transition.won / c.transition.total) * 1000) / 10 : 0;
   }
   return result;
@@ -584,7 +667,8 @@ function buildSide(teamKey, list, config, name) {
   for (const p of rosterOf(config)) {
     players.set(p.number, emptyScoutPlayer(p.number, p.name, p.role));
   }
-  for (const a of list) {
+  for (let idx = 0; idx < list.length; idx += 1) {
+    const a = list[idx];
     if (a.team !== teamKey) continue;
     const n = Number(a.player_number) || 0;
     if (n <= 0) continue;
@@ -592,7 +676,24 @@ function buildSide(teamKey, list, config, name) {
       const info = rosterOf(config).find((p) => p.number === n);
       players.set(n, emptyScoutPlayer(n, info?.name || '', info?.role || 'universal'));
     }
-    addActionToPlayer(players.get(n), a);
+    const pl = players.get(n);
+    addActionToPlayer(pl, a);
+
+    // Si l'action est une passe (E) avec un appel passeur (K1, K2, K7…) et que l'action
+    // immédiatement suivante est l'attaque (A) de la même équipe, on crédite aussi l'issue
+    // de l'attaque (point gagnant, faute, contrée) sur le callStats du passeur.
+    const callCode = a.call || (a.code ? decomposeCode(a.code).call : '');
+    if (a.action === 'E' && callCode) {
+      const nextAct = list[idx + 1];
+      if (nextAct && nextAct.team === teamKey && nextAct.action === 'A') {
+        const cs = pl.skills.set.callStats[callCode];
+        if (cs) {
+          if (nextAct.evaluation === '#' && a.evaluation !== '#') cs.points += 1;
+          if (nextAct.evaluation === '=' && a.evaluation !== '=') cs.errors += 1;
+          if (nextAct.evaluation === '/') cs.blocked += 1;
+        }
+      }
+    }
   }
   const sorted = [...players.values()].sort((x, y) => x.number - y.number);
   return { name, players: sorted, totals: teamTotals(sorted) };
@@ -816,4 +917,43 @@ export function setEfficiencyRows(report) {
     home: sideEfficiency(s.home?.totals),
     away: sideEfficiency(s.away?.totals),
   }));
+}
+
+/**
+ * Matrice d'efficacité d'attaque par nombre de contreurs (0, 1, 2, 3, 4=Trou).
+ * Renvoie aussi le % de situations 0/1 contreur créées par le passeur (Setter 1v1%).
+ */
+export function blockerTableRows(side) {
+  const agg = {};
+  const add = (src) => {
+    for (const [code, s] of Object.entries(src || {})) {
+      const e = (agg[code] = agg[code] || emptyTacticStat());
+      for (const k of Object.keys(e)) e[k] += s[k] || 0;
+    }
+  };
+  for (const p of side?.players || []) add(p.skills?.attack?.byBlockers);
+  if (!(side?.players || []).length) add(side?.totals?.skills?.attack?.byBlockers);
+
+  const totalCoded = Object.values(agg).reduce((sum, s) => sum + (s.total || 0), 0);
+  const oneOrZero = (agg['0']?.total || 0) + (agg['1']?.total || 0) + (agg['4']?.total || 0);
+  const setter1v1Pct = totalCoded ? Math.round((oneOrZero / totalCoded) * 1000) / 10 : 0;
+
+  const rows = DV_BLOCKER_COUNTS.map((b) => {
+    const s = agg[b.code] || emptyTacticStat();
+    const killPct = s.total ? Math.round((s.points / s.total) * 1000) / 10 : 0;
+    const eff = s.total ? Math.round(((s.points - s.errors - s.blocked) / s.total) * 1000) / 10 : 0;
+    const sharePct = totalCoded ? Math.round((s.total / totalCoded) * 1000) / 10 : 0;
+    return {
+      code: b.code,
+      label: b.label,
+      short: b.short,
+      desc: b.desc,
+      ...s,
+      sharePct,
+      killPct,
+      efficiency: eff,
+    };
+  }).filter((r) => r.total > 0);
+
+  return { rows, totalCoded, oneOrZero, setter1v1Pct };
 }

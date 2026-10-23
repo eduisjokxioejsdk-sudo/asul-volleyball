@@ -10,8 +10,9 @@
 
 import { useMemo, useState } from 'react';
 import MatchReportTable from './MatchReportTable';
+import PancakeLogo from './PancakeLogo';
 import ZoneHeatmap from './ZoneHeatmap';
-import { DirectionMap } from './DirectionCourt';
+import { DirectionMap } from './AttackCourt';
 import { DV_EVAL_KEYS, DV_EVALUATIONS, DV_ZONE_LABELS } from '../utils/datavolley';
 import {
   RANKING_LABELS,
@@ -24,6 +25,7 @@ import {
   directionTableRows,
   setEfficiencyRows,
   tacticTableRows,
+  blockerTableRows,
   zoneCellRows,
 } from '../utils/scouting';
 
@@ -33,7 +35,7 @@ const TABS = [
   { key: 'service', label: 'Service', skill: 'serve', action: 'S' },
   { key: 'reception', label: 'Réception', skill: 'reception', action: 'R' },
   { key: 'attaque', label: 'Attaque', skill: 'attack', action: 'A' },
-  { key: 'combinaisons', label: 'Combinaisons' },
+  { key: 'combinaisons', label: 'Setter Call / Combos' },
   { key: 'contre', label: 'Contre', skill: 'block', action: 'B' },
   { key: 'defense', label: 'Défense / Passe', skills: ['dig', 'set', 'freeball'] },
   { key: 'zones', label: 'Zones' },
@@ -159,7 +161,7 @@ function EvalTable({ side, skillId, label }) {
           ))}
           <th>Pts</th>
           <th>Err</th>
-          <th>Eff</th>
+          <th>Eff%</th>
         </tr>
       </thead>
       <tbody>
@@ -216,17 +218,62 @@ function TypeTable({ side, skillId, actionCode, actions }) {
 /** Table « combinaisons d'attaque » (compteurs et efficacité par code). */
 function ComboTable({ side }) {
   const rows = tacticTableRows(side, 'attack', 'combo');
-  if (rows.length === 0) return <p className="dv-hint">Aucune combinaison d’attaque codée.</p>;
+  if (rows.length === 0) return <p className="dv-hint">Aucune combinaison d’attaque codée (ex: *09AX1#, *12AV54#).</p>;
   return (
     <table className="report report-compact">
       <thead>
         <tr>
           <th className="name">Combinaison</th>
           <th>Tot</th>
-          <th>Pts</th>
-          <th>Err</th>
-          <th>Contrées</th>
-          <th>Eff</th>
+          <th>Pts (#)</th>
+          <th>Err (=)</th>
+          <th>Contrées (/)</th>
+          <th>Kill%</th>
+          <th>Eff%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => {
+          const killPct = r.total ? Math.round((r.points / r.total) * 1000) / 10 : 0;
+          return (
+            <tr key={r.code}>
+              <td className="name" title={r.desc}>
+                <code>{r.code}</code> {r.label}
+              </td>
+              <td>{r.total}</td>
+              <td>{r.points}</td>
+              <td>{r.errors}</td>
+              <td>{r.blocked}</td>
+              <td>{killPct}%</td>
+              <td><strong>{r.efficiency}%</strong></td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/** Table « Appels du passeur / Fixations du central (Setter Calls K1, K2, K7, KE…) ». */
+function SetterCallTable({ side }) {
+  const rows = tacticTableRows(side, 'set', 'call');
+  if (rows.length === 0) {
+    return (
+      <p className="dv-hint">
+        Aucun appel passeur codé sur une passe (ex: <code>*07EK1#</code> pour Fixation Devant, <code>*07EK2#</code> Derrière, <code>*07EK7#</code> Tendue 3m).
+      </p>
+    );
+  }
+  return (
+    <table className="report report-compact">
+      <thead>
+        <tr>
+          <th className="name">Appel Passeur (Course Central)</th>
+          <th>Passes</th>
+          <th>Pts Att (#)</th>
+          <th>Fautes (=)</th>
+          <th>Contrées (/)</th>
+          <th>Eff%</th>
         </tr>
       </thead>
       <tbody>
@@ -239,11 +286,62 @@ function ComboTable({ side }) {
             <td>{r.points}</td>
             <td>{r.errors}</td>
             <td>{r.blocked}</td>
-            <td>{r.efficiency}%</td>
+            <td><strong>{r.efficiency}%</strong></td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** Matrice d'efficacité d'attaque par Nombre de Contreurs (0, 1, 2, 3, 4=Trou). */
+function BlockersTable({ side }) {
+  const { rows, totalCoded, oneOrZero, setter1v1Pct } = blockerTableRows(side);
+  if (rows.length === 0) {
+    return (
+      <p className="dv-hint">
+        Aucun nombre de contreurs codé après l’évaluation d’attaque (ex: <code>*09AV54#1</code> = 1 contreur, <code>*09AV54#2</code> = 2 contreurs).
+      </p>
+    );
+  }
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span className="badge" style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', fontFamily: 'var(--font-mono)' }}>
+          Situations 0/1 Contreur créées par le passeur : {setter1v1Pct}% ({oneOrZero}/{totalCoded})
+        </span>
+      </div>
+      <table className="report report-compact">
+        <thead>
+          <tr>
+            <th className="name">Opposition au Contre</th>
+            <th>Attaques</th>
+            <th>Part %</th>
+            <th>Pts (#)</th>
+            <th>Err (=)</th>
+            <th>Contrées (/)</th>
+            <th>Kill%</th>
+            <th>Eff%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.code}>
+              <td className="name" title={r.desc}>
+                <code>{r.code}</code> {r.label}
+              </td>
+              <td>{r.total}</td>
+              <td>{r.sharePct}%</td>
+              <td>{r.points}</td>
+              <td>{r.errors}</td>
+              <td>{r.blocked}</td>
+              <td>{r.killPct}%</td>
+              <td><strong>{r.efficiency}%</strong></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -293,7 +391,7 @@ function SituationTable({ side }) {
           <th>Err</th>
           <th>Contrées</th>
           <th>Réussite</th>
-          <th>Efficacité</th>
+          <th>Eff%</th>
         </tr>
       </thead>
       <tbody>
@@ -316,20 +414,30 @@ function SituationTable({ side }) {
   );
 }
 
-/** Complexe I / II (side-out vs transition). */
+/** Complexe I / II (FBSO, Side-out global, Side-out en Transition et Break Point). */
 function ComplexBlock({ side }) {
-  const { sideOut, transition } = side.complex;
+  const { sideOut, fbso = { total: 0, won: 0, pct: 0 }, transitionSideOut = { total: 0, won: 0, pct: 0 }, transition } = side.complex || {};
   return (
-    <div className="report-complex">
-      <div className="report-complex-card">
-        <span className="report-complex-title">Complexe I — en réception</span>
-        <span className="report-complex-value">{sideOut.total ? `${sideOut.pct}%` : '—'}</span>
-        <span className="report-complex-detail">{sideOut.won} / {sideOut.total} point(s)</span>
+    <div className="report-complex" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
+      <div className="report-complex-card" style={{ borderColor: 'rgba(16, 185, 129, 0.35)' }}>
+        <span className="report-complex-title" style={{ color: '#10b981' }}>FBSO% (1st Ball Side-Out)</span>
+        <span className="report-complex-value" style={{ color: '#34d399' }}>{fbso.total ? `${fbso.pct}%` : '—'}</span>
+        <span className="report-complex-detail">{fbso.won} / {fbso.total} sur 1re attaque K1</span>
       </div>
       <div className="report-complex-card">
-        <span className="report-complex-title">Complexe II — au service</span>
-        <span className="report-complex-value">{transition.total ? `${transition.pct}%` : '—'}</span>
-        <span className="report-complex-detail">{transition.won} / {transition.total} point(s)</span>
+        <span className="report-complex-title">Side-Out Total (SO%) — K1</span>
+        <span className="report-complex-value">{sideOut?.total ? `${sideOut.pct}%` : '—'}</span>
+        <span className="report-complex-detail">{sideOut?.won || 0} / {sideOut?.total || 0} réceptions gagnées</span>
+      </div>
+      <div className="report-complex-card">
+        <span className="report-complex-title">Side-Out après Défense (K1→K2)</span>
+        <span className="report-complex-value">{transitionSideOut.total ? `${transitionSideOut.pct}%` : '—'}</span>
+        <span className="report-complex-detail">{transitionSideOut.won} / {transitionSideOut.total} rallye(s) rejoué(s)</span>
+      </div>
+      <div className="report-complex-card" style={{ borderColor: 'rgba(245, 158, 11, 0.35)' }}>
+        <span className="report-complex-title" style={{ color: '#f59e0b' }}>Break Point (BP%) — K2</span>
+        <span className="report-complex-value" style={{ color: '#fbbf24' }}>{transition?.total ? `${transition.pct}%` : '—'}</span>
+        <span className="report-complex-detail">{transition?.won || 0} / {transition?.total || 0} services gagnés</span>
       </div>
     </div>
   );
@@ -345,8 +453,8 @@ function RotationTable({ side }) {
           <th>Points</th>
           <th>Gagnés</th>
           <th>%</th>
-          <th>Eff. service</th>
-          <th>Eff. attaque</th>
+          <th>Eff% srv</th>
+          <th>Eff% att</th>
         </tr>
       </thead>
       <tbody>
@@ -407,7 +515,7 @@ function DirectionTable({ side }) {
             <th>Pts</th>
             <th>Err</th>
             <th>Contrées</th>
-            <th>Eff</th>
+            <th>Eff%</th>
           </tr>
         </thead>
         <tbody>
@@ -443,8 +551,8 @@ function SetTable({ report }) {
             <th colSpan={5}>{a}</th>
           </tr>
           <tr>
-            <th>Eff. srv</th><th>Réc. pos.</th><th>Att. %</th><th>Att. eff</th><th>Pts</th>
-            <th>Eff. srv</th><th>Réc. pos.</th><th>Att. %</th><th>Att. eff</th><th>Pts</th>
+            <th>Eff% srv</th><th>Pos% réc</th><th>Att %</th><th>Eff% att</th><th>Pts</th>
+            <th>Eff% srv</th><th>Pos% réc</th><th>Att %</th><th>Eff% att</th><th>Pts</th>
           </tr>
         </thead>
         <tbody>
@@ -603,6 +711,10 @@ export default function MatchReportFull({
           <>
             <h5>Combinaisons d’attaque — {sideName}</h5>
             <ComboTable side={report[side]} />
+            <h5 style={{ marginTop: 16 }}>Appels du Passeur (Fixation Central : K1, K2, K7, KE…) — {sideName}</h5>
+            <SetterCallTable side={report[side]} />
+            <h5 style={{ marginTop: 16 }}>Efficacité d’Attaque par Nombre de Contreurs (0 / 1 / 2 / 3 / Trou) — {sideName}</h5>
+            <BlockersTable side={report[side]} />
           </>
         )}
 
@@ -651,7 +763,13 @@ export default function MatchReportFull({
               zones={report[side].totals.skills[current.skill].byZone}
               title={`${skillLabel(current.skill)} — ${sideName}`}
             />
-            {current.skill === 'attack' && <DirectionTable side={report[side]} />}
+            {current.skill === 'attack' && (
+              <>
+                <h5>Par Nombre de Contreurs (0 / 1 / 2 / 3 / Trou)</h5>
+                <BlockersTable side={report[side]} />
+                <DirectionTable side={report[side]} />
+              </>
+            )}
           </>
         )}
 
@@ -674,7 +792,14 @@ export default function MatchReportFull({
         {(tab === 'situations' || tab === 'rotations' || tab === 'classements') && sides.map((s) => (
           <div key={s.key} className="report-subsection">
             <h5>{current.label} — {s.label}</h5>
-            {tab === 'situations' && <SituationTable side={report[s.key]} />}
+            {tab === 'situations' && (
+              <>
+                <ComplexBlock side={report[s.key]} />
+                <div style={{ marginTop: 10 }}>
+                  <SituationTable side={report[s.key]} />
+                </div>
+              </>
+            )}
             {tab === 'rotations' && <RotationTable side={report[s.key]} />}
             {tab === 'classements' && (
               <>
@@ -689,7 +814,9 @@ export default function MatchReportFull({
       {/* Document imprimable : tout le rapport, une section par page. */}
       {printAll && (
         <div className="report-print">
-          <h1>Rapport de match</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <PancakeLogo size={32} /> Pancake Stats — Rapport de match
+          </h1>
           <p className="report-print-meta">
             {report.home.name} — {report.away.name} · {report.actionCount} action(s) · {report.rallyCount} point(s)
             {activeSets.length > 0 ? ` · set(s) ${activeSets.join(', ')}` : ''}

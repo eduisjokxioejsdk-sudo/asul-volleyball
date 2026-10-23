@@ -55,10 +55,24 @@ function declaredNames(src) {
     raw
       .replace(/[{}[\]]/g, ',')
       .split(',')
-      .map((p) => p.trim().split('=')[0].split(':')[0].trim())
-      .forEach(add);
+      .map((p) => p.trim().split('=')[0].trim())
+      // « cle: alias » → on déclare l'alias (le nom local réel) ET la clé
+      // d'origine : sans cela, `setNumber: setNumberProp = 1` est signalé
+      // à tort comme un identifiant non déclaré.
+      .forEach((p) => {
+        const parts = p.split(':').map((s) => s.trim()).filter(Boolean);
+        if (parts.length >= 2) parts.forEach((n) => add(n));
+        else if (parts.length === 1) add(parts[0]);
+      });
   };
   for (const m of src.matchAll(/(?:function|class)\s+([A-Za-z_$][\w$]*)/g)) add(m[1]);
+  // Méthodes de classe : `static getDerivedStateFromError(…)` est bien
+  // déclaré, même si son nom ne ressemble pas à une fonction libre.
+  for (const m of src.matchAll(/class\s+[A-Za-z_$][\w$]*[^{]*\{([\s\S]*?)\n\}/g)) {
+    for (const mm of m[1].matchAll(/(?:^|\n)\s*(?:static\s+)?(?:async\s+)?(?:get\s+|set\s+)?([A-Za-z_$][\w$]*)\s*\(/g)) {
+      add(mm[1]);
+    }
+  }
   // Paramètres : on tolère un niveau de parenthèses (valeurs par défaut `() => ''`).
   const PARAMS = String.raw`\(((?:[^()]|\([^()]*\))*)\)`;
   for (const m of src.matchAll(new RegExp(`function\\s*[A-Za-z_$]*\\s*${PARAMS}`, 'g'))) addParams(m[1]);

@@ -21,8 +21,11 @@ export const SHORTCUT_ACTIONS = [
   { id: 'pause', label: 'Lecture / pause', group: 'Vidéo', key: 'k', video: true },
   { id: 'seekBack', label: 'Reculer (−5 s)', group: 'Vidéo', key: 'j', video: true },
   { id: 'seekForward', label: 'Avancer (+5 s)', group: 'Vidéo', key: 'l', video: true },
-  { id: 'speedDown', label: 'Ralentir la lecture', group: 'Vidéo', key: '[', video: true },
-  { id: 'speedUp', label: 'Accélérer la lecture', group: 'Vidéo', key: ']', video: true },
+  // « [ » et « ] » sont réservés à la fin de point (DataVolley) ; « - » et
+  // « = » sont des évaluations. La vitesse passe donc par les flèches
+  // (haut/bas), libres en saisie comme en consultation.
+  { id: 'speedDown', label: 'Ralentir la lecture', group: 'Vidéo', key: 'ArrowDown', video: true },
+  { id: 'speedUp', label: 'Accélérer la lecture', group: 'Vidéo', key: 'ArrowUp', video: true },
   { id: 'speedReset', label: 'Vitesse normale (1×)', group: 'Vidéo', key: '\\', video: true },
   { id: 'validate', label: 'Valider le point (tampon)', group: 'Console', key: 'Enter' },
   { id: 'clearBuffer', label: 'Vider le tampon', group: 'Console', key: 'Escape' },

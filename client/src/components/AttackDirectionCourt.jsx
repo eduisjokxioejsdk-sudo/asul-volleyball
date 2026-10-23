@@ -1,18 +1,24 @@
 // ============================================================================
-// TERRAIN DE DIRECTION D'ATTAQUE — fenêtre séparée, façon mode Trajectoires.
+// TERRAIN DE DIRECTION & TRAJECTOIRE (Point 14 — Coordonnées 100×100 DV4).
 //
-// Un terrain complet (18 m × 9 m), deux clics :
-//   1er clic = point de départ · 2e clic = point d'arrivée.
-// Seule la trajectoire est enregistrée (aucun type d'attaque demandé) : les
-// points sont convertis en zones DataVolley 1-9, puis écrits dans les champs
-// existants start_zone / end_zone — le format des matchs ne change pas.
-//
-// Les attaques précédentes du MÊME JOUEUR sont affichées en transparence,
-// uniquement sous forme de flèches (pas de type, pas d'issue).
+// Un terrain complet (18 m × 9 m), deux ou trois clics :
+//   Mode 2 clics : 1er clic = point de départ · 2e clic = point d'arrivée.
+//   Mode 3 clics : 1er clic = départ · 2e clic = point intermédiaire (passe/bloc)
+//                  · 3e clic = point d'arrivée.
+// Les points sont convertis automatiquement :
+//   • en zones DataVolley 1-9 + sous-zone A-D ;
+//   • en coordonnées millimétriques DataVolley 4 (start_x/y, mid_x/y, end_x/y sur 0..100).
 // ============================================================================
 
 import { useId, useState } from 'react';
-import { ZONE_CELLS, zoneCenter, zoneFromPoint } from '../utils/courtGeometry.js';
+import {
+  ZONE_CELLS,
+  zoneCenter,
+  zoneFromPoint,
+  subzoneFromPoint,
+  toDv100Coords,
+  fromDv100Coords,
+} from '../utils/courtGeometry.js';
 import {
   TRAJECTORY_COURT,
   TRAJECTORY_VIEWBOX,
@@ -23,21 +29,16 @@ import {
 const ZONE_KEYS = Object.keys(ZONE_CELLS);
 const SVG_SIDES = ['left', 'right'];
 
-/**
- * @param {Object} props
- * @param {string} [props.startZone] - zone de départ enregistrée
- * @param {string} [props.endZone] - zone d'arrivée enregistrée
- * @param {Array<{start:string,end:string}>} [props.history] - attaques précédentes du joueur
- * @param {'home'|'away'} [props.side] - camp de l'équipe qui attaque
- * @param {string} [props.playerLabel] - ex. « n°07 JULIEN »
- * @param {string} [props.teamName] / [props.opponentName] - noms écrits sur le terrain
- * @param {Function} props.onChange - ({ start, end }) => void
- * @param {Function} [props.onCommit] - même objet, au 2e clic
- * @param {boolean} [props.disabled]
- */
 export default function AttackDirectionCourt({
   startZone = '',
   endZone = '',
+  endSubzone = '',
+  startX = null,
+  startY = null,
+  midX = null,
+  midY = null,
+  endX = null,
+  endY = null,
   history = [],
   side = 'home',
   playerLabel = '',
@@ -47,21 +48,33 @@ export default function AttackDirectionCourt({
   onCommit,
   disabled = false,
 }) {
-  const [pending, setPending] = useState(null);
+  const [threePointMode, setThreePointMode] = useState(false);
+  const [stepPoints, setStepPoints] = useState([]); // [startPt] ou [startPt, midPt]
   const [hover, setHover] = useState(null);
   const [committed, setCommitted] = useState(null);
   const markerId = `adc-${useId().replace(/:/g, '')}`;
 
-  const savedFrom = zoneCenter(startZone, side);
-  const savedTo = zoneCenter(endZone, side);
+  const savedFrom = fromDv100Coords(startX, startY) || zoneCenter(startZone, side);
+  const savedMid = fromDv100Coords(midX, midY);
+  const opponentSide = side === 'away' ? 'home' : 'away';
+  const savedTo = fromDv100Coords(endX, endY) || zoneCenter(endZone, opponentSide) || zoneCenter(endZone, side);
+
   const commitValid =
     committed && committed.start === String(startZone || '') && committed.end === String(endZone || '');
-  const from = pending || (commitValid ? committed.from : savedFrom);
-  const to = pending ? hover || pending : commitValid ? committed.to : savedTo;
+
+  const from = stepPoints[0] || (commitValid ? committed.from : savedFrom);
+  const mid = stepPoints[1] || (commitValid ? committed.mid : savedMid);
+  const to =
+    stepPoints.length > 0
+      ? hover || stepPoints[stepPoints.length - 1]
+      : commitValid
+      ? committed.to
+      : savedTo;
+
   const hasArrow = !!(from && to && (from.x !== to.x || from.y !== to.y));
 
   const cancel = () => {
-    setPending(null);
+    setStepPoints([]);
     setHover(null);
   };
 
@@ -69,27 +82,83 @@ export default function AttackDirectionCourt({
     if (disabled) return;
     const point = svgPointFromEvent(event.currentTarget, event);
     if (!point) return;
-    if (!pending) {
-      setPending(point);
+
+    const targetSteps = threePointMode ? 3 : 2;
+    const nextSteps = [...stepPoints, point];
+
+    if (nextSteps.length < targetSteps) {
+      setStepPoints(nextSteps);
       setHover(point);
       return;
     }
-    const firstZone = zoneFromPoint(pending, side) || '';
-    const secondZone = zoneFromPoint(point, side) || '';
-    // Même zone aux deux clics : comportement historique, zone de départ seule.
-    const next =
-      firstZone && secondZone && firstZone !== secondZone
-        ? { start: firstZone, end: secondZone }
-        : { start: firstZone, end: '' };
-    onChange?.(next);
-    onCommit?.(next);
-    setCommitted({ ...next, from: pending, to: firstZone !== secondZone ? point : null });
-    setPending(null);
+
+    const pStart = nextSteps[0];
+    const pMid = threePointMode ? nextSteps[1] : null;
+    const pEnd = nextSteps[nextSteps.length - 1];
+
+    const firstZone = zoneFromPoint(pStart, side) || '';
+    // Pour le point d'arrivée, s'il est dans le camp adverse, on calcule la zone dans le repère adverse
+    const landedInOpponentHalf =
+      side === 'home' ? pEnd.x >= TRAJECTORY_COURT.netX : pEnd.x <= TRAJECTORY_COURT.netX;
+    const endSide = landedInOpponentHalf ? opponentSide : side;
+    const secondZone = zoneFromPoint(pEnd, endSide) || '';
+    const subzone = subzoneFromPoint(pEnd, endSide) || '';
+
+    const cStart = toDv100Coords(pStart);
+    const cMid = pMid ? toDv100Coords(pMid) : { x: null, y: null };
+    const cEnd = toDv100Coords(pEnd);
+
+    const sameSpot = Math.hypot(pEnd.x - pStart.x, pEnd.y - pStart.y) < 3;
+    const payload = sameSpot
+      ? {
+          start: firstZone,
+          end: '',
+          endSubzone: '',
+          start_x: cStart.x,
+          start_y: cStart.y,
+          mid_x: null,
+          mid_y: null,
+          end_x: null,
+          end_y: null,
+        }
+      : {
+          start: firstZone,
+          end: secondZone,
+          endSubzone: subzone,
+          start_x: cStart.x,
+          start_y: cStart.y,
+          mid_x: cMid.x,
+          mid_y: cMid.y,
+          end_x: cEnd.x,
+          end_y: cEnd.y,
+        };
+
+    onChange?.(payload);
+    onCommit?.(payload);
+    setCommitted({ ...payload, from: pStart, mid: pMid, to: sameSpot ? null : pEnd });
+    setStepPoints([]);
     setHover(null);
   };
 
   return (
     <div className={`adc ${disabled ? 'disabled' : ''}`}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 12 }}>
+        <span style={{ color: 'var(--text-secondary)' }}>
+          Grille <strong>100×100 DataVolley 4</strong> + dérivation auto Zone (1-9) & Sous-zone (A-D)
+        </span>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={threePointMode}
+            onChange={(e) => {
+              setThreePointMode(e.target.checked);
+              cancel();
+            }}
+          />
+          Tracé 3 points (Départ → Passe/Bloc → Impact)
+        </label>
+      </div>
+
       <svg
         className="adc-court"
         viewBox={TRAJECTORY_VIEWBOX_STR}
@@ -98,7 +167,7 @@ export default function AttackDirectionCourt({
         aria-label={`Direction d’attaque — ${teamName} contre ${opponentName}`}
         onClick={pick}
         onMouseMove={(e) => {
-          if (!pending) return;
+          if (stepPoints.length === 0) return;
           const point = svgPointFromEvent(e.currentTarget, e);
           if (point) setHover(point);
         }}
@@ -145,7 +214,6 @@ export default function AttackDirectionCourt({
           stroke="var(--text-primary)"
           strokeWidth="1.2"
         />
-        {/* Camp de l'équipe qui attaque : c'est là que se cliquent départ et arrivée. */}
         <rect
           x={side === 'away' ? TRAJECTORY_COURT.netX : TRAJECTORY_COURT.x}
           y={TRAJECTORY_COURT.y}
@@ -190,7 +258,6 @@ export default function AttackDirectionCourt({
           opacity="0.75"
         />
 
-
         {SVG_SIDES.map((svgSide) =>
           ZONE_KEYS.map((zone) => {
             const point = zoneCenter(zone, svgSide === 'left' ? 'home' : 'away');
@@ -219,7 +286,7 @@ export default function AttackDirectionCourt({
           fontWeight="800"
           fill="var(--accent)"
         >
-          DIRECTION D’ATTAQUE
+          DIRECTION D’ATTAQUE (100×100)
         </text>
         <text
           x={TRAJECTORY_COURT.x + 1}
@@ -241,10 +308,10 @@ export default function AttackDirectionCourt({
           {opponentName}
         </text>
 
-        {/* Attaques précédentes du joueur : uniquement la trajectoire, en transparence. */}
+        {/* Attaques précédentes du joueur */}
         {history.map((shot, index) => {
-          const a = zoneCenter(shot.start, side);
-          const b = zoneCenter(shot.end, side);
+          const a = fromDv100Coords(shot.startX, shot.startY) || zoneCenter(shot.start, side);
+          const b = fromDv100Coords(shot.endX, shot.endY) || zoneCenter(shot.end, opponentSide) || zoneCenter(shot.end, side);
           if (!a || !b) return null;
           return (
             <line
@@ -262,8 +329,8 @@ export default function AttackDirectionCourt({
           );
         })}
 
-        {/* Trajectoire en cours / enregistrée */}
-        {hasArrow && (
+        {/* Trajectoire en cours / enregistrée (2 ou 3 points) */}
+        {hasArrow && !mid && (
           <line
             x1={from.x}
             y1={from.y}
@@ -275,30 +342,42 @@ export default function AttackDirectionCourt({
             markerEnd={`url(#${markerId}-current)`}
           />
         )}
+        {hasArrow && mid && (
+          <polyline
+            points={`${from.x},${from.y} ${mid.x},${mid.y} ${to.x},${to.y}`}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            markerEnd={`url(#${markerId}-current)`}
+          />
+        )}
         {from && <circle cx={from.x} cy={from.y} r="1.8" fill="var(--accent)" />}
+        {mid && <circle cx={mid.x} cy={mid.y} r="1.5" fill="#38bdf8" />}
         {to && hasArrow && <circle cx={to.x} cy={to.y} r="1.2" fill="var(--accent)" />}
       </svg>
 
       <div className="adc-foot">
         <p className="adc-hint">
           {playerLabel ? `${playerLabel} · ` : ''}
-          Départ <strong>{startZone || '—'}</strong> · Arrivée <strong>{endZone || '—'}</strong>
-          {pending ? ' — cliquez le point d’arrivée' : ' — cliquez le point de départ puis le point d’arrivée'}
+          Départ <strong>{startZone || '—'}</strong> · Arrivée{' '}
+          <strong>
+            {endZone || '—'}
+            {endSubzone || committed?.endSubzone || ''}
+          </strong>
+          {(startX != null || committed?.start_x != null) && (
+            <span style={{ marginLeft: 8, fontFamily: 'monospace', fontSize: 11, color: '#38bdf8' }}>
+              [{committed?.start_x ?? startX},{committed?.start_y ?? startY} → {committed?.end_x ?? endX},{committed?.end_y ?? endY}]
+            </span>
+          )}
         </p>
-        {pending && !disabled && (
+        {stepPoints.length > 0 && !disabled && (
           <button type="button" className="btn btn-secondary btn-sm" onClick={cancel}>
-            Annuler le tracé
+            Annuler le tracé ({stepPoints.length}/{threePointMode ? 3 : 2})
           </button>
         )}
       </div>
-      <p className="adc-history">
-        {history.length
-          ? `${history.length} attaque${history.length > 1 ? 's' : ''} précédente${
-              history.length > 1 ? 's' : ''
-            } de ce joueur, en transparence.`
-          : 'Aucune attaque précédente pour ce joueur.'}
-      </p>
     </div>
   );
 }
-

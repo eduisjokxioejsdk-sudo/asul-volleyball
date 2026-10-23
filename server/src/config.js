@@ -41,6 +41,13 @@ try {
 process.env.DATA_DIR = dataDir;
 
 const uploadsDir = path.join(dataDir, 'uploads');
+const montagesDir = path.join(uploadsDir, 'montages');
+try {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.mkdirSync(montagesDir, { recursive: true });
+} catch (err) {
+  console.warn(`Impossible de créer le dossier uploads ou montages:`, err.message);
+}
 
 /**
  * Secret JWT. En installation desktop aucun .env n'est fourni : on génère un
@@ -157,6 +164,7 @@ module.exports = {
   isDesktop: IS_DESKTOP,
   dataDir,
   uploadsDir,
+  montagesDir,
   jwtSecret,
   ffmpegPath,
   clientDistPath,

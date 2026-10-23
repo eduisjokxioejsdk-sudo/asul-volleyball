@@ -4,10 +4,11 @@ const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
-const { emitToSession } = require('../socket');
+const { emitToSession, emitCollectionChanged } = require('../socket');
 const { getSetups, saveSetups } = require('../setups');
 const liveStream = require('../liveStream');
 const liveRecord = require('../liveRecord');
+const syncHub = require('../syncHub');
 const dvCode = require('../datavolleyCode');
 const { generateProxy } = require('../proxy');
 
@@ -105,19 +106,21 @@ router.get('/time', (req, res) => {
 
 // Créer une session live (le créateur en est propriétaire + membre).
 router.post('/', authenticateToken, (req, res) => {
-  const { name, team1_name, team2_name } = req.body || {};
+  const { name, team1_name, team2_name, home_team_id, away_team_id } = req.body || {};
   const title = (name || 'Match en direct').trim() || 'Match en direct';
   const id = uuidv4();
   const joinCode = generateJoinCode();
 
   db.run(
-    `INSERT INTO live_sessions (id, name, team1_name, team2_name, owner_user_id, join_code)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO live_sessions (id, name, team1_name, team2_name, home_team_id, away_team_id, owner_user_id, join_code)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       title,
       (team1_name || '').trim() || 'Domicile',
       (team2_name || '').trim() || 'Extérieur',
+      home_team_id ? Number(home_team_id) : null,
+      away_team_id ? Number(away_team_id) : null,
       req.user.id,
       joinCode,
     ],
@@ -438,7 +441,7 @@ router.put('/:sessionId/members/:memberId', authenticateToken, (req, res) => {
 // Une formule combinée (`a04SM.06#`) crée DEUX actions : le service puis la
 // réception adverse, avec la même estampille temporelle.
 router.post('/:sessionId/actions', authenticateToken, (req, res) => {
-  const { code, effective_time, system_time, assigned, attack_zone } = req.body || {};
+  const { code, effective_time, system_time, assigned, attack_zone, set_number } = req.body || {};
   if (!isValidCode(code)) {
     return res.status(400).json({ error: 'Code invalide' });
   }
@@ -460,6 +463,9 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
           if (err) return res.status(500).json({ error: 'Database error' });
           let seq = (row.maxSeq ?? -1) + 1;
           const isAssigned = assigned === false || assigned === 0 ? 0 : 1;
+          // Numéro de set (1 par défaut) : indispensable pour retrouver les
+          // stats par set dans le replay finalisé.
+          const setNumber = Number(set_number) > 0 ? Math.round(Number(set_number)) : 1;
           const created = [];
           let pending = codes.length;
 
@@ -479,8 +485,8 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
             db.run(
               `INSERT INTO live_actions
                 (session_id, effective_time, seq, member_id, assigned, code, system_time, team, player_number,
-                 action, evaluation, type, start_zone, end_zone, end_subzone, attack_zone)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 action, evaluation, type, start_zone, end_zone, end_subzone, attack_zone, set_number)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 session.id,
                 eff,
@@ -498,6 +504,7 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
                 parts.end_zone || null,
                 parts.end_subzone || null,
                 attack_zone ?? parts.start_zone ?? null,
+                setNumber,
               ],
               function (err2) {
                 if (err2) return res.status(500).json({ error: 'Failed to save action' });
@@ -511,6 +518,9 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
                   code: one,
                   system_time: sys,
                   attack_zone: attack_zone ?? parts.start_zone ?? null,
+                  // Le set est celui du codage au moment de la saisie : il fait
+                  // foi partout ensuite (replay, rapport, conversion DataVolley).
+                  set_number: setNumber,
                   ...parts,
                 });
                 done();
@@ -764,19 +774,49 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
 
         const delayS = Number(session.video_delay) >= 0 ? Number(session.video_delay) : 0;
         const anchorSystemTime = Math.floor((info.startedAt + delayS * 1000) / 1000);
+        // Équipes choisies pour le direct : elles deviennent celles du match
+        // Data Volley (filtres du Centre Vidéo, rapports par équipe).
+        const homeTeamId = session.home_team_id ? Number(session.home_team_id) : null;
+        const awayTeamId = session.away_team_id ? Number(session.away_team_id) : null;
 
         db.run(
-          `INSERT INTO videos (user_id, filename, original_name, display_name, filepath, filepath_proxy, team1_name, team2_name, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'uploaded')`,
-          [req.user.id, mp4Name, `${session.name}.mp4`, `Direct — ${session.name}`, mp4Path, proxyPath, session.team1_name, session.team2_name],
+          `INSERT INTO videos (user_id, filename, original_name, display_name, filepath, filepath_proxy,
+             team1_name, team2_name, home_team_id, away_team_id, status, sync_uuid, dirty, local_updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploaded', ?, 1, ?)`,
+          [
+            req.user.id,
+            mp4Name,
+            `${session.name}.mp4`,
+            `Direct — ${session.name}`,
+            mp4Path,
+            proxyPath,
+            session.team1_name,
+            session.team2_name,
+            homeTeamId,
+            awayTeamId,
+            uuidv4(),
+            new Date().toISOString(),
+          ],
           function (err) {
             if (err) return res.status(500).json({ error: 'Failed to create video' });
             const videoId = this.lastID;
+            if (homeTeamId || awayTeamId) {
+              db.run(
+                'INSERT OR REPLACE INTO volley_matches (video_id, home_team_id, away_team_id) VALUES (?, ?, ?)',
+                [videoId, homeTeamId, awayTeamId],
+                () => {}
+              );
+            }
             db.run(
               `INSERT OR REPLACE INTO volley_sync (video_id, anchor_timecode, anchor_system_time, lead_in, lead_out) VALUES (?, 0, ?, 4, 3)`,
               [videoId, anchorSystemTime]
             );
             db.run('UPDATE live_sessions SET video_id = ? WHERE id = ?', [videoId, sessionId]);
+            // La nouvelle vidéo doit apparaître sans rechargement dans le Centre
+            // Vidéo et dans la liste Data Volley (et partir vers le cloud si la
+            // synchronisation est configurée, comme un upload classique).
+            emitCollectionChanged('videos');
+            syncHub.videos.syncNow({ reason: 'live-finalize' }).catch(() => {});
 
             db.all('SELECT * FROM live_actions WHERE session_id = ? ORDER BY effective_time ASC, seq ASC', [sessionId], (err2, actions) => {
               if (err2) return res.status(500).json({ error: 'Database error' });
@@ -791,15 +831,22 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
                 rows.forEach((a, i) => {
                   const parts = decomposeCode(a.code);
                   const timecode = typeof a.system_time === 'number' ? a.system_time - anchorSystemTime : null;
+                  // Le numéro de set saisi pendant le direct est recopié tel quel :
+                  // c'est la référence unique pour regrouper replay et rapports.
+                  const setNumber = Number(a.set_number) > 0 ? Math.round(Number(a.set_number)) : 1;
                   stmt.run(
                     videoId, i, a.code, timecode, a.system_time ?? null,
                     a.team || parts.team, a.player_number ?? parts.player_number, a.action || parts.action,
                     a.evaluation || parts.evaluation, parts.type || null, parts.start_zone || null,
-                    parts.end_zone || null, parts.end_subzone || null, null, null,
+                    parts.end_zone || null, parts.end_subzone || null, setNumber, null,
                     a.attack_zone ?? parts.start_zone ?? null
                   );
                 });
-                stmt.finalize(() => db.run('COMMIT', () => res.json({ videoId, actionCount: rows.length })));
+                stmt.finalize(() => db.run('COMMIT', () => {
+                  // Les actions copiées alimentent le codage Data Volley du replay.
+                  emitCollectionChanged('actions');
+                  res.json({ videoId, actionCount: rows.length });
+                }));
               });
             });
           }
