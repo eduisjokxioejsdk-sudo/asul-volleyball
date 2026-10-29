@@ -23,8 +23,8 @@ import {
   rallyWinMethod,
   typeLabel,
 } from './datavolley.js';
-import { SITUATIONS, receptionToSituation, attackZoneOf } from './distribution.js';
-import { computePerRallySetterPositions, positionOfPlayer } from './rotation.js';
+import { SITUATIONS, receptionToSituation, attackZoneOf, isMoneyTime } from './distribution.js';
+import { computePerRallySetterPositions, positionOfPlayer, computeMatchState } from './rotation.js';
 import { roleLabel } from './lineup.js';
 
 // ---------------------------------------------------------------------------
@@ -115,6 +115,7 @@ function isPerfectEval(action, ev) {
 /** Classe l'évaluation dans les issues résumées de la compétence. */
 function outcomeOf(action, ev) {
   if (ev === '=') return 'error';
+  if (action === 'B' && ev === '/') return 'error'; // Faute de contre (filet / invasion / touché dehors)
   if (ev === '#' && (action === 'S' || action === 'A' || action === 'B')) return 'point';
   if (action === 'A' && ev === '/') return 'blocked';
   if (ev === '#') return 'point';
@@ -152,6 +153,7 @@ export function addSkillAction(agg, a) {
   }
   const outcome = outcomeOf(a.action, ev);
   const isPoint = outcome === 'point';
+  const isError = outcome === 'error';
   const isPositive = isPositiveEval(a.action, ev);
   const isBlocked = a.action === 'A' && ev === '/';
   if (combo) {
@@ -159,7 +161,7 @@ export function addSkillAction(agg, a) {
     const cs = (agg.comboStats[combo] = agg.comboStats[combo] || emptyTacticStat());
     cs.total += 1;
     if (isPoint) cs.points += 1;
-    if (ev === '=') cs.errors += 1;
+    if (isError) cs.errors += 1;
     if (isBlocked) cs.blocked += 1;
     if (isPositive) cs.positive += 1;
   }
@@ -168,14 +170,14 @@ export function addSkillAction(agg, a) {
     const cs = (agg.callStats[call] = agg.callStats[call] || emptyTacticStat());
     cs.total += 1;
     if (isPoint) cs.points += 1;
-    if (ev === '=') cs.errors += 1;
+    if (isError) cs.errors += 1;
     if (isPositive) cs.positive += 1;
   }
   if (numBlockers !== '') {
     const bs = (agg.byBlockers[numBlockers] = agg.byBlockers[numBlockers] || emptyTacticStat());
     bs.total += 1;
     if (isPoint) bs.points += 1;
-    if (ev === '=') bs.errors += 1;
+    if (isError) bs.errors += 1;
     if (isBlocked) bs.blocked += 1;
     if (isPositive) bs.positive += 1;
   }
@@ -212,14 +214,14 @@ export function addSkillAction(agg, a) {
       const d = (agg.byDirection[key] = agg.byDirection[key] || emptyTacticStat());
       d.total += 1;
       if (isPoint) d.points += 1;
-      if (ev === '=') d.errors += 1;
+      if (isError) d.errors += 1;
       if (isBlocked) d.blocked += 1;
       if (isPositive) d.positive += 1;
     }
   }
 
   if (isPoint) agg.points += 1;
-  if (ev === '=') agg.errors += 1;
+  if (isError) agg.errors += 1;
   if (isBlocked) agg.blocked += 1;
   if (isPositive) agg.positive += 1;
   if (isPerfectEval(a.action, ev)) agg.perfect += 1;
@@ -731,16 +733,59 @@ export function computeScouting(input = {}) {
     ? actions.filter((a) => wanted.has(Number(setMap.get(a.uid ?? a.id ?? a.action_index) || 1)))
     : actions;
 
-  const rallies = input.rallies || groupActionsIntoRallies(list);
+  let activeList = list;
+  let activeRallies = input.rallies || groupActionsIntoRallies(list);
+
+  // Filtre Money-Time (fin de set serrée : score >= 20/12, écart <= 2)
+  if (input.moneyTime) {
+    const allRallies = input.rallies || groupActionsIntoRallies(actions);
+    const ms = computeMatchState(allRallies, setups);
+    const moneyKeys = new Set();
+    const moneyRallyIndices = new Set();
+    allRallies.forEach((r, idx) => {
+      const st = ms.states[idx];
+      if (st && isMoneyTime(st.scoreBefore, st.setNumber)) {
+        moneyRallyIndices.add(idx);
+        for (const a of r.actions || []) {
+          moneyKeys.add(a.uid ?? a.id ?? a.action_index);
+        }
+      }
+    });
+    activeList = activeList.filter((a) => moneyKeys.has(a.uid ?? a.id ?? a.action_index));
+    activeRallies = allRallies.filter((_, idx) => moneyRallyIndices.has(idx));
+  }
+
+  // Filtre par rotation (P1..P6)
+  if (input.rotation) {
+    const allRallies = input.rallies || groupActionsIntoRallies(actions);
+    const ms = computeMatchState(allRallies, setups);
+    const rotKeys = new Set();
+    allRallies.forEach((r, idx) => {
+      const st = ms.states[idx];
+      if (st) {
+        for (const a of r.actions || []) {
+          const side = a.team === 'away' ? 'away' : 'home';
+          const pos = side === 'away' ? st.awaySetterPos : st.homeSetterPos;
+          if (pos === input.rotation) {
+            rotKeys.add(a.uid ?? a.id ?? a.action_index);
+          }
+        }
+      }
+    });
+    activeList = activeList.filter((a) => rotKeys.has(a.uid ?? a.id ?? a.action_index));
+    activeRallies = groupActionsIntoRallies(activeList);
+  }
+
+  const rallies = activeRallies;
 
   // 2. Joueurs : effectif des fiches d'équipe (même sans action) + joueurs vus.
-  const home = buildSide('home', list, homeConfig, homeName);
-  const away = buildSide('away', list, awayConfig, awayName);
+  const home = buildSide('home', activeList, homeConfig, homeName);
+  const away = buildSide('away', activeList, awayConfig, awayName);
 
   // 3. Données de match : situations, complexe, rotations, classements.
-  const situations = computeSituations(rallies);
-  const complex = computeComplex(rallies);
-  const rotations = computeRotations(rallies, setups, setterNumbers);
+  const situations = computeSituations(activeRallies);
+  const complex = computeComplex(activeRallies);
+  const rotations = computeRotations(activeRallies, setups, setterNumbers);
 
   home.situations = situations.home;
   home.complex = complex.home;
@@ -781,7 +826,7 @@ export function computeScouting(input = {}) {
   const setList = setMap ? [...new Set([...setMap.values()].map(Number))].sort((a, b) => a - b) : [];
 
   return {
-    actionCount: list.length,
+    actionCount: activeList.length,
     // `sets` = sets disponibles (sélecteur) ; `activeSets` = sets du rapport affiché.
     sets: setList,
     activeSets: wanted ? [...wanted].sort((a, b) => a - b) : setList,

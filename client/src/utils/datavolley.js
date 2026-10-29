@@ -564,6 +564,15 @@ export function scanCode(str, start = 0, opts = {}) {
     out.teamKey = first;
     out.team = teamIdFromKey(first);
     i += 1;
+    // Macro de conclusion de point DataVolley (*p / ap) :
+    if ((s[i] === 'p' || s[i] === 'P') && !isDigitChar(s[i + 1])) {
+      out.action = 'P';
+      out.evaluation = '#';
+      out.isPointMarker = true;
+      out.complete = true;
+      out.end = i + 1;
+      return out;
+    }
   } else if (isDigitChar(first)) {
     // Clé d'équipe OMISE : un code commençant par un chiffre est « domicile ».
     // (DataVolley / VolleyStation : `12S.10+` = `*12S.10+`.)
@@ -711,6 +720,9 @@ export function isValidCode(code, opts) {
 export function formatCode(fields) {
   const f = fields || {};
   const teamKey = f.teamKey || teamKeyFromId(f.team);
+  if (f.isPointMarker || f.action === 'P') {
+    return `${teamKey}p`;
+  }
   const num = String(f.player_number || 0).padStart(2, '0');
   const parts = [teamKey, num, f.action || ''];
   if (f.combo) {
@@ -858,6 +870,9 @@ export function describeCode(code, opts) {
     return `Code non conforme — ${describeIssues(sc.issues)}`;
   }
   const team = sc.team === 'home' ? "l'équipe à domicile" : "l'équipe extérieure";
+  if (sc.isPointMarker || sc.action === 'P') {
+    return `Conclusion du point — Point attribué à ${team} (${sc.teamKey}p)`;
+  }
   const act = DV_ACTIONS.find((a) => a.code === sc.action);
   const ev = (DV_EVALUATIONS[sc.action] || []).find((e) => e.sym === sc.evaluation);
 
@@ -1034,7 +1049,42 @@ export function parseSequence(str, opts = {}) {
 
     const valid = sc.complete && sc.issues.length === 0;
     const raw = s.slice(i, sc.end > i ? sc.end : i + 1);
-    items.push({ code: valid ? formatCode(sc) : raw, valid, issues: sc.issues, scan: sc });
+
+    // Si le bloc courant est une macro de conclusion de point (*p / ap) et que
+    // l'action précédente dans le tampon attendait son évaluation (ou avait une
+    // évaluation non terminale), on résout directement l'évaluation finale (# ou =).
+    if (sc.isPointMarker && items.length > 0) {
+      const prev = items[items.length - 1];
+      if (prev && prev.scan && !prev.pointMarker) {
+        const missingOnlyEval =
+          !prev.scan.evaluation &&
+          Array.isArray(prev.issues) &&
+          prev.issues.length === 1 &&
+          prev.issues[0] === 'missing_eval';
+        const nonTerminalPrev =
+          prev.valid && prev.scan.evaluation && !isTerminalEvaluation(prev.scan.action, prev.scan.evaluation);
+
+        if (missingOnlyEval || nonTerminalPrev) {
+          const resolvedEval = prev.scan.team === sc.team ? '#' : '=';
+          prev.scan.evaluation = resolvedEval;
+          prev.scan.complete = true;
+          prev.issues = [];
+          prev.valid = true;
+          prev.code = formatCode(prev.scan);
+          prev.pointResolvedBy = `${sc.teamKey}p`;
+          i = sc.end > i ? sc.end : i + 1;
+          continue;
+        }
+      }
+    }
+
+    items.push({
+      code: valid ? formatCode(sc) : raw,
+      valid,
+      issues: sc.issues,
+      scan: sc,
+      ...(sc.isPointMarker ? { pointMarker: true, team: sc.team, teamKey: sc.teamKey } : {}),
+    });
     i = sc.end > i ? sc.end : i + 1;
   }
 
@@ -1551,20 +1601,62 @@ export function effectiveTime(action, syncOffset = 0) {
 }
 
 /**
+ * Marges vidéo adaptatives (DataVolley 4 Pro) selon la compétence ou le geste :
+ * - Service (S) : 4.5s pré-roll (routine + course d'élan) / 3.0s post-roll.
+ * - Réception (R) : 3.5s pré-roll (départ du service) / 2.5s post-roll.
+ * - Attaque (A) : 2.5s pré-roll (passe + élan) / 2.5s post-roll.
+ * - Bloc (B) : 2.0s pré-roll / 2.0s post-roll.
+ * - Défense (D) : 2.0s pré-roll / 2.5s post-roll.
+ * - Passe (E) : 2.0s pré-roll / 2.0s post-roll.
+ * - Ballon libre (F) : 2.5s pré-roll / 2.5s post-roll.
+ * - Échange complet : 4.0s pré-roll / 3.0s post-roll.
+ */
+export function getAdaptiveMargins(actionOrSkill) {
+  let act = '';
+  if (typeof actionOrSkill === 'string') {
+    const trimmed = actionOrSkill.trim().toUpperCase();
+    if (trimmed.length === 1) act = trimmed;
+    else if (trimmed.length >= 4) act = trimmed[3];
+  } else if (actionOrSkill && typeof actionOrSkill === 'object') {
+    act = (actionOrSkill.action || '').toUpperCase();
+  }
+  switch (act) {
+    case 'S':
+      return { leadIn: 4.5, leadOut: 3.0 };
+    case 'R':
+      return { leadIn: 3.5, leadOut: 2.5 };
+    case 'A':
+      return { leadIn: 2.5, leadOut: 2.5 };
+    case 'B':
+      return { leadIn: 2.0, leadOut: 2.0 };
+    case 'D':
+      return { leadIn: 2.0, leadOut: 2.5 };
+    case 'E':
+      return { leadIn: 2.0, leadOut: 2.0 };
+    case 'F':
+      return { leadIn: 2.5, leadOut: 2.5 };
+    default:
+      return { leadIn: 4.0, leadOut: 3.0 };
+  }
+}
+
+/**
  * Segments des points « sans les temps morts » : pour chaque point, la plage
  * [début de la 1ʳᵉ action − lead-in ; fin de la dernière action + lead-out].
  * Sert au mode Consultation (lecture enchaînée des points) et à la frise.
  */
 export function buildPointSegments(rallies, opts = {}) {
-  const { syncOffset = 0, leadIn = 4, leadOut = 3 } = opts;
+  const { syncOffset = 0, leadIn = 4, leadOut = 3, adaptive = false } = opts;
   return (rallies || [])
     .map((r) => {
       const first = r.actions[0];
       const last = r.actions[r.actions.length - 1];
       const start = effectiveTime(first, syncOffset);
       const end = effectiveTime(last, syncOffset);
-      const segmentStart = start != null ? Math.max(0, start - leadIn) : null;
-      const segmentEnd = end != null ? end + leadOut : null;
+      const startLead = adaptive && first ? getAdaptiveMargins(first).leadIn : leadIn;
+      const endLead = adaptive && last ? getAdaptiveMargins(last).leadOut : leadOut;
+      const segmentStart = start != null ? Math.max(0, start - startLead) : null;
+      const segmentEnd = end != null ? end + endLead : null;
       return { ...r, startTime: start, endTime: end, segmentStart, segmentEnd };
     })
     .filter((p) => p.segmentStart != null && p.segmentEnd != null && p.segmentEnd >= p.segmentStart);
@@ -1794,6 +1886,26 @@ export function makeActions(items, opts = {}) {
   for (let i = 0; i < list.length; i += 1) {
     const it = list[i];
     if (!it.valid) continue;
+    if (it.pointMarker) {
+      if (out.length > 0) {
+        const last = out[out.length - 1];
+        if (!isTerminalEvaluation(last.action, last.evaluation)) {
+          const winnerTeam = it.team || teamIdFromKey(it.teamKey);
+          const nextEval = last.team === winnerTeam ? '#' : '=';
+          const nextCode = formatCode({
+            ...last,
+            teamKey: last.team === 'away' ? 'a' : '*',
+            evaluation: nextEval,
+          });
+          out[out.length - 1] = {
+            ...last,
+            code: nextCode,
+            ...decomposeCode(nextCode),
+          };
+        }
+      }
+      continue;
+    }
     const own = times ? times[i] : null;
     const timecode = typeof own === 'number' && !Number.isNaN(own) ? own : opts.currentTimecode ?? null;
     out.push(

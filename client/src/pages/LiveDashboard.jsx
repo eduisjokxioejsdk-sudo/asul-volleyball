@@ -21,6 +21,7 @@ import PanelsMenu from '../components/PanelsMenu';
 import ShortcutSettings from '../components/ShortcutSettings';
 import usePanelLayout from '../hooks/usePanelLayout';
 import { loadShortcuts, matchesShortcut, saveShortcuts } from '../utils/shortcuts';
+import { handleRemappedKeyDown } from '../utils/keyboardRemap';
 import MatchReportFull from '../components/MatchReportFull';
 import LiveCameraPanel from '../components/LiveCameraPanel';
 import LiveCoachTablet from '../components/LiveCoachTablet';
@@ -567,14 +568,14 @@ function LiveDashboard({ user, onLogout }) {
   };
 
   // --- Saisie clavier (console) -------------------------------------------
-  const submitBuffer = useCallback(async () => {
-    const raw = bufferRef.current;
+  const submitBuffer = useCallback(async (overrideBuffer = null) => {
+    const raw = typeof overrideBuffer === 'string' ? overrideBuffer : bufferRef.current;
     if (!raw.trim()) return;
     const items = parseSequence(raw);
     let sent = 0;
     const created = [];
     for (const it of items) {
-      if (!it.code) continue;
+      if (!it.code || it.pointMarker) continue;
       const parts = decomposeCode(it.code);
       const assigned = myAssignmentRef.current.includes(parts.action);
       try {
@@ -593,6 +594,7 @@ function LiveDashboard({ user, onLogout }) {
         setFlash({ ok: false, text: "Erreur d'envoi d'une action" });
       }
     }
+    bufferRef.current = '';
     setBuffer('');
     if (sent) setFlash({ ok: true, text: `${sent} action(s) codée(s)` });
 
@@ -607,8 +609,8 @@ function LiveDashboard({ user, onLogout }) {
   }, [sessionId, isViewer, autoServe, setups]);
 
   // Termine le point : envoie les actions puis signale la fin côté statisticien.
-  const finishPoint = useCallback(async () => {
-    await submitBuffer();
+  const finishPoint = useCallback(async (overrideBuffer = null) => {
+    await submitBuffer(overrideBuffer);
     if (isViewer) return;
     try {
       const res = await liveAPI.completePoint(sessionId);
@@ -651,6 +653,18 @@ function LiveDashboard({ user, onLogout }) {
     const tag = (e.target?.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const remapRes = handleRemappedKeyDown(e, {
+      value: bufferRef.current || '',
+      onChange: (nextVal) => {
+        bufferRef.current = nextVal;
+        setBuffer(nextVal);
+      },
+      onCommit: (finalVal) => {
+        finishPoint(finalVal);
+      },
+    });
+    if (remapRes.handled) return;
 
     if (matchesShortcut(e, shortcuts.togglePanels)) {
       e.preventDefault();
@@ -1370,6 +1384,11 @@ function LiveDashboard({ user, onLogout }) {
                         ) : (
                           <CodingConsole
                             commitLabel={`Terminer le point ${session?.current_point ?? 1} (${bufferChunks.length} bloc(s))`}
+                            buffer={buffer}
+                            onChangeBuffer={(nextVal) => {
+                              bufferRef.current = nextVal;
+                              setBuffer(nextVal);
+                            }}
                             hint={
                               <p className="dv-hint">
                                 Tapez librement puis Entrée (n° joueur sur 1 ou 2 chiffres). Les blocs en{' '}

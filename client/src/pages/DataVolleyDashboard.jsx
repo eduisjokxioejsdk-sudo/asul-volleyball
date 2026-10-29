@@ -18,6 +18,7 @@ import { loadCourtCalibration, saveCourtCalibration } from '../utils/homography'
 import VideoTvOverlay from '../components/VideoTvOverlay';
 import LiveCoachTablet from '../components/LiveCoachTablet';
 import { applyCompoundAutoCodes, matchMacroShortcut } from '../utils/compoundCodes';
+import { handleRemappedKeyDown } from '../utils/keyboardRemap';
 import useDualScreenVideo from '../hooks/useDualScreenVideo';
 import PlaylistManagerModal from '../components/PlaylistManagerModal';
 import { emptyTeamConfig, parseSavedLineup, serializeSavedLineup, serverPrefill } from '../utils/lineup';
@@ -76,9 +77,11 @@ import {
   House,
   Keyboard,
   ListChecks,
+  Loader,
   MonitorPlay,
   Pencil,
   Plane,
+  RefreshCw,
   RotateCcw,
   RotateCw,
   Save,
@@ -256,6 +259,21 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [saving, setSaving] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
+
+  // Préparation d'une version lisible par le navigateur. Un fichier uploadé peut
+  // être illisible tel quel (conteneur MP4 fragmenté, codec exotique, index en
+  // fin de fichier) : le lecteur tourne alors à l'infini SANS émettre d'erreur.
+  // Le serveur sait le diagnostiquer puis produire une version lisible
+  // (`filepath_proxy`) ; on suit ici cet état pour informer l'utilisateur.
+  // status : 'idle' | 'checking' | 'processing' | 'error'
+  const [playable, setPlayable] = useState({ status: 'idle', reason: null, error: null });
+  // Métadonnées réellement obtenues par le <video>. Tant qu'elles manquent, le
+  // fichier est considéré comme suspect au bout de quelques secondes.
+  const [mediaReady, setMediaReady] = useState(false);
+  const [suspect, setSuspect] = useState(false);
+  // Incrémenté par « Réessayer » : relance le diagnostic même si la vidéo est
+  // déjà marquée comme suspecte (un état identique ne re-déclenche pas l'effet).
+  const [playableRetry, setPlayableRetry] = useState(0);
 
   // Édition de la séquence complète d'un point
   const [editingRallyUid, setEditingRallyUid] = useState(null); // uid de la 1re action du point, ou 'NEW'
@@ -448,6 +466,9 @@ function DataVolleyDashboard({ user, onLogout }) {
   // même timecode au lieu de repartir de zéro (voir onLoadedMetadata plus bas).
   const resumeTimeRef = useRef(0);
   const wasPlayingRef = useRef(false);
+  // Mis à vrai juste avant un basculement vers la version préparée d'une vidéo
+  // déjà chargée : la position de lecture doit alors être conservée.
+  const keepPositionRef = useRef(false);
 
   useEffect(() => { bufferRef.current = buffer; }, [buffer]);
 
@@ -547,10 +568,139 @@ function DataVolleyDashboard({ user, onLogout }) {
   // Un simple changement d'onglet ne touche pas `playbackUrl` : la position est
   // conservée.
   useEffect(() => {
+    // Basculement vers la version préparée d'une vidéo déjà en lecture : ce
+    // n'est pas une nouvelle vidéo et le remuxage conserve strictement le
+    // timecode, donc on garde la position au lieu de repartir de zéro.
+    if (keepPositionRef.current) {
+      keepPositionRef.current = false;
+      return;
+    }
     resumeTimeRef.current = 0;
     wasPlayingRef.current = false;
     setCurrentTime(0);
   }, [playbackUrl]);
+
+  // Nouvelle source : surveillance repartie de zéro (le fichier peut différer).
+  useEffect(() => {
+    setMediaReady(false);
+    setSuspect(false);
+    setPlayable({ status: 'idle', reason: null, error: null });
+  }, [playbackUrl]);
+
+  // Surveillance du lecteur. Un fichier illisible ne déclenche AUCUNE erreur :
+  // le navigateur n'obtient simplement jamais les métadonnées et le lecteur
+  // tourne à l'infini. Sans métadonnées après quelques secondes, la vidéo est
+  // donc marquée comme suspecte, ce qui déclenche le diagnostic serveur.
+  useEffect(() => {
+    if (!playbackUrl) return undefined;
+    if (mediaReady) {
+      // Le fichier est lisible : inutile d'alerter l'utilisateur.
+      setSuspect(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setSuspect(true), 8000);
+    return () => clearTimeout(timer);
+  }, [playbackUrl, mediaReady]);
+
+  // Diagnostic puis préparation d'une version lisible, et suivi de l'avancement.
+  // Déclenché par un fichier suspect, ou par une préparation déjà en cours côté
+  // serveur (celle lancée automatiquement juste après l'upload).
+  useEffect(() => {
+    const videoId = video?.id;
+    if (!videoId || proxyUrl) return undefined;
+
+    const alreadyProcessing = video?.proxy_status === 'processing';
+    if (!suspect && !alreadyProcessing) return undefined;
+
+    let cancelled = false;
+    let timer = null;
+
+    const poll = async () => {
+      let st = null;
+      try {
+        const res = await videosAPI.getPlayableStatus(videoId);
+        st = res.data || {};
+      } catch {
+        // Serveur momentanément injoignable : on réessaie un peu plus tard.
+        if (!cancelled) timer = setTimeout(poll, 5000);
+        return;
+      }
+      if (cancelled) return;
+
+      // Version lisible produite : on recharge la vidéo, ce qui fait basculer
+      // `playbackUrl` sur le proxy (il privilégie déjà `filepath_proxy`).
+      if (st.status === 'ready') {
+        setPlayable({ status: 'idle', reason: null, error: null });
+        try {
+          const res = await videosAPI.getOne(videoId);
+          const fresh = res.data?.video;
+          if (!cancelled && fresh) {
+            // Si la lecture avait malgré tout démarré, on ne perd pas la
+            // position : le remuxage conserve le timecode à l'identique.
+            const at = Number(videoRef.current?.currentTime || 0);
+            if (at > 1) {
+              resumeTimeRef.current = at;
+              keepPositionRef.current = true;
+            }
+            setVideo(fresh);
+          }
+        } catch { /* la vidéo sera rechargée plus tard */ }
+        return;
+      }
+      // `reason` porte le message d'échec quand le statut est `error`.
+      if (st.status === 'error') {
+        setPlayable({ status: 'error', reason: null, error: st.reason || 'La préparation de la vidéo a échoué.' });
+        return;
+      }
+      if (st.status === 'not_needed') {
+        setPlayable({ status: 'idle', reason: null, error: null });
+        return;
+      }
+
+      setPlayable({ status: 'processing', reason: st.reason || null, error: null });
+      // Rien en cours côté serveur (préparation jamais lancée, ou interrompue
+      // par un redémarrage) : on la (re)lance.
+      if (st.status !== 'processing') {
+        try { await videosAPI.preparePlayable(videoId); } catch { /* retenté au prochain tour */ }
+      }
+      if (!cancelled) timer = setTimeout(poll, 3000);
+    };
+
+    (async () => {
+      // Une préparation déjà lancée par le serveur est simplement suivie.
+      if (suspect && !alreadyProcessing) {
+        setPlayable({ status: 'checking', reason: null, error: null });
+        try {
+          const res = await videosAPI.diagnosePlayable(videoId);
+          const verdict = res.data || {};
+          if (cancelled) return;
+          // Finalement lisible : le blocage venait d'autre chose (réseau lent,
+          // onglet masqué…). On laisse le lecteur démarrer.
+          if (verdict.playable) {
+            setPlayable({ status: 'idle', reason: null, error: null });
+            setSuspect(false);
+            return;
+          }
+          setPlayable({ status: 'processing', reason: verdict.reason || null, error: null });
+        } catch {
+          if (cancelled) return;
+          setPlayable({ status: 'error', reason: null, error: 'Diagnostic impossible : le serveur est-il démarré ?' });
+          return;
+        }
+      }
+      await poll();
+    })();
+
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [video?.id, video?.proxy_status, proxyUrl, suspect, playableRetry]);
+
+  // Relance manuelle après un échec de diagnostic ou de préparation.
+  const retryPlayable = useCallback(() => {
+    setPlayable({ status: 'checking', reason: null, error: null });
+    setSuspect(true);
+    setPlayableRetry((n) => n + 1);
+  }, []);
+
 
   // --- Actions vidéo (raccourcis ou boutons) -------------------------------
   const videoAction = useCallback((action) => {
@@ -1318,13 +1468,26 @@ function DataVolleyDashboard({ user, onLogout }) {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [actions, id, myClaimedSet]);
 
-  const commitBuffer = useCallback(() => {
+  const commitBuffer = useCallback((overrideBuffer = null) => {
     if (matchFinished) return;
-    const raw = stripSpaces(bufferRef.current);
+    const sourceBuf = typeof overrideBuffer === 'string' ? overrideBuffer : bufferRef.current;
+    const raw = stripSpaces(sourceBuf);
     if (!raw) return;
     const items = parseSequence(raw, codeOpts);
     const validItems = items.filter((it) => it.valid);
     if (validItems.length === 0) return;
+
+    // Cas où l'utilisateur tape uniquement *p ou ap (ex: flèche gauche/droite sur tampon vide)
+    // pour conclure la dernière action déjà enregistrée :
+    const onlyPointMarkers = validItems.every((it) => it.pointMarker);
+    if (onlyPointMarkers) {
+      const lastMarker = validItems[validItems.length - 1];
+      bufferRef.current = '';
+      setBuffer('');
+      markPointEnd(lastMarker.team || 'home');
+      return;
+    }
+
     const v = videoRef.current;
     const timecode = v ? v.currentTime : null;
     // Chaque action garde le temps vidéo de l'instant où SON code a été terminé.
@@ -1336,9 +1499,12 @@ function DataVolleyDashboard({ user, onLogout }) {
       startIndex: actionsRef.current.length,
       setNumber: myClaimedSet ?? matchState.currentSet,
     });
-    const newActions = applyCompoundAutoCodes(rawActions, {
+    const newActions = applyCompoundAutoCodes(actionsRef.current, rawActions, {
+      homeSetter: setterNumbers.home,
+      awaySetter: setterNumbers.away,
       homeSetterNumber: setterNumbers.home,
       awaySetterNumber: setterNumbers.away,
+      rawInput: raw,
     });
     const next = reindexActions([...actionsRef.current, ...newActions]);
     actionsRef.current = next;
@@ -1349,8 +1515,8 @@ function DataVolleyDashboard({ user, onLogout }) {
     setFlash({
       ok: badCount === 0,
       text: badCount === 0
-        ? `${validItems.length} action(s) codée(s)`
-        : `${validItems.length} action(s) codée(s) — ${badCount} bloc(s) à corriger`,
+        ? `${newActions.length} action(s) codée(s)`
+        : `${newActions.length} action(s) codée(s) — ${badCount} bloc(s) à corriger`,
     });
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 2000);
@@ -1755,14 +1921,30 @@ function DataVolleyDashboard({ user, onLogout }) {
       if (mode !== 'saisie') return;
       if (e.ctrlKey || e.metaKey) return;
 
-      // Raccourcis Macros Clavier (F1-F8 configurés dans Codes Auto & Macros)
+      // 1. Interception Keyboard Remapping (Standard AZERTY Scout & Macros 1-to-Many)
+      if (!matchFinished) {
+        const remapRes = handleRemappedKeyDown(e, {
+          value: bufferRef.current || '',
+          onChange: (nextVal) => {
+            bufferRef.current = nextVal;
+            setBuffer(nextVal);
+          },
+          onCommit: (finalVal) => {
+            commitBuffer(finalVal);
+          },
+        });
+        if (remapRes.handled) return;
+      }
+
+      // 2. Raccourcis Macros Clavier (Alt+1..0 configurés dans Codes Auto & Macros)
       const matchedMacro = matchMacroShortcut(e);
       if (matchedMacro && !matchFinished) {
         e.preventDefault();
-        const nextBuf = (bufferRef.current || '') + matchedMacro.code;
+        const macroSnippet = matchedMacro.snippet || matchedMacro.code || '';
+        const nextBuf = (bufferRef.current || '') + macroSnippet;
         bufferRef.current = nextBuf;
         setBuffer(nextBuf);
-        notifyEvent(true, `Macro ${matchedMacro.key} (${matchedMacro.label}) → ${matchedMacro.code}`);
+        notifyEvent(true, `Macro ${matchedMacro.shortcut || matchedMacro.key} (${matchedMacro.label}) → ${macroSnippet}`);
         return;
       }
 
@@ -2358,6 +2540,56 @@ function DataVolleyDashboard({ user, onLogout }) {
 
         {playbackUrl && cameraView !== '2' && (
           <div style={{ position: 'relative', width: '100%', height: '100%', isolation: 'isolate' }}>
+            {/* Fichier illisible dans le navigateur : au lieu d'un chargement
+                infini, on explique ce qui est détecté et ce qui est entrepris. */}
+            {!mediaReady && playable.status !== 'idle' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 30,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  padding: 20,
+                  textAlign: 'center',
+                  background: 'rgba(9, 9, 11, 0.93)',
+                }}
+              >
+                {playable.status === 'error' ? (
+                  <AlertTriangle size={26} style={{ color: '#f87171' }} />
+                ) : (
+                  <Loader size={26} style={{ color: '#fbbf24', animation: 'spin 0.8s linear infinite' }} />
+                )}
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#e4e4e7', maxWidth: 540 }}>
+                  {playable.status === 'checking' && 'Analyse de la vidéo…'}
+                  {playable.status === 'processing' && 'Préparation d’une version lisible en cours…'}
+                  {playable.status === 'error' && 'Cette vidéo n’a pas pu être préparée automatiquement'}
+                </div>
+                <div style={{ fontSize: 11, color: '#a1a1aa', maxWidth: 540, lineHeight: 1.6 }}>
+                  {playable.status === 'checking' &&
+                    'La vidéo ne démarre pas. ASUL vérifie pourquoi (conteneur, codec) et lancera la correction si nécessaire.'}
+                  {playable.status === 'processing' && (
+                    <>
+                      {playable.reason || 'Le fichier n’est pas lisible tel quel par le lecteur.'}
+                      <br />
+                      Un remuxage sans perte est en cours : le timecode est strictement conservé, votre codage reste
+                      synchronisé. Cela peut prendre plusieurs minutes sur un gros fichier — vous pouvez continuer à
+                      coder, la vidéo basculera automatiquement dès qu’elle sera prête.
+                    </>
+                  )}
+                  {playable.status === 'error' && (playable.error || 'La préparation de la vidéo a échoué.')}
+                </div>
+                {playable.status === 'error' && (
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={retryPlayable}>
+                    <RefreshCw size={12} /> Réessayer
+                  </button>
+                )}
+              </div>
+            )}
+
             <VideoAnnotationLayer enabled={annotOn} onAnnotationsChange={setAnnotations}>
               <video
                 ref={videoRef}
@@ -2382,6 +2614,9 @@ function DataVolleyDashboard({ user, onLogout }) {
                 }}
                 onLoadedMetadata={(e) => {
                   const el = e.currentTarget;
+                  // Métadonnées obtenues : le fichier est bien décodable, la
+                  // surveillance d'illisibilité peut s'arrêter.
+                  setMediaReady(true);
                   setVideoDuration(Number.isFinite(el.duration) ? el.duration : 0);
                   const t = resumeTimeRef.current;
                   if (t > 0) {
@@ -2391,10 +2626,17 @@ function DataVolleyDashboard({ user, onLogout }) {
                 }}
                 onError={(e) => {
                   const el = e.currentTarget;
+                  // Repli sur le fichier d'origine quand la version préparée
+                  // (proxy) ne se charge pas.
                   if (el.dataset.fb !== '1' && videoUrl) {
                     el.dataset.fb = '1';
                     el.src = videoUrl;
+                    return;
                   }
+                  // Décodage refusé : le fichier est illisible dans le
+                  // navigateur, on demande au serveur d'en produire une version
+                  // lisible (remux sans perte ou transcodage).
+                  setSuspect(true);
                 }}
               />
             </VideoAnnotationLayer>
@@ -2766,6 +3008,11 @@ function DataVolleyDashboard({ user, onLogout }) {
                 >
                   <CodingConsole
                     commitLabel={`Valider (${bufferChunks.length} bloc(s) à ${formatTimecode(currentTime)})`}
+                    buffer={buffer}
+                    onChangeBuffer={(nextVal) => {
+                      bufferRef.current = nextVal;
+                      setBuffer(nextVal);
+                    }}
                     hint={
                       <p className="dv-hint">
                         {lightMode ? (

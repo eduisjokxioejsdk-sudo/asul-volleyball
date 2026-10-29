@@ -89,8 +89,9 @@ check('réception : zone lue (start_zone)', aggR.byZone['1'] === 2);
 const aggB = emptySkillAgg();
 addSkillAction(aggB, { action: 'B', evaluation: '#' });
 addSkillAction(aggB, { action: 'B', evaluation: '=' });
-check('contre : points et fautes', aggB.points === 1 && aggB.errors === 1);
-check('contre : efficacité', near(blockEfficiency(aggB), 0), `${blockEfficiency(aggB)}`);
+addSkillAction(aggB, { action: 'B', evaluation: '/' });
+check('contre : points et fautes (incluant B/)', aggB.points === 1 && aggB.errors === 2);
+check('contre : efficacité', near(blockEfficiency(aggB), -33.33, 1), `${blockEfficiency(aggB)}`);
 const aggSub = emptySkillAgg();
 addSkillAction(aggSub, { action: 'A', evaluation: '#', start_zone: '4', end_zone: '1', end_subzone: 'A' });
 check('sous-zone relevée', aggSub.bySubzone.A === 1);
@@ -259,6 +260,24 @@ check('aide : zones triées avec %', zc.rows[0].zone === '5' && zc.rows[0].pct =
 check('aide : description de type', describeType('S', 'M').label === 'Smashée');
 const r1 = computeScouting({ actions, setMap, sets: [1] });
 check('filtre par set : 5 actions du set 1', r1.actionCount === 5, `${r1.actionCount}`);
+
+// Filtre par rotation P1
+const rP1 = computeScouting({
+  actions,
+  setups: { 1: { first_server: 'team1', home_setter_pos: 'P1', away_setter_pos: 'P4' } },
+  rotation: 'P1',
+});
+check('filtre par rotation P1', rP1.actionCount > 0 && rP1.actionCount <= actions.length);
+
+// Filtre Money-Time (simule des actions avec score serré >= 20, ex: 20-20, 21-20)
+const moneyActions = [];
+let actIdx = 0;
+for (let i = 0; i < 22; i++) {
+  moneyActions.push({ code: '*01S#', action: 'S', evaluation: '#', team: 'home', player_number: 1, action_index: actIdx++ });
+  moneyActions.push({ code: 'a01S#', action: 'S', evaluation: '#', team: 'away', player_number: 1, action_index: actIdx++ });
+}
+const rMoney = computeScouting({ actions: moneyActions, moneyTime: true });
+check('filtre Money-Time : actions sous pression sélectionnées', rMoney.actionCount > 0 && rMoney.actionCount <= moneyActions.length);
 check('filtre par set : sets disponibles conservés', r1.sets.join(',') === '1,2');
 check('filtre par set : sets actifs = 1', r1.activeSets.join(',') === '1');
 const bySet2 = report.bySet[2];

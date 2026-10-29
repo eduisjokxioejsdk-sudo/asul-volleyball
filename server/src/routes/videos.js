@@ -8,6 +8,7 @@ const db = require('../database');
 const syncHub = require('../syncHub');
 const { emitCollectionChanged } = require('../socket');
 const { mountSyncRoutes } = require('./sync');
+const { ensurePlayable, inspectVideo } = require('../proxy');
 
 const router = express.Router();
 
@@ -22,6 +23,165 @@ const uploadsDir = path.join(dataDir, 'uploads');
 const proxyDir = path.join(uploadsDir, 'trimmed');
 fs.ensureDirSync(uploadsDir);
 fs.ensureDirSync(proxyDir);
+
+// ---------------------------------------------------------------------------
+// Préparation des vidéos pour la lecture dans le navigateur.
+//
+// Un fichier uploadé n'est pas toujours décodable par un élément <video>
+// (conteneur fragmenté, codec exotique, index en fin de fichier). Dans ce cas
+// le lecteur tourne à l'infini sans émettre d'erreur. On détecte donc le
+// problème puis on produit une version lisible dans uploads/trimmed/, pointée
+// par videos.filepath_proxy — que le client utilise déjà en priorité.
+// ---------------------------------------------------------------------------
+
+// Préparation en cours, par id de vidéo (le résultat est aussi persisté dans
+// videos.proxy_status / videos.proxy_error pour survivre à un redémarrage).
+const playableJobs = new Map();
+// File d'attente : une seule préparation à la fois pour ne pas saturer le
+// disque et le CPU (les fichiers font plusieurs Go).
+let playableQueue = Promise.resolve();
+// Diagnoses déjà calculés, par id de vidéo (un probe ffmpeg coûte quelques s).
+const playableDiagnoses = new Map();
+
+/** Enregistre le statut de préparation d'une vidéo en base. */
+function setProxyStatus(videoId, status, message = null) {
+  db.run(
+    'UPDATE videos SET proxy_status = ?, proxy_error = ? WHERE id = ?',
+    [status, message, videoId],
+    () => {}
+  );
+}
+
+/** Récupère une vidéo par son id. @returns {Promise<object|undefined>} */
+function getVideoById(videoId) {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM videos WHERE id = ?', [videoId], (err, row) => (err ? reject(err) : resolve(row)));
+  });
+}
+
+/**
+ * Diagnose (sans rien produire) : la vidéo est-elle lisible telle quelle ?
+ * Le résultat est mis en cache car un probe ffmpeg coûte quelques secondes.
+ * @returns {Promise<object>} verdict enrichi du mode de correction conseillé.
+ */
+async function diagnoseVideo(videoId, { force = false } = {}) {
+  if (!force && playableDiagnoses.has(videoId)) return playableDiagnoses.get(videoId);
+  const video = await getVideoById(videoId);
+  if (!video) throw Object.assign(new Error('Video not found'), { status: 404 });
+  const verdict = await inspectVideo(video.filepath);
+  const result = {
+    playable: verdict.playable,
+    reason: verdict.reason,
+    probe: verdict.probe,
+    container: verdict.container,
+    // Conservé pour pouvoir réutiliser ce verdict lors de la préparation
+    // (évite une seconde sonde ffmpeg sur des fichiers de plusieurs Go).
+    copyPossible: verdict.copyPossible,
+    // Ce que produirait une préparation : remux (rapide, sans perte) ou
+    // transcodage proxy 480p (lent, nécessaire si le codec n'est pas supporté).
+    mode: verdict.playable ? 'none' : verdict.copyPossible ? 'remux' : 'transcode',
+  };
+  playableDiagnoses.set(videoId, result);
+  return result;
+}
+
+/**
+ * Travail de préparation d'une vidéo. Ne rejette jamais : renvoie toujours un
+ * objet de statut, pour que la file d'attente et les routes restent simples.
+ */
+async function runPrepare(videoId, force) {
+  let video;
+  try {
+    video = await getVideoById(videoId);
+  } catch {
+    return { status: 'error', error: 'Erreur base de données.' };
+  }
+  if (!video) return { status: 'error', error: 'Vidéo introuvable.' };
+  if (!video.filepath) {
+    setProxyStatus(videoId, 'error', 'Aucun fichier source associé à cette vidéo.');
+    return { status: 'error', error: 'Aucun fichier source associé à cette vidéo.' };
+  }
+  if (!fs.existsSync(video.filepath)) {
+    setProxyStatus(videoId, 'error', 'Fichier source introuvable sur le disque.');
+    return { status: 'error', error: 'Fichier source introuvable sur le disque.' };
+  }
+
+  setProxyStatus(videoId, 'processing');
+
+  // Une version déjà préparée et toujours présente est réutilisée telle quelle.
+  if (!force && video.filepath_proxy && fs.existsSync(video.filepath_proxy)) {
+    setProxyStatus(videoId, 'ready', video.proxy_error || null);
+    return { status: 'ready', mode: 'cached', reason: video.proxy_error || null };
+  }
+
+  const outPath = path.join(proxyDir, `playable_${uuidv4()}.mp4`);
+  try {
+    // diagnoseVideo met son résultat en cache : une préparation lancée juste
+    // après un diagnostic ne resonde pas le fichier (la sonde coûte plusieurs
+    // dizaines de secondes sur un fichier de quelques Go). Un `force` resonde,
+    // puisque l'utilisateur demande explicitement à tout reprendre.
+    const verdict = await diagnoseVideo(videoId, { force });
+    const result = await ensurePlayable(video.filepath, outPath, verdict);
+
+    // Rien à faire : le fichier d'origine est déjà lisible par le navigateur.
+    if (!result.needed) {
+      fs.remove(outPath).catch(() => {});
+      playableDiagnoses.delete(videoId);
+      // Un proxy devenu inutile (fichier source remplacé depuis) est oublié.
+      const staleProxy = video.filepath_proxy && !fs.existsSync(video.filepath_proxy);
+      db.run(
+        `UPDATE videos SET proxy_status = 'not_needed', proxy_error = NULL${staleProxy ? ', filepath_proxy = NULL' : ''} WHERE id = ?`,
+        [videoId],
+        () => {}
+      );
+      emitCollectionChanged('videos');
+      return { status: 'not_needed', reason: null };
+    }
+
+    if (!fs.existsSync(outPath)) throw new Error('La préparation n’a produit aucun fichier.');
+
+    const previousProxy = video.filepath_proxy;
+    db.run(
+      'UPDATE videos SET filepath_proxy = ?, proxy_status = ?, proxy_error = ?, local_updated_at = ? WHERE id = ?',
+      [outPath, 'ready', result.reason, new Date().toISOString(), videoId],
+      () => {}
+    );
+    // L'ancienne version préparée devient inutile.
+    if (previousProxy && previousProxy !== outPath) fs.remove(previousProxy).catch(() => {});
+    emitCollectionChanged('videos');
+    console.log(`[ASUL] Vidéo ${videoId} préparée (${result.mode}) : ${path.basename(outPath)}`);
+    return { status: 'ready', mode: result.mode, reason: result.reason };
+  } catch (err) {
+    fs.remove(outPath).catch(() => {});
+    const message = (err && err.message) || 'Échec de la préparation de la vidéo.';
+    setProxyStatus(videoId, 'error', message);
+    emitCollectionChanged('videos');
+    console.error(`[ASUL] Préparation de la vidéo ${videoId} impossible :`, message);
+    return { status: 'error', error: message };
+  }
+}
+
+/**
+ * Lance (ou rejoint) la préparation d'une version lisible pour `videoId`.
+ * Les préparations sont sérialisées ; un appel répété rejoint le travail en
+ * cours au lieu d'en démarrer un second.
+ * @returns {Promise<{status:string,mode?:string,reason?:string,error?:string}>}
+ */
+function preparePlayableVideo(videoId, { force = false } = {}) {
+  const existing = playableJobs.get(videoId);
+  if (existing) return existing;
+
+  const job = playableQueue.then(() => runPrepare(videoId, force));
+  // La chaîne ne doit jamais se rompre, même si une préparation échoue.
+  playableQueue = job.then(() => {}, () => {});
+  playableJobs.set(videoId, job);
+  job.then(
+    () => { if (playableJobs.get(videoId) === job) playableJobs.delete(videoId); },
+    () => { if (playableJobs.get(videoId) === job) playableJobs.delete(videoId); }
+  );
+  return job;
+}
+
 
 // Configure multer for video uploads
 const storage = multer.diskStorage({
@@ -113,6 +273,8 @@ router.post('/upload', authenticateToken, (req, res) => {
           return res.status(500).json({ error: 'Failed to save video metadata' });
         }
 
+        const videoId = this.lastID;
+
         if (home_team_id || away_team_id) {
           db.run(
             'INSERT OR REPLACE INTO volley_matches (video_id, home_team_id, away_team_id) VALUES (?, ?, ?)',
@@ -122,6 +284,10 @@ router.post('/upload', authenticateToken, (req, res) => {
         }
         syncHub.videos.syncNow({ reason: 'upload' }).catch(() => {});
         emitCollectionChanged('videos');
+        // Prépare tout de suite une version lisible par le navigateur si le
+        // fichier ne l'est pas : sinon le lecteur tournerait à l'infini, sans
+        // message d'erreur (conteneur fragmenté, codec non décodable…).
+        if (file1) preparePlayableVideo(videoId).catch(() => {});
         res.status(201).json({
           id: this.lastID,
           user_id: req.user.id,
@@ -161,13 +327,20 @@ router.post('/:id/upload-angle', authenticateToken, (req, res) => {
 
       if (angle === '1') {
         if (video.filepath) fs.remove(video.filepath).catch(() => {});
+        // La version préparée correspondait à l'ancien fichier : on l'oublie.
+        if (video.filepath_proxy) fs.remove(video.filepath_proxy).catch(() => {});
+        playableDiagnoses.delete(video.id);
         db.run(
           `UPDATE videos
-              SET filename = ?, original_name = COALESCE(NULLIF(original_name, ''), ?), filepath = ?, status = 'uploaded', dirty = 1, local_updated_at = ?
+              SET filename = ?, original_name = COALESCE(NULLIF(original_name, ''), ?), filepath = ?,
+                  filepath_proxy = NULL, proxy_status = NULL, proxy_error = NULL,
+                  status = 'uploaded', dirty = 1, local_updated_at = ?
             WHERE id = ?`,
           [req.file.filename, req.file.originalname, req.file.path, nowIso, video.id],
           (upErr) => {
             if (upErr) return res.status(500).json({ error: 'Failed to update Angle 1' });
+            // Nouvelle source : on relance la préparation d'une version lisible.
+            preparePlayableVideo(video.id).catch(() => {});
             db.get('SELECT * FROM videos WHERE id = ?', [video.id], (e2, updated) => {
               emitCollectionChanged('videos');
               res.json({ video: updated });
@@ -226,6 +399,70 @@ router.get('/:id', authenticateToken, (req, res) => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// Préparation d'une version lisible par le navigateur (voir ../proxy.js)
+// ---------------------------------------------------------------------------
+
+// Diagnose : explique pourquoi la vidéo ne démarre pas, sans rien produire.
+// Un peu coûteux (sonde ffmpeg) d'où le verbe POST et un cache côté serveur.
+router.post('/:id/playable/diagnose', authenticateToken, (req, res) => {
+  db.get(
+    'SELECT id FROM videos WHERE id = ? AND user_id = ?',
+    [req.params.id, req.user.id],
+    (err, video) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
+      diagnoseVideo(video.id, { force: req.body?.force === true })
+        .then((verdict) => res.json(verdict))
+        .catch((e) => res.status(e.status === 404 ? 404 : 500).json({ error: e.message }));
+    }
+  );
+});
+
+// État de la préparation. Léger (lecture base + existence du fichier), il est
+// donc interrogeable en boucle par le client pendant un remux / transcodage.
+router.get('/:id/playable/status', authenticateToken, (req, res) => {
+  db.get(
+    'SELECT id, filepath_proxy, proxy_status, proxy_error FROM videos WHERE id = ? AND user_id = ?',
+    [req.params.id, req.user.id],
+    (err, video) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
+
+      const hasProxy = Boolean(video.filepath_proxy && fs.existsSync(video.filepath_proxy));
+      const running = playableJobs.has(video.id);
+      let status = video.proxy_status || (hasProxy ? 'ready' : null);
+      // Préparation interrompue (redémarrage du serveur) : on repart de zéro.
+      if (status === 'processing' && !running) status = null;
+      if (running) status = 'processing';
+
+      res.json({
+        videoId: video.id,
+        status,
+        hasProxy,
+        queued: playableJobs.size,
+        reason: video.proxy_error || null,
+      });
+    }
+  );
+});
+
+// Prépare (ou répare) une version lisible. Réponse immédiate (202) : le travail
+// peut durer plusieurs minutes, le client suit l'avancement via le statut.
+router.post('/:id/playable', authenticateToken, (req, res) => {
+  db.get(
+    'SELECT id FROM videos WHERE id = ? AND user_id = ?',
+    [req.params.id, req.user.id],
+    (err, video) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
+      const force = req.body?.force === true;
+      preparePlayableVideo(video.id, { force }).catch(() => {});
+      res.status(202).json({ videoId: video.id, status: 'processing' });
+    }
+  );
+});
+
 // Delete a video
 router.delete('/:id', authenticateToken, (req, res) => {
   db.get(
@@ -260,22 +497,37 @@ router.delete('/:id', authenticateToken, (req, res) => {
   );
 });
 
+// Options de diffusion des vidéos : les requêtes partielles sont indispensables
+// (sans `Accept-Ranges`, un fichier de plusieurs Go doit être entièrement
+// téléchargé avant le démarrage de la lecture) et le cache est désactivé car le
+// contenu peut être remplacé par une version préparée.
+const STREAM_OPTIONS = {
+  acceptRanges: true,
+  cacheControl: false,
+  maxAge: 0,
+  headers: (res) => {
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+  },
+};
+
 // Stream video file (local storage)
 router.get('/file/:filename', (req, res) => {
-  const filePath = path.join(uploadsDir, req.params.filename);
+  // path.basename : interdit toute traversée de dossier via le paramètre.
+  const filePath = path.join(uploadsDir, path.basename(req.params.filename));
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File not found' });
   }
-  res.sendFile(filePath);
+  res.sendFile(filePath, STREAM_OPTIONS);
 });
 
-// Stream proxy video file (version légère pour la lecture / navigation)
+// Stream proxy video file (version légère / préparée pour la lecture)
 router.get('/proxy/:filename', (req, res) => {
-  const filePath = path.join(proxyDir, req.params.filename);
+  const filePath = path.join(proxyDir, path.basename(req.params.filename));
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Proxy file not found' });
   }
-  res.sendFile(filePath);
+  res.sendFile(filePath, STREAM_OPTIONS);
 });
 
 // Update video (rename, color, angle2_offset)

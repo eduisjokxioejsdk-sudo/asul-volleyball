@@ -15,7 +15,8 @@ import {
   keyFromEvent,
   normalizeKey,
 } from '../utils/shortcuts';
-import { AlertTriangle, Check, CircleHelp, RotateCcw, Target } from './icons';
+import { AlertTriangle, Check, CircleHelp, Keyboard, RotateCcw, Target } from './icons';
+import KeyboardRemapModal from './KeyboardRemapModal';
 
 /**
  * @param {Object} props
@@ -26,6 +27,7 @@ import { AlertTriangle, Check, CircleHelp, RotateCcw, Target } from './icons';
  */
 export default function ShortcutSettings({ shortcuts, onChange, video = true, page = 'coding' }) {
   const [capturing, setCapturing] = useState(null);
+  const [remapModalOpen, setRemapModalOpen] = useState(false);
   const timerRef = useRef(null);
 
   const defaults = defaultShortcuts();
@@ -115,9 +117,26 @@ export default function ShortcutSettings({ shortcuts, onChange, video = true, pa
         );
       })}
 
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange(defaultShortcuts())}>
-        <Check size={13} /> Tout remettre par défaut
-      </button>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange(defaultShortcuts())}>
+          <Check size={13} /> Tout remettre par défaut
+        </button>
+        {page === 'coding' && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => setRemapModalOpen(true)}
+          >
+            <Keyboard size={13} /> Configurer le Keyboard Remapping &amp; Macros (AZERTY Scout)
+          </button>
+        )}
+      </div>
+
+      <KeyboardRemapModal
+        isModal
+        open={remapModalOpen}
+        onClose={() => setRemapModalOpen(false)}
+      />
     </div>
   );
 }

@@ -70,6 +70,21 @@ export function attackZoneOf(action) {
 
 export const SITUATIONS = ['+', '0', '-'];
 
+/**
+ * Vrai si le score se situe en « Money-Time » (fin de set serrée / clutch) :
+ * - Au moins 20 points en sets 1-4 (ou au moins 12 points au tie-break / 5e set).
+ * - Écart de 2 points ou moins entre les deux équipes.
+ */
+export function isMoneyTime(score, setNumber = 1) {
+  if (!score) return false;
+  const target = Number(setNumber) >= 5 ? 12 : 20;
+  const s1 = Number(score.team1) || 0;
+  const s2 = Number(score.team2) || 0;
+  const maxScore = Math.max(s1, s2);
+  const gap = Math.abs(s1 - s2);
+  return maxScore >= target && gap <= 2;
+}
+
 export function receptionToSituation(evaluation) {
   // '#' et '+' sont équivalents : 1er contact parfait/positif.
   if (evaluation === '#' || evaluation === '+' || evaluation === '++') return '+';
@@ -295,6 +310,14 @@ function matchesDistributionFilters(possession, filters = {}, setterNumber = 0) 
     if (defRole === 'OTHER_DUG' && isSetterFirstContact) return false;
   }
 
+  if (filters.moneyTime) {
+    if (!isMoneyTime(possession.scoreBefore, possession.setNumber)) return false;
+  }
+
+  if (filters.receptionQuality && filters.receptionQuality !== 'ALL') {
+    if (possession.situation !== filters.receptionQuality) return false;
+  }
+
   return true;
 }
 
@@ -329,6 +352,10 @@ export function computeSetterDistributionByRotation(
     const srv = rallyServerTeam(rally);
     const serverSide = srv === 'team1' ? 'home' : srv === 'team2' ? 'away' : null;
     const possessions = extractRallyAttackPossessions(rally.actions, serverSide);
+    for (const p of possessions) {
+      p.scoreBefore = state?.scoreBefore || { team1: 0, team2: 0 };
+      p.setNumber = state?.setNumber || 1;
+    }
 
     for (const side of ['home', 'away']) {
       const setterNumber = Number(side === 'home' ? setterNumbers.home : setterNumbers.away) || 0;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { authAPI } from '../services/api';
 import PancakeLogo from '../components/PancakeLogo';
@@ -11,9 +11,24 @@ function Register({ onLogin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
+  const performRegister = async () => {
+    const cleanName = name.trim();
+    const cleanEmail = email.trim();
+
+    if (!cleanName) {
+      setError('Veuillez renseigner votre nom');
+      return;
+    }
+
+    if (!cleanEmail) {
+      setError('Veuillez renseigner votre email');
+      return;
+    }
+
+    if (!password) {
+      setError('Veuillez renseigner votre mot de passe');
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError('Les mots de passe ne correspondent pas');
@@ -25,10 +40,11 @@ function Register({ onLogin }) {
       return;
     }
 
+    setError('');
     setLoading(true);
 
     try {
-      const response = await authAPI.register(email, password, name);
+      const response = await authAPI.register(cleanEmail, password, cleanName);
       onLogin(response.data.user, response.data.token);
     } catch (err) {
       setError(err.response?.data?.error || "Erreur d'inscription");
@@ -36,6 +52,30 @@ function Register({ onLogin }) {
       setLoading(false);
     }
   };
+
+  const handleSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (!loading) {
+      performRegister();
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  useEffect(() => {
+    const onGlobalKeyDown = (e) => {
+      if (e.key === 'Enter' && !loading) {
+        handleSubmit(e);
+      }
+    };
+    window.addEventListener('keydown', onGlobalKeyDown);
+    return () => window.removeEventListener('keydown', onGlobalKeyDown);
+  }, [name, email, password, confirmPassword, loading]);
 
   return (
     <div className="auth-page asul-modern">
@@ -54,15 +94,17 @@ function Register({ onLogin }) {
 
         {error && <div className="error-message">{error}</div>}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} noValidate>
           <div className="form-group">
             <label>Nom</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Votre nom"
               required
+              autoFocus
             />
           </div>
 
@@ -72,6 +114,7 @@ function Register({ onLogin }) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="votre@email.com"
               required
             />
@@ -83,6 +126,7 @@ function Register({ onLogin }) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Au moins 6 caractères"
               required
               minLength={6}
@@ -95,6 +139,7 @@ function Register({ onLogin }) {
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Répéter le mot de passe"
               required
             />

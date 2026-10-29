@@ -15,6 +15,7 @@ import {
   DEFAULT_KEYBOARD_MACROS,
 } from '../utils/compoundCodes';
 import { DV_EVAL_KEYS, describeCode } from '../utils/datavolley';
+import KeyboardRemapModal from '../components/KeyboardRemapModal';
 
 const SANDBOX_EXAMPLES = [
   {
@@ -477,10 +478,15 @@ export default function CodeAutomationPage() {
         </div>
       </div>
 
-      {/* SECTION 4 : ÉDITEUR DE MACROS CLAVIER PERSONNALISÉES */}
+      {/* SECTION 4 : KEYBOARD REMAPPING (STANDARD AZERTY SCOUT & MACROS 1-TO-MANY) */}
+      <div className="card" style={{ padding: 22, marginBottom: 24 }}>
+        <KeyboardRemapModal isModal={false} />
+      </div>
+
+      {/* SECTION 5 : ÉDITEUR DE MACROS CLAVIER PERSONNALISÉES (COMBINAISONS ALT) */}
       <div className="card" style={{ padding: 22 }}>
         <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: '1.25rem' }}>
-          4. Macros Clavier Personnalisées (Raccourcis d’Insertion Rapide)
+          5. Raccourcis de Snippets Multi-Touches (Alt+1…0)
         </h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 16 }}>
           Associez une combinaison de touches (ex: <code>Alt+1</code>, <code>Alt+5</code>) à une séquence de code fréquente

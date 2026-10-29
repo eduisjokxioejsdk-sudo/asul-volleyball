@@ -1,6 +1,7 @@
 // Vérification rapide du moteur DataVolley.
 // Exécution : node client/scripts/datavolley.spec.mjs
 import {
+  getAdaptiveMargins,
   parseSequence,
   validateAction,
   decomposeCode,
@@ -286,6 +287,13 @@ const aceFault = groupActionsIntoRallies(
 );
 eq('services consécutifs = 3 points', aceFault.length, 3);
 eq('chaque service seul = 1 action', aceFault.every((r) => r.actions.length === 1), true);
+
+console.log('\n== Marges vidéo adaptatives (DataVolley 4 Pro) ==');
+eq('service : 4.5s pre-roll', getAdaptiveMargins('S').leadIn, 4.5);
+eq('attaque : 2.5s pre-roll', getAdaptiveMargins('A').leadIn, 2.5);
+eq('bloc : 2.0s pre-roll', getAdaptiveMargins('B').leadIn, 2.0);
+eq('réception : 3.5s pre-roll', getAdaptiveMargins('R').leadIn, 3.5);
+eq('déduction depuis code complet *09AH#', getAdaptiveMargins('*09AH#').leadIn, 2.5);
 
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);
 process.exit(failures === 0 ? 0 : 1);

@@ -16,6 +16,28 @@ const CORNER_LABELS = [
   '4/4 · Coin Fond-Gauche (Camp Bas)',
 ];
 
+// Centres normalisés [cx, cy] des 18 zones DataVolley (9 par demi-terrain)
+const COURT_ZONE_CENTERS = [
+  // Camp Haut (cy < 0.5)
+  { x: 1 / 6, y: 1 / 12 }, { x: 3 / 6, y: 1 / 12 }, { x: 5 / 6, y: 1 / 12 },
+  { x: 1 / 6, y: 3 / 12 }, { x: 3 / 6, y: 3 / 12 }, { x: 5 / 6, y: 3 / 12 },
+  { x: 1 / 6, y: 5 / 12 }, { x: 3 / 6, y: 5 / 12 }, { x: 5 / 6, y: 5 / 12 },
+  // Camp Bas (cy > 0.5)
+  { x: 1 / 6, y: 7 / 12 }, { x: 3 / 6, y: 7 / 12 }, { x: 5 / 6, y: 7 / 12 },
+  { x: 1 / 6, y: 9 / 12 }, { x: 3 / 6, y: 9 / 12 }, { x: 5 / 6, y: 9 / 12 },
+  { x: 1 / 6, y: 11 / 12 }, { x: 3 / 6, y: 11 / 12 }, { x: 5 / 6, y: 11 / 12 },
+];
+
+// --- Transparence de la grille 3D projetée sur la vidéo ---------------------
+// La grille doit rester lisible sans masquer le jeu : hiérarchie de
+// transparence, du trait le plus présent au plus discret. L'opacité est
+// appliquée au groupe entier (ombre sombre + trait clair) pour que le
+// sous-tracé de contraste ne reste pas opaque.
+const GRID_OPACITY_SIDE = 0.7; // lignes de côté (contour) : le moins transparent
+const GRID_OPACITY_LINE = 0.45; // filet et lignes des 3 m
+const GRID_OPACITY_SUBZONE = 0.22; // pointillés de sous-zones : le plus transparent
+const GRID_OPACITY_ZONE_LABEL = 0.4; // badges « Z1 »..« Z9 » en filigrane
+
 export default function VideoTvOverlay({
   showTvOverlay: showTvOverlayProp,
   showScoreboard,
@@ -87,21 +109,59 @@ export default function VideoTvOverlay({
     }
   };
 
-  // Génère un segment projeté sur la vidéo à partir de 2 points du terrain [0..1, 0..1]
-  const renderCourtLine = (x1, y1, x2, y2, props = {}) => {
+  // Génère un segment projeté sur la vidéo avec un double tracé (ombre sombre +
+  // trait clair) : le contraste reste bon sur parquet clair ou foncé, tandis que
+  // l'opacité (appliquée au groupe) garde la grille discrète sur la vidéo.
+  const renderCourtContrastedLine = (
+    x1,
+    y1,
+    x2,
+    y2,
+    {
+      stroke = '#ffffff',
+      strokeWidth = 2,
+      opacity = 0.95,
+      strokeDasharray = undefined,
+      strokeLinecap = 'round',
+      shadowColor = 'rgba(0, 0, 0, 0.85)',
+      shadowWidth = undefined,
+    } = {},
+    key = undefined
+  ) => {
     if (!courtCorners || courtCorners.length !== 4) return null;
     const p1 = courtPointToVideo(courtCorners, { x: x1, y: y1 });
     const p2 = courtPointToVideo(courtCorners, { x: x2, y: y2 });
     if (!p1 || !p2) return null;
+    const underWidth = shadowWidth !== undefined ? shadowWidth : strokeWidth + 2;
+    // L'opacité porte sur le groupe entier : l'ombre sombre s'estompe avec le
+    // trait clair, la grille reste contrastée mais transparente sur la vidéo.
     return (
-      <line
-        x1={p1.x * 1000}
-        y1={p1.y * 1000}
-        x2={p2.x * 1000}
-        y2={p2.y * 1000}
-        vectorEffect="non-scaling-stroke"
-        {...props}
-      />
+      <g key={key} opacity={opacity}>
+        {/* Sous-tracé de contraste sombre pour détacher les pointillés sur parquets clairs ou reflets */}
+        <line
+          x1={p1.x * 1000}
+          y1={p1.y * 1000}
+          x2={p2.x * 1000}
+          y2={p2.y * 1000}
+          vectorEffect="non-scaling-stroke"
+          stroke={shadowColor}
+          strokeWidth={underWidth}
+          strokeDasharray={strokeDasharray}
+          strokeLinecap={strokeLinecap}
+        />
+        {/* Tracé visible clair lumineux */}
+        <line
+          x1={p1.x * 1000}
+          y1={p1.y * 1000}
+          x2={p2.x * 1000}
+          y2={p2.y * 1000}
+          vectorEffect="non-scaling-stroke"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeDasharray={strokeDasharray}
+          strokeLinecap={strokeLinecap}
+        />
+      </g>
     );
   };
 
@@ -328,35 +388,145 @@ export default function VideoTvOverlay({
             zIndex: 1,
           }}
         >
-          {/* Grille perspective complète si les 4 coins sont définis */}
+          {/* Grille perspective complète si les 4 coins sont définis. Pendant le
+              recalibrage elle est atténuée (0.6) pour ne pas masquer la vidéo ;
+              les opacités par type de ligne s'y multiplient. */}
           {courtCorners && courtCorners.length === 4 && (
-            <g>
-              {/* Contour extérieur du terrain */}
-              {renderCourtLine(0, 0, 1, 0, { stroke: '#f59e0b', strokeWidth: 2, opacity: 0.85 })}
-              {renderCourtLine(1, 0, 1, 1, { stroke: '#f59e0b', strokeWidth: 2, opacity: 0.85 })}
-              {renderCourtLine(1, 1, 0, 1, { stroke: '#f59e0b', strokeWidth: 2, opacity: 0.85 })}
-              {renderCourtLine(0, 1, 0, 0, { stroke: '#f59e0b', strokeWidth: 2, opacity: 0.85 })}
+            <g opacity={isCalibrating && draftCorners.length > 0 ? 0.6 : 1}>
+              {/* Contour extérieur du terrain : lignes de côté, les moins transparentes */}
+              {renderCourtContrastedLine(0, 0, 1, 0, { stroke: '#f59e0b', strokeWidth: 2.6, opacity: GRID_OPACITY_SIDE }, 'b-top')}
+              {renderCourtContrastedLine(1, 0, 1, 1, { stroke: '#f59e0b', strokeWidth: 2.6, opacity: GRID_OPACITY_SIDE }, 'b-right')}
+              {renderCourtContrastedLine(1, 1, 0, 1, { stroke: '#f59e0b', strokeWidth: 2.6, opacity: GRID_OPACITY_SIDE }, 'b-bottom')}
+              {renderCourtContrastedLine(0, 1, 0, 0, { stroke: '#f59e0b', strokeWidth: 2.6, opacity: GRID_OPACITY_SIDE }, 'b-left')}
 
               {/* Filet central (y = 0.5) */}
-              {renderCourtLine(0, 0.5, 1, 0.5, { stroke: '#ffffff', strokeWidth: 2.5, strokeDasharray: '6 4', opacity: 0.95 })}
+              {renderCourtContrastedLine(0, 0.5, 1, 0.5, { stroke: '#ffffff', strokeWidth: 3, strokeDasharray: '8 4', opacity: GRID_OPACITY_LINE }, 'net')}
 
-              {/* Lignes des 3m (1/3 et 2/3 de chaque demi-terrain) */}
-              {renderCourtLine(0, 0.5 - 1 / 6, 1, 0.5 - 1 / 6, { stroke: '#38bdf8', strokeWidth: 1.5, opacity: 0.75 })}
-              {renderCourtLine(0, 0.5 + 1 / 6, 1, 0.5 + 1 / 6, { stroke: '#38bdf8', strokeWidth: 1.5, opacity: 0.75 })}
+              {/* Lignes des 3m d'attaque (1/3 et 2/3 de chaque demi-terrain) */}
+              {renderCourtContrastedLine(0, 0.5 - 1 / 6, 1, 0.5 - 1 / 6, { stroke: '#38bdf8', strokeWidth: 2.2, opacity: GRID_OPACITY_LINE }, '3m-top')}
+              {renderCourtContrastedLine(0, 0.5 + 1 / 6, 1, 0.5 + 1 / 6, { stroke: '#38bdf8', strokeWidth: 2.2, opacity: GRID_OPACITY_LINE }, '3m-bottom')}
 
-              {/* Subdivisions de zones 3x3 (1/3 et 2/3 en largeur et profondeur) */}
-              {renderCourtLine(1 / 3, 0, 1 / 3, 1, { stroke: 'rgba(255,255,255,0.3)', strokeWidth: 1, strokeDasharray: '3 3' })}
-              {renderCourtLine(2 / 3, 0, 2 / 3, 1, { stroke: 'rgba(255,255,255,0.3)', strokeWidth: 1, strokeDasharray: '3 3' })}
-              {renderCourtLine(0, 1 / 6, 1, 1 / 6, { stroke: 'rgba(255,255,255,0.25)', strokeWidth: 1, strokeDasharray: '3 3' })}
-              {renderCourtLine(0, 5 / 6, 1, 5 / 6, { stroke: 'rgba(255,255,255,0.25)', strokeWidth: 1, strokeDasharray: '3 3' })}
+              {/* Pointillés des sous-zones (subdivisions longitudinales 1/3 et 2/3) : les plus transparents */}
+              {renderCourtContrastedLine(1 / 3, 0, 1 / 3, 1, {
+                stroke: '#ffffff',
+                strokeWidth: 2,
+                strokeDasharray: '7 4',
+                opacity: GRID_OPACITY_SUBZONE,
+              }, 'zone-v1')}
+              {renderCourtContrastedLine(2 / 3, 0, 2 / 3, 1, {
+                stroke: '#ffffff',
+                strokeWidth: 2,
+                strokeDasharray: '7 4',
+                opacity: GRID_OPACITY_SUBZONE,
+              }, 'zone-v2')}
+
+              {/* Pointillés des sous-zones (subdivisions transversales 1/6 et 5/6 - séparation fond / milieu) */}
+              {renderCourtContrastedLine(0, 1 / 6, 1, 1 / 6, {
+                stroke: '#ffffff',
+                strokeWidth: 2,
+                strokeDasharray: '7 4',
+                opacity: GRID_OPACITY_SUBZONE,
+              }, 'zone-h1')}
+              {renderCourtContrastedLine(0, 5 / 6, 1, 5 / 6, {
+                stroke: '#ffffff',
+                strokeWidth: 2,
+                strokeDasharray: '7 4',
+                opacity: GRID_OPACITY_SUBZONE,
+              }, 'zone-h2')}
+
+              {/* Nom des 9 zones par demi-terrain, affiché en filigrane transparent */}
+              {COURT_ZONE_CENTERS.map((c, idx) => {
+                const vpt = courtPointToVideo(courtCorners, c);
+                const zInfo = courtPointToZone(c);
+                if (!vpt || !zInfo) return null;
+                return (
+                  <g key={`zl-${idx}`} pointerEvents="none" opacity={GRID_OPACITY_ZONE_LABEL}>
+                    <circle
+                      cx={vpt.x * 1000}
+                      cy={vpt.y * 1000}
+                      r="12"
+                      fill="rgba(9, 9, 11, 0.72)"
+                      stroke="rgba(255, 255, 255, 0.65)"
+                      strokeWidth="1.2"
+                    />
+                    <text
+                      x={vpt.x * 1000}
+                      y={vpt.y * 1000 + 4}
+                      textAnchor="middle"
+                      fill="#f8fafc"
+                      fontSize="11"
+                      fontWeight="800"
+                      fontFamily="var(--font-mono, monospace)"
+                      style={{ userSelect: 'none' }}
+                    >
+                      Z{zInfo.zone}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
+
+          {/* Lignes pointillées directes entre les coins en cours de sélection */}
+          {isCalibrating && draftCorners.length > 1 && (
+            <g pointerEvents="none">
+              {draftCorners.map((pt, i) => {
+                if (i === 0) return null;
+                const prev = draftCorners[i - 1];
+                return (
+                  <g key={`draft-edge-${i}`}>
+                    <line
+                      x1={prev.x * 1000}
+                      y1={prev.y * 1000}
+                      x2={pt.x * 1000}
+                      y2={pt.y * 1000}
+                      vectorEffect="non-scaling-stroke"
+                      stroke="rgba(0, 0, 0, 0.85)"
+                      strokeWidth="4"
+                      strokeDasharray="7 4"
+                    />
+                    <line
+                      x1={prev.x * 1000}
+                      y1={prev.y * 1000}
+                      x2={pt.x * 1000}
+                      y2={pt.y * 1000}
+                      vectorEffect="non-scaling-stroke"
+                      stroke="#fbbf24"
+                      strokeWidth="2.2"
+                      strokeDasharray="7 4"
+                    />
+                  </g>
+                );
+              })}
             </g>
           )}
 
           {/* Points des coins cliqués */}
           {(cornersToDraw || []).map((pt, i) => (
-            <g key={i}>
-              <circle cx={pt.x * 1000} cy={pt.y * 1000} r="10" fill="#f59e0b" stroke="#09090b" strokeWidth="2" />
-              <text x={pt.x * 1000 + 14} y={pt.y * 1000 + 5} fill="#fbbf24" fontSize="18" fontWeight="900">
+            <g key={`corner-${i}`} pointerEvents="none">
+              <circle
+                cx={pt.x * 1000}
+                cy={pt.y * 1000}
+                r="11"
+                fill="#f59e0b"
+                stroke="#ffffff"
+                strokeWidth="2.5"
+                filter="drop-shadow(0 0 4px rgba(0,0,0,0.9))"
+              />
+              <text
+                x={pt.x * 1000 + 15}
+                y={pt.y * 1000 + 5}
+                fill="#fbbf24"
+                fontSize="18"
+                fontWeight="900"
+                style={{
+                  paintOrder: 'stroke',
+                  stroke: '#09090b',
+                  strokeWidth: '4px',
+                  strokeLinejoin: 'round',
+                  userSelect: 'none',
+                }}
+              >
                 C{i + 1}
               </text>
             </g>
@@ -364,9 +534,30 @@ export default function VideoTvOverlay({
 
           {/* Dernier point d'impact détecté */}
           {lastDetected && (
-            <g>
-              <circle cx={lastDetected.u * 1000} cy={lastDetected.v * 1000} r="11" fill="#10b981" stroke="#ffffff" strokeWidth="2" />
-              <text x={lastDetected.u * 1000 + 15} y={lastDetected.v * 1000 + 5} fill="#34d399" fontSize="20" fontWeight="900">
+            <g pointerEvents="none">
+              <circle
+                cx={lastDetected.u * 1000}
+                cy={lastDetected.v * 1000}
+                r="12"
+                fill="#10b981"
+                stroke="#ffffff"
+                strokeWidth="2.5"
+                filter="drop-shadow(0 0 4px rgba(0,0,0,0.9))"
+              />
+              <text
+                x={lastDetected.u * 1000 + 16}
+                y={lastDetected.v * 1000 + 6}
+                fill="#34d399"
+                fontSize="20"
+                fontWeight="900"
+                style={{
+                  paintOrder: 'stroke',
+                  stroke: '#09090b',
+                  strokeWidth: '4px',
+                  strokeLinejoin: 'round',
+                  userSelect: 'none',
+                }}
+              >
                 Z{lastDetected.zone}{lastDetected.subzone}
               </text>
             </g>

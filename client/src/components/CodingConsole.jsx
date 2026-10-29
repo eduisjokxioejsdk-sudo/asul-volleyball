@@ -1,11 +1,21 @@
 // ============================================================================
 // Console de codage DataVolley partagée (vidéo + live).
-// La "zone de codage" placée sous la vidéo : tampon, aperçu, pré-remplissage
-// du serveur, clavier virtuel, aide-mémoire et bouton de validation.
+// La "zone de codage" placée sous la vidéo : champ de saisie avec curseur et
+// interception Keyboard Remapping (AZERTY Scout), tampon visuel en blocs,
+// aperçu décodé, pré-remplissage du serveur, clavier virtuel, aide-mémoire
+// et bouton de validation.
 // ============================================================================
 
+import { useState, useEffect, useRef } from 'react';
 import { DvKeyPad, DvSyntaxHelp } from './DvKeypad';
+import KeyboardRemapModal from './KeyboardRemapModal';
+import { Keyboard } from './icons';
 import { describeCode, describeIssues, validateAction } from '../utils/datavolley';
+import {
+  KEYBOARD_REMAP_EVENT,
+  loadKeyboardProfile,
+  handleRemappedKeyDown,
+} from '../utils/keyboardRemap';
 
 const describeDefault = (it) => {
   if (it.valid) return describeCode(it.code);
@@ -16,6 +26,8 @@ const describeDefault = (it) => {
 /**
  * @param {Object} props
  * @param {React.ReactNode} props.hint - texte d'aide sous le titre
+ * @param {string} [props.buffer] - chaîne brute du tampon
+ * @param {(next:string)=>void} [props.onChangeBuffer] - mise à jour directe du tampon (pour édition au curseur)
  * @param {Array} props.bufferChunks - résultat de parseSequence(buffer)
  * @param {Function} [props.describe] - (item) => texte de la ligne d'aperçu
  * @param {Function} [props.blockClassFor] - (item) => classe du bloc (ex. 'error')
@@ -33,7 +45,7 @@ const describeDefault = (it) => {
  * @param {Function} props.onKey - (char) => void (clavier virtuel)
  * @param {Function} props.onBackspace
  * @param {Function} props.onClear
- * @param {Function} props.onCommit
+ * @param {Function} props.onCommit - (overrideBuffer?: string) => void
  * @param {boolean} [props.disabled]
  * @param {React.ReactNode} props.commitLabel - contenu du bouton de validation
  * @param {React.ReactNode} [props.warnings]
@@ -41,6 +53,8 @@ const describeDefault = (it) => {
  */
 export default function CodingConsole({
   hint,
+  buffer,
+  onChangeBuffer,
   bufferChunks,
   describe = describeDefault,
   blockClassFor = () => '',
@@ -65,6 +79,52 @@ export default function CodingConsole({
   aftermath,
 }) {
   const chunks = bufferChunks || [];
+  const rawValue = buffer !== undefined ? buffer : chunks.map((c) => c.code).join('');
+  const inputRef = useRef(null);
+  const [remapModalOpen, setRemapModalOpen] = useState(false);
+  const [keymapProfile, setKeymapProfile] = useState(() => loadKeyboardProfile());
+
+  useEffect(() => {
+    const onProfileUpdated = () => setKeymapProfile(loadKeyboardProfile());
+    window.addEventListener(KEYBOARD_REMAP_EVENT, onProfileUpdated);
+    return () => window.removeEventListener(KEYBOARD_REMAP_EVENT, onProfileUpdated);
+  }, []);
+
+  const handleInputKeyDown = (e) => {
+    if (disabled) return;
+
+    // 1. Interception via le moteur de Keyboard Remapping (1-to-Many + Auto-Enter)
+    const remapResult = handleRemappedKeyDown(e, {
+      value: rawValue,
+      profile: keymapProfile,
+      inputElement: inputRef.current,
+      onChange: (nextVal) => {
+        onChangeBuffer?.(nextVal);
+      },
+      onCommit: (finalVal) => {
+        onCommit?.(finalVal);
+      },
+    });
+
+    if (remapResult.handled) {
+      return;
+    }
+
+    // 2. Touches de contrôle standard dans le champ de saisie
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      onCommit?.(rawValue);
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (onChangeBuffer) onChangeBuffer('');
+      else onClear?.();
+    }
+  };
 
   return (
     <>
@@ -77,7 +137,43 @@ export default function CodingConsole({
         </span>
       </div>
       {hint}
-      <div className="dv-buffer" role="log" aria-live="polite" aria-label="Tampon de saisie">
+
+      {/* Champ de saisie interactif avec support du curseur et remapping clavier */}
+      {onChangeBuffer && (
+        <div style={{ marginBottom: 6 }}>
+          <input
+            ref={inputRef}
+            type="text"
+            className="dv-buffer-input"
+            value={rawValue}
+            disabled={disabled}
+            onChange={(e) => onChangeBuffer(e.target.value)}
+            onKeyDown={handleInputKeyDown}
+            placeholder="Saisissez le code DataVolley (ex: *09A4# ou utilisez les raccourcis AZERTY Scout)..."
+            aria-label="Champ de saisie de code DataVolley"
+            style={{
+              width: '100%',
+              padding: '7px 10px',
+              fontFamily: 'var(--font-mono, monospace)',
+              fontSize: 14,
+              fontWeight: 700,
+              borderRadius: 6,
+              background: '#09090b',
+              border: '1px solid var(--border-color, #27272a)',
+              color: '#fbbf24',
+            }}
+          />
+        </div>
+      )}
+
+      <div
+        className="dv-buffer"
+        role="log"
+        aria-live="polite"
+        aria-label="Tampon de saisie"
+        onClick={() => inputRef.current?.focus()}
+        style={{ cursor: onChangeBuffer ? 'text' : undefined }}
+      >
         {chunks.length === 0 ? (
           <span className="dv-buffer-code" aria-hidden="true">·</span>
         ) : (
@@ -112,6 +208,20 @@ export default function CodingConsole({
           <input type="checkbox" checked={autoServe} onChange={onToggleAutoServe} disabled={disabled} />
           Pré-remplir le serveur
         </label>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => setRemapModalOpen(true)}
+          title="Configurer le Keyboard Remapping & les Macros (Standard AZERTY Scout)"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            borderColor: keymapProfile?.enabled ? 'rgba(34, 197, 94, 0.45)' : undefined,
+          }}
+        >
+          <Keyboard size={12} /> Clavier Scout
+        </button>
         {aides && (
           <>
             <button type="button" className="btn btn-secondary btn-sm" onClick={onToggleKeypad} aria-expanded={showKeypad} disabled={disabled}>
@@ -125,20 +235,27 @@ export default function CodingConsole({
       </div>
       {aides && showKeypad && (
         <DvKeyPad
-          buffer={chunks.map((c) => c.code).join('')}
+          buffer={rawValue}
           disabled={disabled}
           onKey={onKey}
           onBackspace={onBackspace}
           onClear={onClear}
-          onCommit={onCommit}
+          onCommit={() => onCommit?.()}
         />
       )}
       {aides && showHelp && <DvSyntaxHelp />}
-      <button className="btn btn-primary btn-block" onClick={onCommit} disabled={disabled || chunks.length === 0}>
+      <button className="btn btn-primary btn-block" onClick={() => onCommit?.()} disabled={disabled || chunks.length === 0}>
         {commitLabel} <kbd>Entrée</kbd>
       </button>
       {warnings}
       {aftermath}
+
+      <KeyboardRemapModal
+        isModal
+        open={remapModalOpen}
+        onClose={() => setRemapModalOpen(false)}
+        onProfileChange={(next) => setKeymapProfile(next)}
+      />
     </>
   );
 }

@@ -77,6 +77,38 @@ export const videosAPI = {
   getFileUrl: (filename) => `${API_BASE}/videos/file/${filename}`,
   getProxyUrl: (filename) => `${API_BASE}/videos/proxy/${filename}`,
 
+  // --- Lisibilité dans le navigateur ---------------------------------------
+  // Un fichier uploadé n'est pas toujours décodable par un élément <video>
+  // (conteneur fragmenté, codec exotique, index en fin de fichier) : le lecteur
+  // tourne alors à l'infini. Le serveur sait le diagnostiquer puis produire une
+  // version lisible, pointée par `filepath_proxy`.
+
+  /**
+   * Diagnostic de lisibilité (sonde ffmpeg côté serveur) : dit si le fichier est
+   * lisible tel quel et quelle correction serait appliquée.
+   * @param {number|string} videoId
+   * @returns {Promise<{playable:boolean,reason:string|null,mode:'none'|'remux'|'transcode'}>}
+   */
+  diagnosePlayable: (videoId) => api.post(`/videos/${videoId}/playable/diagnose`),
+
+  /**
+   * État de la préparation d'une version lisible.
+   * @param {number|string} videoId
+   * @returns {Promise<{status:'unknown'|'processing'|'ready'|'not_needed'|'error',filepath_proxy:string|null,error:string|null}>}
+   */
+  getPlayableStatus: (videoId) => api.get(`/videos/${videoId}/playable/status`),
+
+  /**
+   * Produit une version lisible par le navigateur : remux sans perte si les
+   * codecs sont déjà supportés, sinon transcodage proxy 480p.
+   * Renvoie 202 si le travail est déjà en cours (il n'est pas relancé).
+   * @param {number|string} videoId
+   * @param {boolean} [force=false] refaire même si une version existe déjà.
+   */
+  preparePlayable: (videoId, force = false) => api.post(`/videos/${videoId}/playable`, { force }),
+
+  getProxyUrl: (filename) => `${API_BASE}/videos/proxy/${filename}`,
+
   addToFolder: (videoId, folderId) => api.post(`/videos/${videoId}/folders`, { folder_id: folderId }),
   removeFromFolder: (videoId, folderId) => api.delete(`/videos/${videoId}/folders/${folderId}`),
   getFolders: (videoId) => api.get(`/videos/${videoId}/folders`),

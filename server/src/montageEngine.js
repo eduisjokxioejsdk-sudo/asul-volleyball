@@ -353,8 +353,15 @@ function cancelMontage(montageId) {
     job.cancelled = true;
     if (job.currentProc) {
       try {
-        job.currentProc.kill('SIGKILL');
-      } catch (e) {}
+        if (process.platform === 'win32' && job.currentProc.pid) {
+          const { execSync } = require('child_process');
+          execSync(`taskkill /pid ${job.currentProc.pid} /T /F`, { stdio: 'ignore' });
+        } else {
+          job.currentProc.kill('SIGKILL');
+        }
+      } catch (e) {
+        try { job.currentProc.kill(); } catch (_) {}
+      }
     }
     activeJobs.delete(montageId);
     updateMontageDb(montageId, {

@@ -234,7 +234,7 @@ export function applyCompoundAutoCodes(existingActions = [], newActions = [], ct
       !['PP', 'P2', 'PR'].includes(String(act.combo || '').toUpperCase())
     ) {
       const hasPrecedingSet = prevAction && prevAction.action === 'E' && prevAction.team === act.team;
-      const setterNum = act.team === 'away' ? Number(ctx.awaySetter) : Number(ctx.homeSetter);
+      const setterNum = act.team === 'away' ? Number(ctx.awaySetter ?? ctx.awaySetterNumber) : Number(ctx.homeSetter ?? ctx.homeSetterNumber);
       if (!hasPrecedingSet && Number.isInteger(setterNum) && setterNum > 0) {
         const teamKey = teamKeyFromId(act.team);
         const setEval = '#';

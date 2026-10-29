@@ -15,6 +15,7 @@
 // ============================================================================
 
 import { getPointWinner, rallyServerTeam } from './datavolley.js';
+import { resolveOnCourt } from './lineup.js';
 
 export const COURT_POSITIONS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
 export const FRONT_ROW = ['P2', 'P3', 'P4'];
@@ -299,9 +300,28 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
   applySubstitutions(1, 0);
   applyPointEvents(1, 0);
 
+  const getTeamConfig = (setNum, teamKey) => {
+    const st = setupFor(setups, setNum);
+    const lineupVal = teamKey === 'home' ? st.home_lineup : st.away_lineup;
+    const optTeam = teamKey === 'home' ? (opts.homeTeam || opts.homeConfig) : (opts.awayTeam || opts.awayConfig);
+    const saved = typeof lineupVal === 'object' && lineupVal?.config ? lineupVal.config : (typeof lineupVal === 'object' ? lineupVal : {});
+    return {
+      libero: Number(optTeam?.libero ?? saved.libero ?? lineupVal?.libero) || null,
+      liberoFor: Number(optTeam?.liberoFor ?? optTeam?.libero_for ?? saved.liberoFor ?? saved.libero_for ?? lineupVal?.liberoFor ?? lineupVal?.libero_for) || null,
+    };
+  };
+
   let setPointsPlayed = 0;
 
   for (const rally of list) {
+    const homeConfig = getTeamConfig(state.currentSet, 'home');
+    const awayConfig = getTeamConfig(state.currentSet, 'away');
+    const isTieBreak = state.currentSet >= 5;
+    const isCourtSwitched = isTieBreak && (state.score.team1 >= 8 || state.score.team2 >= 8);
+
+    const homeOnCourt = resolveOnCourt(state.homeLineup, homeConfig, { isServing: state.server === 'team1' });
+    const awayOnCourt = resolveOnCourt(state.awayLineup, awayConfig, { isServing: state.server === 'team2' });
+
     const snapshot = {
       pointNumber: rally.pointNumber,
       index: rally.index,
@@ -310,8 +330,11 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
       scoreBefore: { ...state.score },
       homeLineup: { ...state.homeLineup },
       awayLineup: { ...state.awayLineup },
+      homeOnCourt,
+      awayOnCourt,
       homeSetterPos: state.homePos,
       awaySetterPos: state.awayPos,
+      courtSwitched: isCourtSwitched,
       winner: null,
       scoreAfter: null,
     };
@@ -336,6 +359,10 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
     setPointsPlayed += 1;
     snapshot.winner = winner;
     snapshot.scoreAfter = { ...state.score };
+
+    if (isTieBreak && (state.score.team1 === 8 || state.score.team2 === 8)) {
+      snapshot.isTieBreakSwitch = true;
+    }
 
     if (isSetOver(state.score, state.currentSet)) {
       sets.push({ setNumber: state.currentSet, team1: state.score.team1, team2: state.score.team2, winner });
@@ -393,6 +420,10 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
     }
   }
 
+  const finalHomeConfig = getTeamConfig(state.currentSet, 'home');
+  const finalAwayConfig = getTeamConfig(state.currentSet, 'away');
+  const finalCourtSwitched = state.currentSet >= 5 && (state.score.team1 >= 8 || state.score.team2 >= 8);
+
   return {
     currentSet: state.currentSet,
     score: state.score,
@@ -405,10 +436,13 @@ export function computeMatchState(rallies, setups = {}, opts = {}, events = []) 
     awaySetterPos: state.awayPos,
     homeLineup: state.homeLineup,
     awayLineup: state.awayLineup,
+    homeOnCourt: resolveOnCourt(state.homeLineup, finalHomeConfig, { isServing: state.server === 'team1' }),
+    awayOnCourt: resolveOnCourt(state.awayLineup, finalAwayConfig, { isServing: state.server === 'team2' }),
+    courtSwitched: finalCourtSwitched,
     states,
     warnings,
-    homeTeam: opts.homeTeam || null,
-    awayTeam: opts.awayTeam || null,
+    homeTeam: opts.homeTeam || finalHomeConfig,
+    awayTeam: opts.awayTeam || finalAwayConfig,
   };
 }
 
@@ -426,13 +460,20 @@ export function stateBeforePoint(matchState, pointNumber) {
  * (Compatibilité avec l'analyse de distribution.)
  * @returns {Array<{setNumber, homeSetterPos, awaySetterPos, homeLineup, awayLineup}>}
  */
-export function computePerRallySetterPositions(rallies, setups = {}) {
-  const ms = computeMatchState(rallies, setups);
+export function computePerRallySetterPositions(rallies, setups = {}, opts = {}) {
+  const ms = computeMatchState(rallies, setups, opts);
   return ms.states.map((s) => ({
     setNumber: s.setNumber,
     homeSetterPos: s.homeSetterPos,
     awaySetterPos: s.awaySetterPos,
     homeLineup: s.homeLineup,
     awayLineup: s.awayLineup,
+    homeOnCourt: s.homeOnCourt,
+    awayOnCourt: s.awayOnCourt,
+    scoreBefore: s.scoreBefore,
+    scoreAfter: s.scoreAfter,
+    server: s.server,
+    courtSwitched: s.courtSwitched,
+    isTieBreakSwitch: s.isTieBreakSwitch,
   }));
 }

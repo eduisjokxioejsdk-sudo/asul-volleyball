@@ -357,7 +357,7 @@ function createSyncEngine(collection) {
     } catch (err) {
       state.failureCount += 1;
       state.lastError = err.message;
-      writeState('last_error', err.message);
+      writeState(stateKey('last_error'), err.message);
       console.warn(
         `${collection.name} : synchronisation cloud impossible (${err.message}) — travail local inchangé.`
       );

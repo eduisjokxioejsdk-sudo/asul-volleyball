@@ -1,8 +1,23 @@
 {
-  "version": "3.2.0",
-  "releasedAt": "2026-10-21",
+  "version": "3.3.0",
+  "releasedAt": "2026-10-29",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.0",
+      "date": "2026-10-29",
+      "title": "Clavier personnalisable, vidéos réparées automatiquement et grille sur la vidéo",
+      "items": [
+        "Clavier personnalisable : une touche physique peut désormais produire un ou plusieurs caractères (par exemple #, ap, *p ou X5), avec validation immédiate optionnelle ; l’éditeur visuel du clavier AZERTY colore chaque touche selon sa catégorie (fondamentaux, évaluations positives, négatives, fautes)",
+        "Profils de clavier : import et export d’un profil en .json, activation touche par touche et retour au « Standard AZERTY Scout » ; le profil est conservé sur le poste et s’applique à la saisie, à la console de codage, à l’automatisation de code et au mode Entraînement",
+        "Vidéos réparées automatiquement : un fichier illisible par le lecteur (MP4 fragmenté, index en fin de fichier, codec exotique) est diagnostiqué puis converti en version lisible par le serveur, sans intervention ; l’interface suit la préparation et propose « Réessayer »",
+        "Basculement sans perte : quand la version préparée est prête, la lecture reprend exactement à la même position et les timecodes du codage restent valables",
+        "Grille de terrain sur la vidéo plus précise : les 18 zones DataVolley sont tracées en perspective avec un tracé contrasté (ombre sombre + trait clair) et une transparence graduée, pour rester lisible sans jamais masquer le jeu ; les badges Z1 à Z9 restent en filigrane",
+        "Rotations fidèles au terrain : le libéro et le poste qu’il remplace sont pris en compte à chaque point, y compris au 5e set après le changement de côté",
+        "Import et export DataVolley (.dvw) enrichis : la rotation P1 à P6 de chaque équipe et le score course du rallye sont désormais conservés",
+        "Connexion et inscription : la touche Entrée valide le formulaire depuis n’importe quel champ, les espaces superflus sont retirés et un champ vide affiche un message clair"
+      ]
+    },
     {
       "version": "3.2.0",
       "date": "2026-10-21",

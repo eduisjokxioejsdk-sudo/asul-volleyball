@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronsLeft, ChevronsRight, Clock, Pause, Play, Repeat, Trash } from './icons';
 import { playlistsAPI, videosAPI } from '../services/api';
-import { formatTimecode } from '../utils/datavolley';
+import { formatTimecode, getAdaptiveMargins } from '../utils/datavolley';
 
 export default function PlaylistManagerModal({
   open = true,
@@ -128,12 +128,15 @@ export default function PlaylistManagerModal({
       const first = acts[0];
       const last = acts[acts.length - 1];
       const seg = (segments || []).find((s) => s.pointNumber === r.pointNumber);
+      // Marges vidéo adaptatives par compétence (DataVolley 4 Pro)
+      const primaryAct = acts.length === 1 ? acts[0] : (acts.find((a) => a.action === 'A' || a.action === 'S') || first);
+      const adaptive = primaryAct ? getAdaptiveMargins(primaryAct) : { leadIn, leadOut };
       return {
         video_id: Number(videoId),
         action_code: acts.map((a) => a.code).join(' '),
-        timecode: first?.timecode ?? seg?.startTime ?? 0,
-        lead_in: leadIn,
-        lead_out: leadOut,
+        timecode: primaryAct?.timecode ?? first?.timecode ?? seg?.startTime ?? 0,
+        lead_in: adaptive.leadIn ?? leadIn,
+        lead_out: adaptive.leadOut ?? leadOut,
         note: `${videoTitle ? videoTitle + ' · ' : ''}Point ${r.pointNumber}`,
       };
     });

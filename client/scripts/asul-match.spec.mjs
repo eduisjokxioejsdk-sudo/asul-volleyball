@@ -83,6 +83,70 @@ check('aucun avertissement', ms.warnings.length === 0, JSON.stringify(ms.warning
 const libCheck = validateLineup({ P1: 1, P2: 7, P3: 9, P4: 4, P5: 5, P6: 6 }, config);
 check('libéro à l’avant refusé', !libCheck.valid && libCheck.issues.includes('libero_front_row'), JSON.stringify(libCheck));
 const libOk = validateLineup({ P1: 7, P2: 2, P3: 9, P4: 4, P5: 5, P6: 6 }, config);
+
+// Test automatisation du libéro dans computeMatchState
+const msLib = computeMatchState(
+  groupActionsIntoRallies([
+    { code: '*01S#', action: 'S', evaluation: '#', team: 'home', player_number: 1, action_index: 0 },
+  ]),
+  {
+    1: {
+      first_server: 'team1',
+      home_lineup: { P1: 1, P2: 2, P3: 9, P4: 4, P5: 3, P6: 6 }, // 3 est en P5 (arrière)
+      away_lineup: { P1: 11, P2: 12, P3: 13, P4: 14, P5: 15, P6: 16 },
+    },
+  },
+  {
+    homeTeam: { libero: 7, liberoFor: 3 },
+  }
+);
+check('libéro automatique sur ligne arrière dans snapshot', msLib.states[0].homeOnCourt.P5.number === 7 && msLib.states[0].homeOnCourt.P5.isLibero);
+check('libéro automatique dans homeOnCourt final', msLib.homeOnCourt.P5.number === 7 && msLib.homeOnCourt.P5.isLibero);
+
+// Test changement de côté à 8 points en set 5 (Tie-break)
+// Simule 4 sets rapides puis 8 points au 5e set
+const tbRallies = [];
+let actIdx = 0;
+for (let s = 1; s <= 4; s++) {
+  const winner = s % 2 === 1 ? 'home' : 'away';
+  const server = winner;
+  for (let p = 0; p < 25; p++) {
+    tbRallies.push({
+      code: `${server === 'home' ? '*' : 'a'}01S#`,
+      action: 'S',
+      evaluation: '#',
+      team: server,
+      player_number: 1,
+      action_index: actIdx++,
+    });
+  }
+}
+// Set 5 : 8 points consécutifs de Domicile
+for (let p = 0; p < 8; p++) {
+  tbRallies.push({
+    code: '*01S#',
+    action: 'S',
+    evaluation: '#',
+    team: 'home',
+    player_number: 1,
+    action_index: actIdx++,
+  });
+}
+const msTb = computeMatchState(
+  groupActionsIntoRallies(tbRallies),
+  {
+    1: { first_server: 'team1', home_lineup: six, away_lineup: six },
+    2: { first_server: 'team2', home_lineup: six, away_lineup: six },
+    3: { first_server: 'team1', home_lineup: six, away_lineup: six },
+    4: { first_server: 'team2', home_lineup: six, away_lineup: six },
+    5: { first_server: 'team1', home_lineup: six, away_lineup: six },
+  }
+);
+check('5e set atteint à 2-2', msTb.currentSet === 5);
+check('score 8-0 au 5e set', msTb.score.team1 === 8);
+check('changement de camp au tie-break détecté', msTb.courtSwitched === true);
+const switchPointSnap = msTb.states.find((st) => st.setNumber === 5 && st.isTieBreakSwitch);
+check('drapeau isTieBreakSwitch activé au 8e point', Boolean(switchPointSnap));
 check('libéro à l’arrière accepté', libOk.valid, JSON.stringify(libOk));
 
 console.log('\n== Bilan de match ==');

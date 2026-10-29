@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { authAPI } from '../services/api';
 import PancakeLogo from '../components/PancakeLogo';
@@ -9,13 +9,21 @@ function Login({ onLogin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const performLogin = async () => {
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setError('Veuillez renseigner votre adresse email');
+      return;
+    }
+    if (!password) {
+      setError('Veuillez renseigner votre mot de passe');
+      return;
+    }
     setError('');
     setLoading(true);
 
     try {
-      const response = await authAPI.login(email, password);
+      const response = await authAPI.login(cleanEmail, password);
       onLogin(response.data.user, response.data.token);
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur de connexion');
@@ -23,6 +31,30 @@ function Login({ onLogin }) {
       setLoading(false);
     }
   };
+
+  const handleSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (!loading) {
+      performLogin();
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  useEffect(() => {
+    const onGlobalKeyDown = (e) => {
+      if (e.key === 'Enter' && !loading) {
+        handleSubmit(e);
+      }
+    };
+    window.addEventListener('keydown', onGlobalKeyDown);
+    return () => window.removeEventListener('keydown', onGlobalKeyDown);
+  }, [email, password, loading]);
 
   return (
     <div className="auth-page asul-modern">
@@ -41,15 +73,17 @@ function Login({ onLogin }) {
 
         {error && <div className="error-message">{error}</div>}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} noValidate>
           <div className="form-group">
             <label>Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="votre@email.com"
               required
+              autoFocus
             />
           </div>
 
@@ -59,6 +93,7 @@ function Login({ onLogin }) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="••••••••"
               required
             />

@@ -218,8 +218,12 @@ export function indexActionLineups(rallies, matchState) {
   (rallies || []).forEach((r, i) => {
     const st = matchState?.states?.[i];
     if (!st) return;
-    const home = st.homeLineup || {};
-    const away = st.awayLineup || {};
+    const home = st.homeOnCourt
+      ? Object.fromEntries(Object.entries(st.homeOnCourt).map(([p, obj]) => [p, obj?.number]))
+      : (st.homeLineup || {});
+    const away = st.awayOnCourt
+      ? Object.fromEntries(Object.entries(st.awayOnCourt).map(([p, obj]) => [p, obj?.number]))
+      : (st.awayLineup || {});
     const info = {};
     for (let p = 1; p <= 6; p += 1) {
       info[`home_p${p}`] = home[`P${p}`] ?? '';

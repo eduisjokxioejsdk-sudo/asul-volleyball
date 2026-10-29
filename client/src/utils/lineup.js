@@ -82,10 +82,11 @@ export function playerInfo(config, number) {
  * Composition réellement sur le terrain, libéro appliqué.
  * @returns {Object} { P1..P6 } de { position, number, name, role, isLibero, replaced }
  */
-export function resolveOnCourt(lineup, config) {
+export function resolveOnCourt(lineup, config, options = {}) {
   const l = normalizeLineup(lineup);
   const li = config?.libero ? Number(config.libero) : null;
   const liFor = config?.liberoFor ? Number(config.liberoFor) : null;
+  const isServing = Boolean(options.isServing);
   const out = {};
 
   for (const p of COURT_POSITIONS) {
@@ -102,13 +103,16 @@ export function resolveOnCourt(lineup, config) {
     };
   }
 
-  // Substitution libéro : uniquement au poste arrière.
+  // Substitution libéro : uniquement au poste arrière (P1, P5, P6).
+  // Règle FIVB / DataVolley standard : le libéro ne sert pas.
+  // Si le joueur remplacé est en P1 et que son équipe est au service, c'est le joueur régulier qui sert.
   if (li && liFor) {
     const backPos = BACK_ROW.find((p) => l[p] === liFor);
     if (backPos) {
-      const info = playerInfo(config, li) || { name: '', role: 'libero' };
+      const isServingInP1 = isServing && backPos === 'P1';
       const alreadyLibero = COURT_POSITIONS.some((p) => l[p] === li);
-      if (!alreadyLibero) {
+      if (!alreadyLibero && !isServingInP1) {
+        const info = playerInfo(config, li) || { name: '', role: 'libero' };
         out[backPos] = {
           position: backPos,
           number: li,

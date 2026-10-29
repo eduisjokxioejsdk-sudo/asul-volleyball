@@ -12,6 +12,7 @@ import AppNavigation from '../components/AppNavigation';
 import PancakeLogo from '../components/PancakeLogo';
 import { teamsAPI, videosAPI, practiceAPI } from '../services/api';
 import { downloadTextFile, rowsToCsv } from '../utils/download';
+import { handleRemappedKeyDown } from '../utils/keyboardRemap';
 import {
   decomposeCode,
   describeCode,
@@ -389,8 +390,16 @@ export default function PracticeModePage({ user, onLogout }) {
     }
   };
 
-  // Raccourcis clavier dans la console
+  // Raccourcis clavier dans la console (avec support Keyboard Remapping & Macros)
   const handleCodeKeyDown = (e) => {
+    const remapRes = handleRemappedKeyDown(e, {
+      value: codeInput,
+      inputElement: codeInputRef.current,
+      onChange: (nextVal) => setCodeInput(nextVal),
+      onCommit: (finalVal) => handleCommitCode(finalVal),
+    });
+    if (remapRes.handled) return;
+
     if (e.key === 'Enter') {
       e.preventDefault();
       handleCommitCode();

@@ -531,6 +531,15 @@ db.serialize(() => {
     if (!columnNames.includes('angle2_offset')) {
       db.run('ALTER TABLE videos ADD COLUMN angle2_offset REAL DEFAULT 0');
     }
+    // Préparation de la lecture navigateur (voir server/src/proxy.js) :
+    //   proxy_status = null | not_needed | processing | ready | error
+    //   proxy_error  = raison (fichier non décodable) ou message d'échec.
+    if (!columnNames.includes('proxy_status')) {
+      db.run('ALTER TABLE videos ADD COLUMN proxy_status TEXT');
+    }
+    if (!columnNames.includes('proxy_error')) {
+      db.run('ALTER TABLE videos ADD COLUMN proxy_error TEXT');
+    }
   });
 
   // Migrate live_sessions: add team association columns if missing

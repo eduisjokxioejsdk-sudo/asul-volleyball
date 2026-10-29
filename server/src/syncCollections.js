@@ -373,7 +373,7 @@ const actionsCollection = makeVideoRefCollection({
   name: 'Actions DataVolley',
   defaultTable: 'asul_actions',
   table: 'volley_actions',
-  fields: ['action_index', 'code', 'timecode', 'system_time', 'team', 'player_number', 'action', 'evaluation', 'type', 'start_zone', 'end_zone', 'end_subzone', 'set_number', 'note', 'attack_zone'],
+  fields: ['action_index', 'code', 'timecode', 'system_time', 'team', 'player_number', 'action', 'evaluation', 'type', 'start_zone', 'end_zone', 'end_subzone', 'set_number', 'note', 'attack_zone', 'start_x', 'start_y', 'mid_x', 'mid_y', 'end_x', 'end_y', 'is_auto'],
   onChanged: (applied, removed) => {
     if (applied || removed) emitCollectionChanged('actions');
   },

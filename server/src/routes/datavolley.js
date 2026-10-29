@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
 const { getSetups, saveSetups } = require('../setups');
@@ -82,10 +83,11 @@ router.post('/:videoId/actions', authenticateToken, (req, res) => {
       }
     }
 
+    const now = new Date().toISOString();
     db.run('BEGIN TRANSACTION', (err) => {
       if (err) return res.status(500).json({ error: 'Failed to start transaction' });
 
-      db.run('DELETE FROM volley_actions WHERE video_id = ?', [videoId], (err) => {
+      db.run('UPDATE volley_actions SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_id = ?', [now, videoId], (err) => {
         if (err) {
           db.run('ROLLBACK');
           return res.status(500).json({ error: 'Failed to clear old actions' });
@@ -103,8 +105,8 @@ router.post('/:videoId/actions', authenticateToken, (req, res) => {
           `INSERT INTO volley_actions
             (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation,
              type, start_zone, end_zone, end_subzone, set_number, note, attack_zone,
-             start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto, deleted, dirty, local_updated_at, sync_uuid)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
         );
 
         rows.forEach((a, i) => {
@@ -133,7 +135,9 @@ router.post('/:videoId/actions', authenticateToken, (req, res) => {
             a.mid_y ?? null,
             a.end_x ?? null,
             a.end_y ?? null,
-            a.is_auto ? 1 : 0
+            a.is_auto ? 1 : 0,
+            now,
+            a.sync_uuid || crypto.randomUUID()
           );
         });
 
@@ -210,8 +214,8 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
             `INSERT INTO volley_actions
               (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation,
                type, start_zone, end_zone, end_subzone, set_number, note, attack_zone,
-               start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto, deleted, dirty, local_updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)`
+               start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto, deleted, dirty, local_updated_at, sync_uuid)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
           );
 
           rows.forEach((a, i) => {
@@ -241,7 +245,8 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
               a.end_x ?? null,
               a.end_y ?? null,
               a.is_auto ? 1 : 0,
-              now
+              now,
+              a.sync_uuid || crypto.randomUUID()
             );
           });
 
@@ -611,19 +616,20 @@ router.post('/:videoId/claims', authenticateToken, (req, res) => {
     const now = new Date().toISOString();
     const email = req.user.email || `user-${req.user.id}`;
     db.get(
-      'SELECT * FROM video_set_claims WHERE video_uuid = ? AND set_number = ? AND COALESCE(deleted, 0) = 0',
+      'SELECT * FROM video_set_claims WHERE video_uuid = ? AND set_number = ?',
       [videoUuid, setNumber],
       (err2, existing) => {
         if (err2) return res.status(500).json({ error: 'Database error' });
-        if (existing && existing.claimed_by_email && existing.claimed_by_email !== email) {
+        if (existing && Number(existing.deleted) === 0 && existing.claimed_by_email && existing.claimed_by_email !== email) {
           return res.status(409).json({ error: 'Ce set est déjà revendiqué par un autre statisticien', claimed_by: existing.claimed_by_name });
         }
+        const claimUuid = (existing && existing.sync_uuid) ? existing.sync_uuid : crypto.randomUUID();
         const sql = existing
-          ? `UPDATE video_set_claims SET claimed_by_uuid = ?, claimed_by_name = ?, claimed_by_email = ?, claimed_at = ?, deleted = 0, dirty = 1, local_updated_at = ? WHERE id = ?`
-          : `INSERT INTO video_set_claims (video_uuid, set_number, claimed_by_uuid, claimed_by_name, claimed_by_email, claimed_at, dirty, local_updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`;
+          ? `UPDATE video_set_claims SET claimed_by_uuid = ?, claimed_by_name = ?, claimed_by_email = ?, claimed_at = ?, deleted = 0, dirty = 1, local_updated_at = ?, sync_uuid = COALESCE(sync_uuid, ?) WHERE id = ?`
+          : `INSERT INTO video_set_claims (video_uuid, set_number, claimed_by_uuid, claimed_by_name, claimed_by_email, claimed_at, dirty, local_updated_at, sync_uuid) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`;
         const params = existing
-          ? [email, req.user.name, email, now, now, existing.id]
-          : [videoUuid, setNumber, email, req.user.name, email, now, now];
+          ? [email, req.user.name, email, now, now, claimUuid, existing.id]
+          : [videoUuid, setNumber, email, req.user.name, email, now, now, claimUuid];
         db.run(sql, params, function (err3) {
           if (err3) return res.status(500).json({ error: 'Database error' });
           syncHub.claims.syncNow({ reason: 'api' }).catch(() => {});
