@@ -63,17 +63,25 @@ function syncPackageJson(dir, version) {
   return changed;
 }
 
-/** Aligne la version en tête d'un package-lock.json (best effort). */
+/**
+ * Aligne la version d'un package-lock.json (best effort).
+ *
+ * Un lockfile v3 porte la version à DEUX endroits : en tête (`"version"` à côté
+ * du `"name"` racine) et dans `packages."".version`. Les deux doivent suivre,
+ * sinon un `npm install`/`npm run` réécrit le second et laisse un fichier
+ * modifié dans l'arbre de travail juste après une publication.
+ */
 function syncLockFile(dir, name, version) {
   const file = path.join(dir, 'package-lock.json');
   if (!fs.existsSync(file)) return;
   const raw = fs.readFileSync(file, 'utf8');
-  const re = new RegExp(`("name":\\s*"${name}",\\r?\\n\\s*"version":\\s*")([^"]+)(")`);
-  const match = raw.match(re);
-  if (!match) return;
-  if (match[2] === version) return;
+  const re = new RegExp(`("name":\\s*"${name}",\\r?\\n\\s*"version":\\s*")([^"]+)(")`, 'g');
+  const found = [...raw.matchAll(re)].map((m) => m[2]);
+  if (!found.length) return;
+  if (found.every((v) => v === version)) return;
   if (!CHECK_ONLY) fs.writeFileSync(file, raw.replace(re, `$1${version}$3`), 'utf8');
-  console.log(`  maj  ${path.relative(ROOT, file)} : ${match[2]} → ${version}`);
+  const before = [...new Set(found)].join(', ');
+  console.log(`  maj  ${path.relative(ROOT, file)} : ${before} → ${version}`);
 }
 
 // --- 1. Contrôle du journal -------------------------------------------------
