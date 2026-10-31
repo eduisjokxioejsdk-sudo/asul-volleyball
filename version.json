@@ -1,8 +1,21 @@
 {
-  "version": "3.3.0",
-  "releasedAt": "2026-10-29",
+  "version": "3.3.1",
+  "releasedAt": "2026-10-31",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.1",
+      "date": "2026-10-31",
+      "title": "Match en direct réparé et raccourcis de codage partagés",
+      "items": [
+        "Match en direct : « Démarrer la session Live » fonctionne de nouveau — l’application envoyait au serveur une requête mal formée, qui répondait « Internal server error » ; le match démarre avec son nom, ses deux équipes et son code de session",
+        "Rejoindre un direct : le code saisi est de nouveau transmis correctement et la session s’ouvre directement ; un message clair s’affiche si le code est inconnu",
+        "Raccourcis de codage partagés : un seul réglage de touches pour Data Volley, Multi-Matchs, Direct, Entraînement et Académie ; les réglages enregistrés par match ou par session sont repris automatiquement au premier lancement",
+        "Champs de code : la touche de validation personnalisée et le Keyboard Remapping « AZERTY Scout » s’appliquent aussi aux champs de saisie des codes (console de codage, édition d’une action, séquences de point)",
+        "Synchronisation cloud : messages d’erreur explicites (adresse Supabase introuvable, connexion refusée, délai dépassé, certificat refusé) au lieu du laconique « fetch failed »",
+        "Publication : l’URL du projet Supabase peut être fournie par le secret SUPABASE_URL, sans modifier le workflow de mise à jour"
+      ]
+    },
     {
       "version": "3.3.0",
       "date": "2026-10-29",

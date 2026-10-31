@@ -13,6 +13,8 @@
 //   4. La persistance dans `localStorage` et l'import/export de profils `.json`.
 // ============================================================================
 
+import { matchesShortcut } from './shortcuts.js';
+
 export const KEYBOARD_REMAP_STORAGE_KEY = 'purevolley_keyboard_remap_v1';
 export const KEYBOARD_REMAP_EVENT = 'purevolley:keymap-updated';
 
@@ -661,4 +663,59 @@ export function handleRemappedKeyDown(event, options = {}) {
     nextCursorPos,
     autoCommitted,
   };
+}
+
+/**
+ * Touche pressée dans un champ qui saisit un code DataVolley (console, édition
+ * d'une action, édition d'une séquence de point, exercice d'académie…) :
+ * applique d'abord le Keyboard Remapping, puis le raccourci de validation
+ * commun. Utilisable hors composant (aucun hook), pour les champs créés dans
+ * une boucle de rendu.
+ *
+ * @param {KeyboardEvent} event
+ * @param {Object} options
+ * @param {string} options.value valeur courante du champ
+ * @param {(next:string)=>void} [options.onChange] insertion remappée
+ * @param {(finalValue?:string)=>void} [options.onSubmit] validation
+ * @param {()=>void} [options.onCancel] annulation (Échap / « vider le tampon »)
+ * @param {KeyboardRemapProfile} [options.profile] profil actif
+ * @param {Object} [options.shortcuts] raccourcis partagés (utils/shortcuts)
+ * @param {boolean} [options.commitOnMacro] laisse une macro auto-valider
+ * @returns {boolean} vrai si la touche a été traitée
+ */
+export function handleCodeFieldKeyDown(event, options = {}) {
+  const {
+    value = '',
+    onChange,
+    onSubmit,
+    onCancel = null,
+    profile = null,
+    shortcuts = null,
+    commitOnMacro = false,
+  } = options;
+
+  const remapRes = handleRemappedKeyDown(event, {
+    value,
+    profile,
+    onChange,
+    onCommit: commitOnMacro ? onSubmit : undefined,
+  });
+  if (remapRes.handled) return true;
+
+  if (shortcuts && matchesShortcut(event, shortcuts.validate)) {
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    if (typeof onSubmit === 'function') onSubmit();
+    return true;
+  }
+
+  if (
+    onCancel &&
+    (event.key === 'Escape' || (shortcuts && matchesShortcut(event, shortcuts.clearBuffer)))
+  ) {
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    onCancel();
+    return true;
+  }
+
+  return false;
 }

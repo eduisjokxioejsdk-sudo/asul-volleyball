@@ -24,7 +24,11 @@ import {
 } from '../utils/training';
 import { DV_ACTIONS } from '../utils/datavolley';
 import { LESSONS, generateRecall, checkLessonAnswer } from '../utils/lessons';
-import { ChevronLeft, Check, RotateCcw, Timer, Trophy, Zap, Dices, Play, X, Sparkles, Shuffle, ListChecks, BookOpen, Lock, ChevronRight } from '../components/icons';
+import { handleRemappedKeyDown } from '../utils/keyboardRemap';
+import useCodingKeyboard from '../hooks/useCodingKeyboard';
+import { formatKeyLabel, matchesShortcut } from '../utils/shortcuts';
+import ShortcutSettings from '../components/ShortcutSettings';
+import { ChevronLeft, Check, RotateCcw, Timer, Trophy, Zap, Dices, Play, X, Sparkles, Shuffle, ListChecks, BookOpen, Lock, ChevronRight, Keyboard } from '../components/icons';
 
 const PAIR_COUNT = 6;
 const MATCH_COUNT = 5;
@@ -35,6 +39,33 @@ export default function TrainingPage({ user, onLogout }) {
   const [mode, setMode] = useState('review'); // 'review' | 'training'
   const [activity, setActivity] = useState('pairs'); // pairs | match | quiz | translate
   const [groups, setGroups] = useState([]);
+
+  // Clavier partagé avec tous les modes de codage (Data Volley, Direct,
+  // Entraînement) : mêmes raccourcis, même profil de Keyboard Remapping.
+  const { shortcuts, setShortcuts, keymapProfile } = useCodingKeyboard();
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  /**
+   * Touche pressée dans un champ de code : le Keyboard Remapping (AZERTY Scout,
+   * macros 1-to-Many, auto-validation) s'applique d'abord, puis le raccourci de
+   * validation commun. `submit` reçoit la valeur déjà mise à jour.
+   * @param {string} value valeur courante du champ
+   * @param {(next:string)=>void} setValue setter du champ
+   * @param {(override?:string)=>void} submit validation
+   */
+  const codeKeyHandler = (value, setValue, submit) => (e) => {
+    const remapRes = handleRemappedKeyDown(e, {
+      value,
+      profile: keymapProfile,
+      onChange: (nextVal) => setValue(nextVal),
+      onCommit: (finalVal) => submit(finalVal),
+    });
+    if (remapRes.handled) return;
+    if (matchesShortcut(e, shortcuts.validate)) {
+      e.preventDefault();
+      submit();
+    }
+  };
 
   const toggleGroup = (id) =>
     setGroups((g) => (g.includes(id) ? g.filter((x) => x !== id) : [...g, id]));
@@ -180,11 +211,14 @@ export default function TrainingPage({ user, onLogout }) {
     setFb(null);
   };
 
-  const submitAns = () => {
-    if (!lesson || !ans.trim()) return;
+  // `override` : valeur déjà mise à jour par une macro à auto-validation
+  // (voir codeKeyHandler) ; un événement React est ignoré.
+  const submitAns = (override) => {
+    const value = typeof override === 'string' ? override : ans;
+    if (!lesson || !value.trim()) return;
     if (phase === 'practice') {
       const item = lesson.practice[pracIdx];
-      if (checkLessonAnswer(ans, item.code)) {
+      if (checkLessonAnswer(value, item.code)) {
         if (pracIdx + 1 >= lesson.practice.length) {
           setFb({ ok: true, expected: item.code });
           setTimeout(() => {
@@ -201,7 +235,7 @@ export default function TrainingPage({ user, onLogout }) {
       }
     } else if (phase === 'eval') {
       const q = lesson.eval[evalIdx];
-      if (checkLessonAnswer(ans, q.answer)) {
+      if (checkLessonAnswer(value, q.answer)) {
         if (evalIdx + 1 >= lesson.eval.length) {
           setFb({ ok: true, expected: q.answer });
           setTimeout(() => {
@@ -242,9 +276,10 @@ export default function TrainingPage({ user, onLogout }) {
     setFeedback(null);
   }, []);
 
-  const submitAnswer = () => {
-    if (!answer.trim()) return;
-    const ok = checkAnswer(answer, puzzle.code);
+  const submitAnswer = (override) => {
+    const value = typeof override === 'string' ? override : answer;
+    if (!value.trim()) return;
+    const ok = checkAnswer(value, puzzle.code);
     setFeedback({ ok, expected: puzzle.code });
     setScore((s) => applyAnswer(s, ok));
     if (ok) setSolved((n) => n + 1);
@@ -413,7 +448,7 @@ export default function TrainingPage({ user, onLogout }) {
             type="text"
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') submitAnswer(); }}
+            onKeyDown={codeKeyHandler(answer, setAnswer, submitAnswer)}
             placeholder="ex. *09AV6#"
             style={{ flex: 1, minWidth: 180, fontFamily: 'var(--font-mono)', fontSize: 18, padding: '8px 10px' }}
           />
@@ -443,7 +478,9 @@ export default function TrainingPage({ user, onLogout }) {
 
       <p className="dv-hint">
         Le code commence par <code>*</code> (domicile) ou <code>a</code> (extérieur), puis le numéro du
-        joueur, l’action, le type/la combinaison, les zones et l’évaluation.
+        joueur, l’action, le type/la combinaison, les zones et l’évaluation. Le clavier AZERTY Scout
+        s’applique ici comme en match : chiffres du haut = évaluations, numéros et zones au pavé
+        numérique, <kbd>{formatKeyLabel(shortcuts.validate)}</kbd> pour valider.
       </p>
     </div>
   );
@@ -534,17 +571,24 @@ export default function TrainingPage({ user, onLogout }) {
 
     const inputCls = fb ? (fb.ok ? 'ok' : 'bad') : '';
     const answerBox = (
-      <div className="ls-answer">
-        <input
-          autoFocus
-          type="text"
-          value={ans}
-          className={inputCls}
-          onChange={(e) => setAns(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') submitAns(); }}
-          placeholder="tape le code…"
-        />
-        <button className="btn btn-primary" onClick={submitAns}><Check size={14} /> Valider</button>
+      <div>
+        <div className="ls-answer">
+          <input
+            autoFocus
+            type="text"
+            value={ans}
+            className={inputCls}
+            onChange={(e) => setAns(e.target.value)}
+            onKeyDown={codeKeyHandler(ans, setAns, submitAns)}
+            placeholder="tape le code…"
+          />
+          <button className="btn btn-primary" onClick={submitAns}><Check size={14} /> Valider</button>
+        </div>
+        <p className="dv-hint" style={{ margin: '8px 0 0' }}>
+          Clavier AZERTY Scout actif comme en match : <kbd>1</kbd>→# <kbd>2</kbd>→+ <kbd>3</kbd>→! <kbd>4</kbd>→−
+          {' '}<kbd>5</kbd>→/ <kbd>6</kbd>→= · numéros et zones au pavé numérique ·{' '}
+          <kbd>{formatKeyLabel(shortcuts.validate)}</kbd> pour valider.
+        </p>
       </div>
     );
 
@@ -686,6 +730,17 @@ export default function TrainingPage({ user, onLogout }) {
                 SYNTAXE OFFICIELLE DV4
               </span>
             </div>
+            <div style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowShortcuts(true)}
+                title="Clavier AZERTY Scout (macros) et raccourcis communs à tous les modes de codage"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Keyboard size={13} /> Raccourcis clavier
+              </button>
+            </div>
           </div>
           <AnimatedPancake size={145} showTelemetry={true} />
         </section>
@@ -700,6 +755,30 @@ export default function TrainingPage({ user, onLogout }) {
         </div>
 
         {mode === 'review' ? renderReview() : renderTraining()}
+
+        {/* Modale Raccourcis clavier : réglages communs à tous les modes */}
+        {showShortcuts && (
+          <div className="modal-overlay" onClick={() => setShowShortcuts(false)}>
+            <div
+              className="modal"
+              onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: 760, width: '100%', maxHeight: '85vh', overflowY: 'auto' }}
+            >
+              <h2>Raccourcis — Académie</h2>
+              <p className="dv-hint">
+                Ces touches et le profil de Keyboard Remapping (AZERTY Scout, macros) sont ceux de Data Volley,
+                du Direct et de l’Entraînement : un réglage fait ici vaut dans <strong>tous</strong> les modes qui
+                codent au clavier.
+              </p>
+              <ShortcutSettings shortcuts={shortcuts} onChange={setShortcuts} video={false} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowShortcuts(false)}>
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

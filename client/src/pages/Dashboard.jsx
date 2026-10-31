@@ -198,25 +198,34 @@ export default function Dashboard({ user, onLogout }) {
         setErr('Les deux équipes doivent être différentes.');
         return;
       }
-      const r = await liveAPI.create(
-        liveName.trim() || `${t1.name} vs ${t2.name}`,
-        t1.name,
-        t2.name,
-        t1.id,
-        t2.id
-      );
+      // L'API attend un objet unique (`payload`) : passer les valeurs en vrac
+      // envoyait une chaîne JSON comme corps de requête, rejetée par
+      // express.json (500 « Internal server error »).
+      const r = await liveAPI.create({
+        name: liveName.trim() || `${t1.name} vs ${t2.name}`,
+        team1_name: t1.name,
+        team2_name: t2.name,
+        home_team_id: t1.id,
+        away_team_id: t2.id,
+      });
+      const sessionId = r.data?.id || r.data?.session?.id;
+      if (!sessionId) throw new Error('session id manquant');
       setShowCreate(false);
       setLiveName('');
       setHomeId('');
       setAwayId('');
-      navigate(`/live/${r.data.session.id}`);
+      navigate(`/live/${sessionId}`);
     }, 'Création du direct impossible');
 
   const joinLive = () =>
     act(async () => {
-      if (!joinCode.trim()) return;
-      const r = await liveAPI.join(joinCode.trim());
-      navigate(`/live/${r.data.session.id}`);
+      const code = joinCode.trim();
+      if (!code) return;
+      // Même contrat que la création : objet `{ join_code }`.
+      const r = await liveAPI.join({ join_code: code });
+      const sessionId = r.data?.sessionId || r.data?.session?.id;
+      if (!sessionId) throw new Error('session id manquant');
+      navigate(`/live/${sessionId}`);
     }, 'Code de session introuvable');
 
   const handleModeClick = (m) => {

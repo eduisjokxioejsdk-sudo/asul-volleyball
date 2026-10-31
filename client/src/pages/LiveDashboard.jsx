@@ -20,8 +20,9 @@ import FloatingPanel from '../components/FloatingPanel';
 import PanelsMenu from '../components/PanelsMenu';
 import ShortcutSettings from '../components/ShortcutSettings';
 import usePanelLayout from '../hooks/usePanelLayout';
-import { loadShortcuts, matchesShortcut, saveShortcuts } from '../utils/shortcuts';
-import { handleRemappedKeyDown } from '../utils/keyboardRemap';
+import useCodingKeyboard from '../hooks/useCodingKeyboard';
+import { matchesShortcut } from '../utils/shortcuts';
+import { handleCodeFieldKeyDown, handleRemappedKeyDown } from '../utils/keyboardRemap';
 import MatchReportFull from '../components/MatchReportFull';
 import LiveCameraPanel from '../components/LiveCameraPanel';
 import LiveCoachTablet from '../components/LiveCoachTablet';
@@ -207,9 +208,12 @@ function LiveDashboard({ user, onLogout }) {
   // Confort de saisie
   const [autoServe, setAutoServe] = useState(true);
 
-  // Raccourcis clavier personnalisables (onglet Paramètres).
-  const shortcutsKey = `dv.shortcuts.live.${sessionId}`;
-  const [shortcuts, setShortcuts] = useState(() => loadShortcuts(`dv.shortcuts.live.${sessionId}`));
+  // Raccourcis clavier + profil de Keyboard Remapping partagés avec les autres
+  // modes qui codent au clavier (Data Volley, Entraînement, Académie).
+  // L'ancienne clé propre à la session direct est reprise automatiquement.
+  const { shortcuts, setShortcuts, keymapProfile } = useCodingKeyboard({
+    legacyKeys: [`dv.shortcuts.live.${sessionId}`],
+  });
 
   // Fenêtres de la page de codage : déplaçables, redimensionnables, fermables.
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -238,9 +242,6 @@ function LiveDashboard({ user, onLogout }) {
       // Stockage indisponible : le mode reste local à la session.
     }
   }, [modeAide, helpStorageKey]);
-
-  // Les raccourcis sont enregistrés sur l'appareil (onglet Paramètres).
-  useEffect(() => { saveShortcuts(shortcutsKey, shortcuts); }, [shortcutsKey, shortcuts]);
 
   // Mesure du canevas : « callback ref » → mesure dès que le canevas est monté
   // (l'écran de chargement est affiché avant, d'où une taille 0x0 qui bloquait
@@ -656,6 +657,7 @@ function LiveDashboard({ user, onLogout }) {
 
     const remapRes = handleRemappedKeyDown(e, {
       value: bufferRef.current || '',
+      profile: keymapProfile,
       onChange: (nextVal) => {
         bufferRef.current = nextVal;
         setBuffer(nextVal);
@@ -692,12 +694,29 @@ function LiveDashboard({ user, onLogout }) {
       && !matchesShortcut(e, shortcuts.speedReset)) {
       setBuffer((b) => b + e.key);
     }
-  }, [tab, isViewer, isCamera, finishPoint, shortcuts, setMany, arePanelsVisible]);
+  }, [tab, isViewer, isCamera, finishPoint, shortcuts, keymapProfile, setMany, arePanelsVisible]);
 
   useEffect(() => {
     window.addEventListener('keydown', keyboardHandler);
     return () => window.removeEventListener('keydown', keyboardHandler);
   }, [keyboardHandler]);
+
+  /**
+   * Champs « séquence » de l'onglet Séquences : même clavier que la console
+   * (Keyboard Remapping AZERTY Scout + raccourci de validation commun). Échap
+   * reste la fermeture de l'éditeur ; la macro n'auto-valide pas ici, une
+   * séquence se relit avant d'être enregistrée.
+   */
+  const sequenceKeyHandler = (e) => {
+    handleCodeFieldKeyDown(e, {
+      value: editingSequence,
+      onChange: setEditingSequence,
+      onSubmit: saveRallySequence,
+      onCancel: cancelRallyEdit,
+      profile: keymapProfile,
+      shortcuts,
+    });
+  };
 
   // --- Assignation ---------------------------------------------------------
   const toggleMyAction = (key) => {
@@ -1574,10 +1593,7 @@ function LiveDashboard({ user, onLogout }) {
                                 className="dv-seq-input"
                                 value={editingSequence}
                                 onChange={(e) => setEditingSequence(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') { e.preventDefault(); saveRallySequence(); }
-                                  if (e.key === 'Escape') { e.preventDefault(); cancelRallyEdit(); }
-                                }}
+                                onKeyDown={sequenceKeyHandler}
                                 autoFocus
                               />
                               <button className="btn btn-success btn-sm" onClick={saveRallySequence}><Check size={14} /></button>
@@ -1619,10 +1635,7 @@ function LiveDashboard({ user, onLogout }) {
                             className="dv-seq-input"
                             value={editingSequence}
                             onChange={(e) => setEditingSequence(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') { e.preventDefault(); saveRallySequence(); }
-                              if (e.key === 'Escape') { e.preventDefault(); cancelRallyEdit(); }
-                            }}
+                            onKeyDown={sequenceKeyHandler}
                             placeholder="*01S#a02R+a04A#"
                             autoFocus
                           />

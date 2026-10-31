@@ -13,6 +13,9 @@ import PancakeLogo from '../components/PancakeLogo';
 import { teamsAPI, videosAPI, practiceAPI } from '../services/api';
 import { downloadTextFile, rowsToCsv } from '../utils/download';
 import { handleRemappedKeyDown } from '../utils/keyboardRemap';
+import useCodingKeyboard from '../hooks/useCodingKeyboard';
+import { formatKeyLabel, matchesShortcut } from '../utils/shortcuts';
+import ShortcutSettings from '../components/ShortcutSettings';
 import {
   decomposeCode,
   describeCode,
@@ -104,6 +107,11 @@ export default function PracticeModePage({ user, onLogout }) {
   const [actionsSearch, setActionsSearch] = useState('');
   const [saveStatus, setSaveStatus] = useState(''); // '' | 'saving' | 'saved'
   const codeInputRef = useRef(null);
+
+  // Clavier partagé avec les autres modes de codage (Data Volley, Direct,
+  // Académie) : mêmes raccourcis, même profil de Keyboard Remapping.
+  const { shortcuts, setShortcuts, keymapProfile } = useCodingKeyboard();
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   // Filtre Consultation
   const [consultSkillFilter, setConsultSkillFilter] = useState('ALL');
@@ -390,21 +398,31 @@ export default function PracticeModePage({ user, onLogout }) {
     }
   };
 
-  // Raccourcis clavier dans la console (avec support Keyboard Remapping & Macros)
+  // Clavier de la console : Keyboard Remapping + raccourcis partagés
+  // (valider, vider, lecture/pause) — les mêmes que Data Volley et le Direct.
   const handleCodeKeyDown = (e) => {
     const remapRes = handleRemappedKeyDown(e, {
       value: codeInput,
+      profile: keymapProfile,
       inputElement: codeInputRef.current,
       onChange: (nextVal) => setCodeInput(nextVal),
       onCommit: (finalVal) => handleCommitCode(finalVal),
     });
     if (remapRes.handled) return;
 
-    if (e.key === 'Enter') {
+    if (matchesShortcut(e, shortcuts.validate)) {
       e.preventDefault();
       handleCommitCode();
-    } else if (e.key === ' ' && !codeInput.trim()) {
-      // Espace met en pause / lecture la vidéo si le champ est vide
+      return;
+    }
+    if (matchesShortcut(e, shortcuts.clearBuffer)) {
+      e.preventDefault();
+      setCodeInput('');
+      return;
+    }
+    // Champ vide : la touche de lecture/pause commande la vidéo (Espace reste
+    // accepté, comme avant).
+    if (!codeInput.trim() && (matchesShortcut(e, shortcuts.pause) || e.key === ' ')) {
       e.preventDefault();
       togglePlayPause();
     }
@@ -1364,10 +1382,22 @@ export default function PracticeModePage({ user, onLogout }) {
                       <Keyboard size={14} />
                       <span>Console de Codage DataVolley</span>
                     </label>
-                    <span style={{ fontSize: 11, color: '#71717a' }}>
-                      Timecode actuel :{' '}
-                      <strong style={{ color: '#fbbf24' }}>{formatTimecode(currentTime)}</strong>
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: '#71717a' }}>
+                        Timecode actuel :{' '}
+                        <strong style={{ color: '#fbbf24' }}>{formatTimecode(currentTime)}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setShowShortcuts(true)}
+                        title="Clavier (AZERTY Scout, macros) et raccourcis communs à tous les modes de codage"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <Keyboard size={13} />
+                        <span>Raccourcis</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Champ de saisie principal */}
@@ -1430,7 +1460,12 @@ export default function PracticeModePage({ user, onLogout }) {
                         <span style={{ color: '#a1a1aa' }}>{liveCodeParsed.desc}</span>
                       </span>
                     ) : (
-                      <span>Tapez un code DataVolley complet puis tapez Entrée (Espace = Pause vidéo)</span>
+                      <span>
+                        Tapez un code DataVolley complet puis{' '}
+                        <strong>{formatKeyLabel(shortcuts.validate)}</strong> pour valider (Espace = Pause vidéo).
+                        Le clavier AZERTY Scout s’applique ici comme dans Data Volley : chiffres du haut =
+                        évaluations, numéros et zones au pavé numérique.
+                      </span>
                     )}
                   </div>
 
@@ -2076,6 +2111,32 @@ export default function PracticeModePage({ user, onLogout }) {
             </div>
           )}
         </main>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODALE RACCOURCIS CLAVIER (communs à tous les modes de codage)        */}
+      {/* ==================================================================== */}
+      {showShortcuts && (
+        <div className="modal-overlay" onClick={() => setShowShortcuts(false)}>
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 760, width: '100%', maxHeight: '85vh', overflowY: 'auto' }}
+          >
+            <h2>Raccourcis — Entraînement</h2>
+            <p className="dv-hint">
+              Ces touches et le profil de Keyboard Remapping (AZERTY Scout, macros) sont ceux de Data Volley, du
+              Direct et de l’Académie : un réglage fait ici vaut dans <strong>tous</strong> les modes qui codent au
+              clavier.
+            </p>
+            <ShortcutSettings shortcuts={shortcuts} onChange={setShortcuts} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowShortcuts(false)}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ==================================================================== */}

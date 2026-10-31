@@ -12,6 +12,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowDownUp, Check, ChevronDown, ChevronRight, Clock, Trash, X } from './icons';
 import { formatTimecode, validateAction, DV_ACTION_KEYS } from '../utils/datavolley';
+import { handleCodeFieldKeyDown } from '../utils/keyboardRemap';
+import useCodingKeyboard from '../hooks/useCodingKeyboard';
 import {
   ACCORDION_CLOSED,
   accordionReduce,
@@ -47,6 +49,8 @@ export default function DvCodeList({
   const list = rallies || [];
   const issueMap = useMemo(() => issuesByUid(issues), [issues]);
   const containerRef = useRef(null);
+  // Clavier commun à tous les modes de codage (remapping + raccourcis).
+  const { shortcuts, keymapProfile } = useCodingKeyboard();
   const [accordion, setAccordion] = useState(ACCORDION_CLOSED);
   const [following, setFollowing] = useState(follow);
   const [viewStyle, setViewStyle] = useState(mode === 'consultation' ? 'accordion' : 'dv4'); // 'dv4' | 'accordion'
@@ -321,14 +325,14 @@ export default function DvCodeList({
                             spellCheck={false}
                             onChange={(e) => setDraftCode(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                saveEdit(a);
-                              }
-                              if (e.key === 'Escape') {
-                                e.preventDefault();
-                                cancelEdit();
-                              }
+                              handleCodeFieldKeyDown(e, {
+                                value: draftCode,
+                                onChange: setDraftCode,
+                                onSubmit: () => saveEdit(a),
+                                onCancel: cancelEdit,
+                                profile: keymapProfile,
+                                shortcuts,
+                              });
                             }}
                             style={{ width: 105, padding: '2px 4px', fontFamily: 'monospace' }}
                           />
@@ -457,6 +461,8 @@ export default function DvCodeList({
                     onDraftChange={setDraftCode}
                     onEditSave={() => saveEdit(a)}
                     onEditCancel={cancelEdit}
+                    shortcuts={shortcuts}
+                    keymapProfile={keymapProfile}
                   />
                 ))}
               </div>
@@ -539,6 +545,10 @@ function CodeRow({
   onDraftChange,
   onEditSave,
   onEditCancel,
+  // Réglages clavier communs (fournis par DvCodeList : un seul abonnement pour
+  // toute la liste, plutôt qu'un par ligne).
+  shortcuts = null,
+  keymapProfile = null,
 }) {
   if (editing) {
     return (
@@ -553,16 +563,14 @@ function CodeRow({
             aria-label={`Modifier le code ${action.code}`}
             onChange={(e) => onDraftChange?.(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                e.stopPropagation();
-                onEditSave?.();
-              }
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                onEditCancel?.();
-              }
+              handleCodeFieldKeyDown(e, {
+                value: draftCode,
+                onChange: (next) => onDraftChange?.(next),
+                onSubmit: () => onEditSave?.(),
+                onCancel: () => onEditCancel?.(),
+                profile: keymapProfile,
+                shortcuts,
+              });
             }}
           />
           <button type="button" className="btn btn-primary btn-sm" onClick={() => onEditSave?.()} title="Valider le code (Entrée)">

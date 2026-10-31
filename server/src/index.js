@@ -84,6 +84,15 @@ if (fs.existsSync(clientBuildPath)) {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
+  // Corps JSON illisible (typiquement une chaîne envoyée à la place d'un
+  // objet) : erreur du client, pas du serveur. On renvoie un 400 explicite au
+  // lieu d'un 500 « Internal server error » impossible à diagnostiquer.
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Corps JSON invalide : un objet est attendu' });
+  }
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Requête trop volumineuse' });
+  }
   console.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });

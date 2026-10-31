@@ -18,7 +18,7 @@ import { loadCourtCalibration, saveCourtCalibration } from '../utils/homography'
 import VideoTvOverlay from '../components/VideoTvOverlay';
 import LiveCoachTablet from '../components/LiveCoachTablet';
 import { applyCompoundAutoCodes, matchMacroShortcut } from '../utils/compoundCodes';
-import { handleRemappedKeyDown } from '../utils/keyboardRemap';
+import { handleCodeFieldKeyDown, handleRemappedKeyDown } from '../utils/keyboardRemap';
 import useDualScreenVideo from '../hooks/useDualScreenVideo';
 import PlaylistManagerModal from '../components/PlaylistManagerModal';
 import { emptyTeamConfig, parseSavedLineup, serializeSavedLineup, serverPrefill } from '../utils/lineup';
@@ -51,7 +51,8 @@ import {
   savePanelProfile,
   storePanelProfiles,
 } from '../utils/panelProfiles';
-import { loadShortcuts, matchesShortcut, saveShortcuts, stepSpeed } from '../utils/shortcuts';
+import useCodingKeyboard from '../hooks/useCodingKeyboard';
+import { matchesShortcut, stepSpeed } from '../utils/shortcuts';
 import MatchReportFull, { REPORT_TABS } from '../components/MatchReportFull';
 import AttackDirectionCourt from '../components/AttackDirectionCourt';
 import LineupEditor from '../components/LineupEditor';
@@ -436,9 +437,13 @@ function DataVolleyDashboard({ user, onLogout }) {
   const blockTimesRef = useRef([]);
   const blockTimeBufferRef = useRef('');
 
-  // Raccourcis clavier personnalisables (onglet Paramètres) + vitesse de lecture.
-  const shortcutsKey = useMemo(() => `dv.shortcuts.video.${id}`, [id]);
-  const [shortcuts, setShortcuts] = useState(() => loadShortcuts(`dv.shortcuts.video.${id}`));
+  // Raccourcis clavier personnalisables + profil de Keyboard Remapping,
+  // partagés avec TOUS les modes qui codent au clavier (Direct, Entraînement,
+  // Académie…) : un réglage fait ici vaut partout. L'ancienne clé propre au
+  // match (`dv.shortcuts.video.<id>`) est reprise automatiquement.
+  const { shortcuts, setShortcuts, keymapProfile } = useCodingKeyboard({
+    legacyKeys: useMemo(() => [`dv.shortcuts.video.${id}`], [id]),
+  });
   const [playbackRate, setPlaybackRate] = useState(1);
 
   // Fenêtres de la page de codage : déplaçables, redimensionnables, fermables.
@@ -481,9 +486,6 @@ function DataVolleyDashboard({ user, onLogout }) {
     blockTimeBufferRef.current = normalized;
   }, [buffer]);
   useEffect(() => { actionsRef.current = actions; }, [actions]);
-
-  // Les raccourcis sont enregistrés sur l'appareil (onglet Paramètres).
-  useEffect(() => { saveShortcuts(shortcutsKey, shortcuts); }, [shortcutsKey, shortcuts]);
 
   // Mesure du canevas : la ref est un « callback ref », donc la mesure se
   // déclenche dès que le canevas est monté (et non au premier rendu, qui affiche
@@ -1869,6 +1871,22 @@ function DataVolleyDashboard({ user, onLogout }) {
     notify(true, `Fin de point annulée : ${last.code} → ${code}`);
   }, [matchFinished, applyActions]);
 
+  /**
+   * Champs « séquence » (édition d'un point existant ou nouveau) : même clavier
+   * que la console — remapping AZERTY Scout + raccourci de validation commun.
+   * Échap ferme l'éditeur ; une macro n'auto-valide pas (la séquence se relit).
+   */
+  const sequenceKeyHandler = (e) => {
+    handleCodeFieldKeyDown(e, {
+      value: editingSequence,
+      onChange: setEditingSequence,
+      onSubmit: saveRallySequence,
+      onCancel: cancelRallyEdit,
+      profile: keymapProfile,
+      shortcuts,
+    });
+  };
+
   // Capture clavier : les raccourcis (modifiables) pilotent la vidéo et la console ;
   // tout autre caractère imprimable alimente le tampon de codage.
   useEffect(() => {
@@ -1925,6 +1943,7 @@ function DataVolleyDashboard({ user, onLogout }) {
       if (!matchFinished) {
         const remapRes = handleRemappedKeyDown(e, {
           value: bufferRef.current || '',
+          profile: keymapProfile,
           onChange: (nextVal) => {
             bufferRef.current = nextVal;
             setBuffer(nextVal);
@@ -1982,6 +2001,7 @@ function DataVolleyDashboard({ user, onLogout }) {
     commitBuffer,
     matchFinished,
     shortcuts,
+    keymapProfile,
     videoAction,
     setMany,
     arePanelsVisible,
@@ -3544,10 +3564,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                                   className="dv-seq-input"
                                   value={editingSequence}
                                   onChange={(e) => setEditingSequence(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') { e.preventDefault(); saveRallySequence(); }
-                                    if (e.key === 'Escape') { e.preventDefault(); cancelRallyEdit(); }
-                                  }}
+                                  onKeyDown={sequenceKeyHandler}
                                   autoFocus
                                 />
                                 <button className="btn btn-success btn-sm" onClick={saveRallySequence} title="Enregistrer">
@@ -3589,10 +3606,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                               className="dv-seq-input"
                               value={editingSequence}
                               onChange={(e) => setEditingSequence(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') { e.preventDefault(); saveRallySequence(); }
-                                if (e.key === 'Escape') { e.preventDefault(); cancelRallyEdit(); }
-                              }}
+                              onKeyDown={sequenceKeyHandler}
                               placeholder={lightMode ? '*02S a10A *30A' : '*01S+*02R#*09A#'}
                               autoFocus
                             />

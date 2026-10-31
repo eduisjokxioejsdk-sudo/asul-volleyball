@@ -87,12 +87,20 @@ jobs:
         shell: pwsh
         env:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         run: |
           New-Item -ItemType Directory -Force -Path "desktop/resources" | Out-Null
+          # L'URL suit le secret SUPABASE_URL quand il est défini : si le projet
+          # Supabase est recréé (l'ancien ne répond plus au DNS), on met à jour
+          # le secret sans toucher au workflow. Sinon on garde le projet historique.
+          $syncUrl = "$env:SUPABASE_URL".Trim()
+          if ([string]::IsNullOrWhiteSpace($syncUrl)) {
+            $syncUrl = "https://ywxijozqdzmqhbcgkgti.supabase.co"
+          }
           $sync = [ordered]@{
             enabled = $true
             provider = "supabase"
-            url = "https://ywxijozqdzmqhbcgkgti.supabase.co"
+            url = $syncUrl
             key = $env:SUPABASE_ANON_KEY
             intervalMs = 60000
           }

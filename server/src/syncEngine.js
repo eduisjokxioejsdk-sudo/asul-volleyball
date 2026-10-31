@@ -190,11 +190,80 @@ function createSyncEngine(collection) {
 
   // --- Accès Supabase (PostgREST — fetch natif, aucune dépendance) -----------
 
+  /** Hôte affiché dans les messages (l'URL peut être incomplète). */
+  function hostOf(cfg) {
+    try {
+      return new URL(cfg.url).host || String(cfg.url);
+    } catch (err) {
+      return String(cfg.url || 'Supabase');
+    }
+  }
+
+  /**
+   * Le fetch natif de Node ne remonte qu'un laconique « fetch failed » : la
+   * cause réelle (DNS, connexion refusée, certificat, délai dépassé) se cache
+   * dans err.cause. On la traduit en une phrase actionnable pour l'utilisateur,
+   * au lieu de laisser « fetch failed » seul dans l'écran Trajectoires.
+   */
+  function networkError(err, cfg) {
+    const host = hostOf(cfg);
+    const cause = err && err.cause ? err.cause : null;
+    const code = String((cause && (cause.code || cause.errno)) || (err && err.code) || '').trim();
+    const causeName = (cause && cause.name) || (err && err.name) || '';
+    const seconds = Math.round(REQUEST_TIMEOUT_MS / 1000);
+
+    const wrapped = new Error(''); // le message est posé ci-dessous
+    wrapped.cause = err;
+
+    if (causeName === 'AbortError' || code === 'ABORT_ERR' || /aborted/i.test(String((err && err.message) || ''))) {
+      wrapped.message =
+        `Serveur Supabase injoignable : ${host} n'a pas répondu en ${seconds} s. ` +
+        'Vérifiez la connexion Internet puis réessayez.';
+      return wrapped;
+    }
+
+    if (code === 'ENOTFOUND' || code === 'EAI_AGAIN' || code === 'EAI_NONAME') {
+      wrapped.message =
+        `Adresse Supabase introuvable : « ${host} » ne répond pas au DNS (${code}). ` +
+        "Le projet a peut-être été supprimé, mis en pause ou renommé : saisissez l'URL du projet en cours " +
+        "dans l'onglet Équipes.";
+      return wrapped;
+    }
+
+    if (code === 'ECONNREFUSED') {
+      wrapped.message =
+        `Connexion refusée par ${host} : vérifiez l'URL du projet dans l'onglet Équipes, ` +
+        'ainsi que le réseau (pare-feu, proxy).';
+      return wrapped;
+    }
+
+    if (code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'EPIPE' || code === 'EHOSTUNREACH' || code === 'ENETUNREACH') {
+      wrapped.message =
+        `Connexion interrompue avec ${host} (${code}) : vérifiez le réseau puis réessayez.`;
+      return wrapped;
+    }
+
+    if (/CERT_|certificate|self.signed/i.test(code) || /certificate/i.test(String((cause && cause.message) || ''))) {
+      wrapped.message =
+        `Certificat HTTPS refusé pour ${host} : un antivirus ou un proxy intercepte la connexion. ` +
+        "Autorisez ASUL dans cet outil, puis réessayez.";
+      return wrapped;
+    }
+
+    const detail = (cause && cause.message) || (err && err.message) || 'erreur inconnue';
+    wrapped.message =
+      `Échec de la connexion à ${host} (${code || detail}). ` +
+      "Vérifiez la connexion Internet et l'URL du projet dans l'onglet Équipes.";
+    return wrapped;
+  }
+
   async function supabaseRequest(cfg, query, options = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let response;
+    let text;
     try {
-      const response = await fetch(`${cfg.url}/rest/v1/${query}`, {
+      response = await fetch(`${cfg.url}/rest/v1/${query}`, {
         method: options.method || 'GET',
         body: options.body,
         signal: controller.signal,
@@ -206,14 +275,23 @@ function createSyncEngine(collection) {
           ...(options.headers || {}),
         },
       });
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new Error(`Supabase ${response.status} : ${text.slice(0, 200)}`);
-      }
-      const text = await response.text();
-      return text ? JSON.parse(text) : null;
+      text = await response.text();
+    } catch (err) {
+      // Réseau / DNS / certificat / délai : message explicite plutôt que
+      // « fetch failed » (voir networkError).
+      throw networkError(err, cfg);
     } finally {
       clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Supabase ${response.status} : ${(text || '').slice(0, 200)}`);
+    }
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      throw new Error(`Réponse Supabase illisible (table ${cfg.table}).`);
     }
   }
 
@@ -427,6 +505,7 @@ function createSyncEngine(collection) {
     const stored = await readStateAll();
     const pending = await collection.pendingCount();
     const counts = await collection.statusCounts();
+    const storedError = stored[stateKey('last_error')] || null;
     return {
       configured: cfg.configured,
       enabled: cfg.enabled,
@@ -439,7 +518,12 @@ function createSyncEngine(collection) {
       configPath: configPath(),
       running: state.running,
       lastSyncAt: stored[stateKey('last_sync_at')] || null,
-      lastError: stored[stateKey('last_error')] || null,
+      // Les versions précédentes enregistraient le message brut de Node
+      // (« fetch failed ») : on le rend lisible sans attendre le prochain essai.
+      lastError:
+        storedError === 'fetch failed'
+          ? `Échec de la connexion à ${hostOf(cfg)} : vérifiez la connexion Internet et l'URL du projet dans l'onglet Équipes.`
+          : storedError,
       lastResult: parseLastResult(stored[stateKey('last_result')]),
       pending,
       ...counts,

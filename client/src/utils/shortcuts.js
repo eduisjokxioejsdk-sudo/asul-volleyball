@@ -12,6 +12,15 @@
 export const SHORTCUT_GROUPS = ['Vidéo', 'Console', 'Affichage', 'Trajectoires'];
 
 /**
+ * Clé de stockage des raccourcis de codage, **commune à tous les modes qui
+ * codent au clavier** : Data Volley, Multi-Matchs, Direct, Entraînement et
+ * Académie. Un réglage fait dans un mode vaut donc dans les autres.
+ * (Les versions précédentes enregistraient un réglage par match ou par session :
+ * voir loadCodingShortcuts pour la reprise automatique.)
+ */
+export const CODING_SHORTCUTS_KEY = 'dv.shortcuts';
+
+/**
  * Actions personnalisables, dans l'ordre d'affichage.
  * `video: true` → n'a de sens que sur un écran avec lecteur vidéo.
  * `page: 'trajectory'` → réglé depuis les fiches de trajectoire (le reste vaut
@@ -167,6 +176,34 @@ export function loadShortcuts(storageKey) {
   } catch {
     return base;
   }
+}
+
+/**
+ * Charge les raccourcis de codage partagés par tous les modes.
+ *
+ * Migration silencieuse : si la clé commune n'existe pas encore, le premier
+ * réglage trouvé parmi `legacyKeys` (ex. `dv.shortcuts.video.12`) est recopié
+ * dans la clé commune — l'utilisateur n'a donc pas à tout reconfigurer.
+ *
+ * @param {string[]} [legacyKeys] anciennes clés propres à un match / une session
+ * @returns {Object} raccourcis { id: key }
+ */
+export function loadCodingShortcuts(legacyKeys = []) {
+  try {
+    if (!localStorage.getItem(CODING_SHORTCUTS_KEY)) {
+      for (const key of legacyKeys) {
+        if (!key || key === CODING_SHORTCUTS_KEY) continue;
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          localStorage.setItem(CODING_SHORTCUTS_KEY, raw);
+          break;
+        }
+      }
+    }
+  } catch {
+    // Stockage indisponible : on repart des valeurs par défaut.
+  }
+  return loadShortcuts(CODING_SHORTCUTS_KEY);
 }
 
 /** Enregistre les raccourcis (silencieux si le stockage est indisponible). */
