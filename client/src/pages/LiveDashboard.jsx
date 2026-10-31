@@ -4,15 +4,36 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { liveAPI } from '../services/api';
 import { createSocket, estimateClockOffset, syncedTimeMs } from '../services/liveSocket';
-import { computeMatchState, emptyLineup, COURT_POSITIONS } from '../utils/rotation';
+import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS } from '../utils/rotation';
 import { computeSetterDistributionByRotation, attackZoneOf, normalizeAttackZone } from '../utils/distribution';
 import { emptyTeamConfig, parseSavedLineup, serializeSavedLineup, serverPrefill } from '../utils/lineup';
-import { computeMatchReport, indexActionSets, reportToRows } from '../utils/matchReport';
+import { computeMatchReport, indexActionSets, indexActionLineups, reportToRows } from '../utils/matchReport';
 import { computeScouting } from '../utils/scouting';
 import { startCameraCapture, cameraSupported, DELAY_CHOICES, DEFAULT_DELAY_S, clampDelay } from '../services/liveCamera';
 import { createCameraPlayer, chunkToBytes } from '../services/liveCameraPlayer';
 import { downloadTextFile, rowsToCsv } from '../utils/download';
+import { buildDvw } from '../utils/dvw';
+import { loadCourtCalibration, saveCourtCalibration } from '../utils/homography';
+import { applyCompoundAutoCodes, matchMacroShortcut } from '../utils/compoundCodes';
+import {
+  PANEL_PROFILES_KEY,
+  loadPanelProfiles,
+  removePanelProfile,
+  savePanelProfile,
+  storePanelProfiles,
+} from '../utils/panelProfiles';
+import { PANEL_GAP } from '../utils/panelLayout';
+import {
+  applyDirection,
+  attacksWithoutDirection,
+  codeIssues,
+  commandToEvent,
+} from '../utils/codingTools';
 import MatchBoard from '../components/MatchBoard';
+import DvRotationWindow from '../components/DvRotationWindow';
+import DvCommandWindow from '../components/DvCommandWindow';
+import VideoTvOverlay from '../components/VideoTvOverlay';
+import AttackDirectionCourt from '../components/AttackDirectionCourt';
 import VideoShortcuts from '../components/VideoShortcuts';
 import CodingConsole from '../components/CodingConsole';
 import DvCodeList from '../components/DvCodeList';
@@ -31,6 +52,7 @@ import { DvKeyPad, DvSyntaxHelp } from '../components/DvKeypad';
 import { AttackCourtPicker, DistributionCourt } from '../components/AttackCourt';
 import {
   AlertTriangle,
+  ArrowDownUp,
   ArrowRight,
   Check,
   ChevronLeft,
@@ -43,13 +65,15 @@ import {
   Eye,
   EyeOff,
   FileDown,
-  FileText,
   Grid3x3,
   House,
   Keyboard,
   ListChecks,
+  MonitorPlay,
   Pencil,
   Plane,
+  RotateCcw,
+  RotateCw,
   Save,
   Settings,
   StopCircle,
@@ -57,6 +81,7 @@ import {
   Target,
   Trash,
   Trophy,
+  Tv,
   Users,
   Video,
   Volleyball,
@@ -71,7 +96,9 @@ import {
   formatCode,
   groupActionsIntoRallies,
   isTerminalEvaluation,
+  itemTimecodes,
   learnActionTypes,
+  nextBlockTimes,
   parseSequence,
   predictNextAction,
   prefillWithLearnedType,
@@ -85,6 +112,8 @@ const tabVariants = {
   visible: { opacity: 1, x: 0, transition: { duration: 0.25 } },
   exit: { opacity: 0, x: -12, transition: { duration: 0.15 } },
 };
+
+const stripSpaces = (s) => String(s || '').replace(/\s+/g, '');
 
 function parseAssignment(raw) {
   try {
@@ -103,6 +132,15 @@ function sortActions(list) {
   });
 }
 
+function sortEvents(list) {
+  return [...(list || [])].sort(
+    (a, b) =>
+      (Number(a.set_number) || 1) - (Number(b.set_number) || 1) ||
+      (Number(a.point_number) || 0) - (Number(b.point_number) || 0) ||
+      (Number(a.id) || 0) - (Number(b.id) || 0)
+  );
+}
+
 function dedupeAdd(list, action) {
   if (list.some((a) => a.id === action.id)) return list;
   return [...list, action];
@@ -114,6 +152,50 @@ function formatElapsed(firstTime, t) {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+function SetterRow({ label, serving, pos, onChange }) {
+  return (
+    <div className={`dv-team-row${serving ? ' serving' : ''}`}>
+      <div className="dv-team-name">
+        {serving ? <Volleyball size={13} /> : null} {label}
+      </div>
+      <div className="dv-positions" style={{ flexWrap: 'wrap', gap: 4 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 2 }}>Passeur :</span>
+        {COURT_POSITIONS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onChange?.(p)}
+            style={{
+              minWidth: 26, padding: '2px 6px', fontSize: 11, fontWeight: 700,
+              borderRadius: 6, border: '1px solid var(--border-subtle)', cursor: 'pointer',
+              background: pos === p ? 'var(--accent)' : 'var(--bg-secondary)',
+              color: pos === p ? '#1b1917' : 'var(--text-secondary)',
+              borderColor: pos === p ? 'var(--accent)' : 'var(--border-subtle)',
+            }}
+          >{p}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RotationBadge({ label, pos, onRotate }) {
+  const btn = {
+    width: 22, height: 22, padding: 0, fontSize: 12, lineHeight: '20px',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)',
+    color: 'var(--text-secondary)', cursor: 'pointer',
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{label}</span>
+      <strong style={{ fontSize: 16, fontWeight: 800, color: 'var(--accent)', minWidth: 28, textAlign: 'center' }}>{pos || '—'}</strong>
+      <button type="button" onClick={() => onRotate(-1)} title="Rotation inverse" style={btn}><RotateCcw size={12} /></button>
+      <button type="button" onClick={() => onRotate(1)} title="Rotation manuelle (horaire)" style={btn}><RotateCw size={12} /></button>
+    </div>
+  );
 }
 
 function SetterPositionPicker({ title, value, onChange }) {
@@ -135,13 +217,18 @@ function LiveDashboard({ user, onLogout }) {
 
   // Clé de mémorisation du Mode Aide (par navigateur et par session live).
   const helpStorageKey = `dv.layout.aide.live.${sessionId}`;
+  const calibStorageKey = `live.${sessionId}`;
 
   const socketRef = useRef(null);
   const clockOffsetRef = useRef(0);
   const bufferRef = useRef('');
+  // Horodatage par bloc de saisie (chaque code garde l'instant exact où il a été tapé)
+  const blockTimesRef = useRef([]);
+  const blockTimeBufferRef = useRef('');
   const myAssignmentRef = useRef([]);
   const actionsRef = useRef([]);
   const flashTimer = useRef(null);
+  const rotSaveTimer = useRef(null);
   // Set courant du tableau de marque : mémorisé pour être envoyé avec chaque
   // action codée (y compris depuis les callbacks asynchrones).
   const currentSetRef = useRef(1);
@@ -149,16 +236,39 @@ function LiveDashboard({ user, onLogout }) {
   const [session, setSession] = useState(null);
   const [members, setMembers] = useState([]);
   const [actions, setActions] = useState([]);
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [connected, setConnected] = useState(false);
 
   const [tab, setTab] = useState('codage');
-  // Onglet forcé sur « Rapport » pour la consultation (rôle observateur) :
+  // Onglet forcé sur « Banc / Coach » pour la consultation (rôle observateur) :
   // l'écran s'ouvre d'office sur les statistiques, sans zone de codage.
   const [tabPinned, setTabPinned] = useState(false);
   const [buffer, setBuffer] = useState('');
   const [flash, setFlash] = useState(null);
+
+  // Fenêtre de commandes DataVolley (Ctrl+Shift+C) & Modale Remplacement
+  const [showCommand, setShowCommand] = useState(false);
+  const [showSub, setShowSub] = useState(false);
+  const [subTeam, setSubTeam] = useState('home');
+  const [subOut, setSubOut] = useState('');
+  const [subIn, setSubIn] = useState('');
+  const [savingEvent, setSavingEvent] = useState(false);
+
+  // Direction d'attaque (action ciblée dans le panneau flottant Directions)
+  const [directionId, setDirectionId] = useState(null);
+
+  // TV Overlay & Calibration Homographique 4 coins sur le flux vidéo direct
+  const [showTvOverlay, setShowTvOverlay] = useState(true);
+  const [calibMode, setCalibMode] = useState(false); // false | 'calibrating' | 'active'
+  const [courtCorners, setCourtCorners] = useState(() => loadCourtCalibration(calibStorageKey));
+
+  useEffect(() => {
+    const saved = loadCourtCalibration(calibStorageKey);
+    setCourtCorners(saved);
+    setCalibMode(saved && saved.length === 4 ? 'active' : false);
+  }, [calibStorageKey]);
 
   // Paramètres (assignation)
   const [myAssignment, setMyAssignment] = useState([]);
@@ -184,9 +294,10 @@ function LiveDashboard({ user, onLogout }) {
   // Bilan de match : sets sélectionnés (vide = tous)
   const [reportSets, setReportSets] = useState([]);
 
-  // --- Caméra du match (flux vidéo différé) --------------------------------
-  // Une caméra (téléphone) filme ; le serveur rediffuse la vidéo à tous les
-  // appareils avec `delay` secondes de retard (voir server/src/liveStream.js).
+  // --- Caméra du match (flux vidéo différé + DVR + capture PC locale) ------
+  // Une caméra (téléphone ou webcam/carte d'acquisition sur le PC) filme ;
+  // le serveur rediffuse la vidéo à tous les appareils avec `delay` secondes
+  // de retard (voir server/src/liveStream.js).
   const [camera, setCamera] = useState({
     active: false,
     delay: DEFAULT_DELAY_S,
@@ -196,13 +307,14 @@ function LiveDashboard({ user, onLogout }) {
   const [cameraMsg, setCameraMsg] = useState(null);
   const [cameraLatency, setCameraLatency] = useState(0);
   const [localStream, setLocalStream] = useState(null);
+  const [localCapturing, setLocalCapturing] = useState(false);
   const [cameraBusy, setCameraBusy] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   // Vidéo de replay issue de la finalisation : elle permet d'ouvrir le match
   // dans Data Volley d'un seul clic.
   const [replayVideoId, setReplayVideoId] = useState(null);
-  const cameraCaptureRef = useRef(null); // téléphone : { stop }
-  const cameraPlayerRef = useRef(null); // PCs : lecteur MediaSource
+  const cameraCaptureRef = useRef(null); // téléphone ou PC : { stop }
+  const cameraPlayerRef = useRef(null); // PCs : lecteur MediaSource DVR
   const localVideoRef = useRef(null); // téléphone : aperçu local
 
   // Confort de saisie
@@ -210,21 +322,133 @@ function LiveDashboard({ user, onLogout }) {
 
   // Raccourcis clavier + profil de Keyboard Remapping partagés avec les autres
   // modes qui codent au clavier (Data Volley, Entraînement, Académie).
-  // L'ancienne clé propre à la session direct est reprise automatiquement.
   const { shortcuts, setShortcuts, keymapProfile } = useCodingKeyboard({
     legacyKeys: [`dv.shortcuts.live.${sessionId}`],
   });
 
   // Fenêtres de la page de codage : déplaçables, redimensionnables, fermables.
+  // Toutes les fenêtres DataVolley 4 (dont 'video', 'direction', 'positions') sont disponibles.
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-  const panelSkip = useMemo(() => ['video', 'direction'], []);
-  const { layout, setRect, toggle: togglePanelById, close, setMany, reset: resetPanels, minHeight, minWidth } = usePanelLayout(`dv.panels.live.${sessionId}`, canvasSize, panelSkip);
+  const [activePanelId, setActivePanelId] = useState(null);
+  const {
+    layout,
+    setRect,
+    toggle: togglePanelById,
+    open: openPanelById,
+    close,
+    setMany,
+    reset: resetPanels,
+    applyProfile: applyPanelsLayout,
+    minHeight,
+    minWidth,
+  } = usePanelLayout(`dv.panels.live.${sessionId}`, canvasSize);
   const rect = useCallback((pid) => layout[pid] || { x: 0, y: 0, w: 300, h: 200 }, [layout]);
   const isOpen = useCallback((pid) => !!layout?.[pid]?.open, [layout]);
-  const SECONDARY_PANELS = ['score', 'court', 'actions', 'shortcuts'];
+  const SECONDARY_PANELS = ['score', 'court', 'positions', 'actions', 'direction', 'shortcuts'];
   const arePanelsVisible = SECONDARY_PANELS.every((pid) => isOpen(pid));
   const canvasHeight = Math.max(minHeight, canvasSize.height || 0);
   const canvasWidth = Math.max(minWidth, canvasSize.width || 0);
+
+  /**
+   * Disposition « DataVolley » de l'écran de saisie (identique à DataVolleyDashboard) :
+   * vidéo en haut à gauche, score et terrain en dessous, zone de code en bas,
+   * direction d'attaque et liste des codes à droite sur toute la hauteur.
+   */
+  const applyDvLayout = useCallback(() => {
+    const W = Math.max(1100, canvasSize.width || 1280);
+    const H = Math.max(700, canvasSize.height || 780);
+    const rightW = Math.min(400, Math.round(W * 0.28));
+    const leftW = Math.max(420, W - rightW - PANEL_GAP * 3);
+    const videoH = Math.round(H * 0.44);
+    const consoleH = Math.round(H * 0.26);
+    const midH = Math.max(160, H - videoH - consoleH - PANEL_GAP * 4);
+    setRect('video', { x: PANEL_GAP, y: PANEL_GAP, w: leftW, h: videoH, open: true });
+    setRect('score', { x: PANEL_GAP, y: videoH + PANEL_GAP * 2, w: Math.round(leftW * 0.42), h: midH, open: true });
+    setRect('court', {
+      x: PANEL_GAP * 2 + Math.round(leftW * 0.42),
+      y: videoH + PANEL_GAP * 2,
+      w: Math.round(leftW * 0.58),
+      h: midH,
+      open: true,
+    });
+    setRect('console', { x: PANEL_GAP, y: videoH + midH + PANEL_GAP * 3, w: leftW, h: consoleH, open: true });
+    const directionH = Math.min(320, Math.max(200, Math.round(rightW / 2.2)));
+    setRect('direction', { x: leftW + PANEL_GAP * 2, y: PANEL_GAP, w: rightW, h: directionH, open: true });
+    setRect('actions', {
+      x: leftW + PANEL_GAP * 2,
+      y: directionH + PANEL_GAP * 2,
+      w: rightW,
+      h: H - directionH - PANEL_GAP * 3,
+      open: true,
+    });
+    setMany(['positions', 'shortcuts', 'aide', 'keypad'], false);
+  }, [canvasSize, setRect, setMany]);
+
+  /** Disposition libre : on rend la main à l'utilisateur (fenêtres réaffichées). */
+  const applyFreeLayout = useCallback(() => {
+    setMany(['score', 'court', 'positions', 'actions', 'direction', 'shortcuts'], true);
+  }, [setMany]);
+
+  // Profils de fenêtres : enregistrés sur le poste, partagés entre DataVolley et le Direct.
+  const [panelProfiles, setPanelProfiles] = useState(() => loadPanelProfiles());
+  useEffect(() => {
+    setPanelProfiles(loadPanelProfiles());
+    const onStorage = (e) => {
+      if (!e.key || e.key === PANEL_PROFILES_KEY) {
+        setPanelProfiles(loadPanelProfiles());
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [sessionId, tab]);
+
+  const notifyEvent = useCallback((ok, text) => {
+    setFlash({ ok, text });
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 3000);
+  }, []);
+
+  const saveLayoutProfile = useCallback(
+    (name) => {
+      const res = savePanelProfile(panelProfiles, name, layout);
+      if (!res) {
+        notifyEvent(false, 'Donnez un nom au profil de fenêtres.');
+        return null;
+      }
+      setPanelProfiles(res.profiles);
+      const stored = storePanelProfiles(res.profiles);
+      notifyEvent(
+        stored,
+        stored
+          ? `Disposition « ${res.profile.name} » enregistrée sur ce poste.`
+          : `Profil « ${res.profile.name} » conservé pour cette session.`
+      );
+      return res.profile;
+    },
+    [panelProfiles, layout, notifyEvent]
+  );
+
+  const applyLayoutProfile = useCallback(
+    (profileId) => {
+      const profile = panelProfiles.find((p) => p.id === profileId);
+      if (!profile) return;
+      applyPanelsLayout(profile.layout);
+      notifyEvent(true, `Disposition « ${profile.name} » appliquée à ce match.`);
+    },
+    [panelProfiles, applyPanelsLayout, notifyEvent]
+  );
+
+  const deleteLayoutProfile = useCallback(
+    (profileId) => {
+      const profile = panelProfiles.find((p) => p.id === profileId);
+      if (!profile) return;
+      const next = removePanelProfile(panelProfiles, profileId);
+      setPanelProfiles(next);
+      storePanelProfiles(next);
+      notifyEvent(true, `Profil « ${profile.name} » supprimé.`);
+    },
+    [panelProfiles, notifyEvent]
+  );
 
   // Mode Aide : disposition pédagogique (console et aides côte à côte) — persisté.
   const [modeAide, setModeAide] = useState(() => {
@@ -244,8 +468,6 @@ function LiveDashboard({ user, onLogout }) {
   }, [modeAide, helpStorageKey]);
 
   // Mesure du canevas : « callback ref » → mesure dès que le canevas est monté
-  // (l'écran de chargement est affiché avant, d'où une taille 0x0 qui bloquait
-  // les fenêtres en haut à gauche).
   const [canvasEl, setCanvasEl] = useState(null);
   useEffect(() => {
     if (!canvasEl) return undefined;
@@ -288,10 +510,18 @@ function LiveDashboard({ user, onLogout }) {
   useEffect(() => { myAssignmentRef.current = myAssignment; }, [myAssignment]);
   useEffect(() => { actionsRef.current = actions; }, [actions]);
 
+  // Horodatage par bloc de saisie : chaque code garde l'instant exact où il a été frappé
+  useEffect(() => {
+    const normalized = stripSpaces(buffer);
+    const now = syncedTimeMs(clockOffsetRef.current) / 1000;
+    blockTimesRef.current = nextBlockTimes(blockTimesRef.current, blockTimeBufferRef.current, normalized, now);
+    blockTimeBufferRef.current = normalized;
+  }, [buffer]);
+
   const me = useMemo(() => members.find((m) => m.user_id === user?.id) || null, [members, user]);
   const isOwner = session?.owner_user_id === user?.id;
   const isViewer = !!(me && me.role === 'viewer');
-  // Le téléphone qui filme : il ne code pas, il n'affiche que sa propre caméra.
+  // Le téléphone dédié qui filme : il ne code pas, il n'affiche que sa propre caméra.
   const isCamera = !!(me && me.role === 'camera');
   const myActions = me ? parseAssignment(me.assignment) : DV_ACTION_KEYS;
   const pointCompleted = session?.point_completed || [];
@@ -305,6 +535,9 @@ function LiveDashboard({ user, onLogout }) {
       setReplayVideoId(res.data.session?.video_id ? Number(res.data.session.video_id) : null);
       setMembers(res.data.members);
       setActions(sortActions(res.data.actions));
+      if (Array.isArray(res.data.events)) {
+        setEvents(sortEvents(res.data.events));
+      }
       const m = res.data.members.find((x) => x.user_id === user?.id) || null;
       setMyAssignment(m ? parseAssignment(m.assignment) : DV_ACTION_KEYS);
       setError(null);
@@ -324,11 +557,21 @@ function LiveDashboard({ user, onLogout }) {
     }
   }, [sessionId]);
 
+  const loadEvents = useCallback(async () => {
+    try {
+      const eventsRes = await liveAPI.getEvents(sessionId);
+      setEvents(sortEvents(eventsRes.data?.events || []));
+    } catch (err) {
+      // Silencieux
+    }
+  }, [sessionId]);
+
   // Chargement initial
   useEffect(() => {
     loadState();
     loadRotation();
-  }, [loadState, loadRotation]);
+    loadEvents();
+  }, [loadState, loadRotation, loadEvents]);
 
   // Synchronisation d'horloge (NTP-like) : offset estimé puis rafraîchi.
   useEffect(() => {
@@ -344,9 +587,6 @@ function LiveDashboard({ user, onLogout }) {
     const socket = createSocket();
     socketRef.current = socket;
 
-    // À la connexion : rejoindre la session, et demander l'en-tête du flux si
-    // une vidéo est déjà affichée (l'affichage a besoin de ce premier morceau
-    // pour décoder, notamment après une reconnexion).
     const enterSession = () => {
       socket.emit('live:join', sessionId);
       if (cameraPlayerRef.current) socket.emit('live:camera-state', sessionId);
@@ -365,6 +605,16 @@ function LiveDashboard({ user, onLogout }) {
     });
     socket.on('action:delete', ({ actionId }) => {
       setActions((prev) => prev.filter((a) => a.id !== actionId));
+    });
+    socket.on('event:add', ({ event }) => {
+      if (!event) return;
+      setEvents((prev) => {
+        if (prev.some((ev) => Number(ev.id) === Number(event.id))) return prev;
+        return sortEvents([...prev, event]);
+      });
+    });
+    socket.on('event:delete', ({ eventId }) => {
+      setEvents((prev) => prev.filter((ev) => Number(ev.id) !== Number(eventId)));
     });
     socket.on('member:update', () => loadState());
     socket.on('session:update', () => loadState());
@@ -388,9 +638,9 @@ function LiveDashboard({ user, onLogout }) {
       setCamera((prev) => ({ ...prev, active: false }));
       cameraPlayerRef.current?.end();
     });
-    socket.on('live:video-ready', ({ data, mimeType }) => {
+    socket.on('live:video-ready', ({ seq, data, mimeType } = {}) => {
       const bytes = chunkToBytes(data);
-      if (bytes) cameraPlayerRef.current?.push(bytes, mimeType);
+      if (bytes) cameraPlayerRef.current?.push(bytes, mimeType, seq);
     });
     // En-tête du flux (premier morceau) : il permet de décoder la vidéo même si
     // l'appareil a rejoint le match en cours de route.
@@ -410,7 +660,6 @@ function LiveDashboard({ user, onLogout }) {
         ...prev,
         active: !!payload.cameraActive,
         mimeType: payload.mimeType || prev.mimeType,
-        // Le délai du serveur ne fait foi que lorsqu'une caméra diffuse.
         delay: payload.cameraActive && Number.isFinite(Number(payload.delay))
           ? Number(payload.delay)
           : prev.delay,
@@ -456,8 +705,6 @@ function LiveDashboard({ user, onLogout }) {
     }
     if (!el) return;
     cameraPlayerRef.current = createCameraPlayer(el, (text, ok) => setCameraMsg({ text, ok }));
-    // On demande l'en-tête du flux : sans lui, impossible de décoder la vidéo
-    // reçue en cours de match (ou après un changement d'onglet).
     socketRef.current?.emit('live:camera-state', sessionId);
   }, [sessionId]);
 
@@ -500,7 +747,7 @@ function LiveDashboard({ user, onLogout }) {
     return () => clearInterval(t);
   }, [camera.active, isCamera]);
 
-  /** Quitte l'écran : on coupe la capture si c'était ce téléphone. */
+  /** Quitte l'écran : on coupe la capture si c'était cet appareil. */
   useEffect(() => () => {
     if (cameraCaptureRef.current) {
       cameraCaptureRef.current.stop?.();
@@ -508,8 +755,8 @@ function LiveDashboard({ user, onLogout }) {
     }
   }, []);
 
-  /** Démarre la capture sur le téléphone (rôle caméra). */
-  const startCamera = async () => {
+  /** Démarre la capture caméra (sur téléphone dédié OU directement depuis le PC du statisticien). */
+  const startCamera = async (deviceId = '') => {
     if (!socketRef.current) return;
     setCameraBusy(true);
     setCameraMsg(null);
@@ -518,10 +765,12 @@ function LiveDashboard({ user, onLogout }) {
         socket: socketRef.current,
         sessionId,
         delay: camera.delay,
+        deviceId: typeof deviceId === 'string' ? deviceId : '',
         onStream: setLocalStream,
         onStatus: (text, ok) => setCameraMsg({ text, ok }),
       });
       cameraCaptureRef.current = capture;
+      setLocalCapturing(true);
       setCamera((prev) => ({ ...prev, active: true, mimeType: capture.mimeType || prev.mimeType }));
     } catch (err) {
       setCameraMsg({ text: err?.message || 'Caméra indisponible.', ok: false });
@@ -535,12 +784,24 @@ function LiveDashboard({ user, onLogout }) {
     cameraCaptureRef.current?.stop?.();
     cameraCaptureRef.current = null;
     setLocalStream(null);
+    setLocalCapturing(false);
     setCamera((prev) => ({ ...prev, active: false }));
   };
 
-  /** Réglage du délai de rediffusion (commun à tous les appareils).
-   *  Il passe par l'API : le serveur vérifie que l'on est bien l'organisateur
-   *  du match, puis prévient tous les appareils. */
+  /** Contrôles DVR du lecteur vidéo différé (-5s, Pause/Play, +5s, Retour au direct). */
+  const handleCameraSeekRelative = useCallback((deltaSeconds) => {
+    cameraPlayerRef.current?.seekRelative?.(deltaSeconds);
+  }, []);
+
+  const handleCameraJumpToLive = useCallback(() => {
+    cameraPlayerRef.current?.jumpToLive?.();
+  }, []);
+
+  const handleCameraTogglePause = useCallback(() => {
+    return cameraPlayerRef.current?.togglePause?.() ?? false;
+  }, []);
+
+  /** Réglage du délai de rediffusion (commun à tous les appareils). */
   const changeCameraDelay = async (seconds) => {
     setCamera((prev) => ({ ...prev, delay: seconds, savedDelay: seconds }));
     try {
@@ -568,25 +829,184 @@ function LiveDashboard({ user, onLogout }) {
     }
   };
 
-  // --- Saisie clavier (console) -------------------------------------------
+  // --- Dérivés de match (rallies, rotations, six sur le terrain, événements) -
+  const rallies = useMemo(() => groupActionsIntoRallies(actions), [actions]);
+  const matchState = useMemo(() => computeMatchState(rallies, setups, {}, events), [rallies, setups, events]);
+
+  useEffect(() => {
+    currentSetRef.current = matchState.currentSet;
+  }, [matchState.currentSet]);
+
+  // Six + fiches équipe du set en cours (rôles, libéro).
+  const currentSetup = setups?.[String(matchState.currentSet)] || {};
+  const savedHome = useMemo(() => parseSavedLineup(currentSetup.home_lineup), [currentSetup.home_lineup]);
+  const savedAway = useMemo(() => parseSavedLineup(currentSetup.away_lineup), [currentSetup.away_lineup]);
+  const homeConfig = savedHome.config;
+  const awayConfig = savedAway.config;
+  const hasAnyPosition = (l) => !!l && Object.values(l).some((v) => Number(v) > 0);
+  const boardState = {
+    currentSet: matchState.currentSet,
+    score: matchState.score,
+    setsWon: matchState.setsWon,
+    matchOver: matchState.matchOver,
+    server: matchState.server,
+    homeLineup: hasAnyPosition(matchState.homeLineup) ? matchState.homeLineup : savedHome.lineup,
+    awayLineup: hasAnyPosition(matchState.awayLineup) ? matchState.awayLineup : savedAway.lineup,
+    homeSetterPos: matchState.homeSetterPos,
+    awaySetterPos: matchState.awaySetterPos,
+  };
+
+  const setterNumbers = useMemo(() => {
+    const pickSetter = (config) => {
+      const p = (config?.roster || []).find((x) => x.role === 'setter');
+      return p ? Number(p.number) : null;
+    };
+    return { home: pickSetter(homeConfig), away: pickSetter(awayConfig) };
+  }, [homeConfig, awayConfig]);
+
+  // Types de service déjà codés par joueur : ils sont proposés d'office ensuite.
+  const learnedTypes = useMemo(() => learnActionTypes(actions), [actions]);
+  const previousBufferRef = useRef('');
+  useEffect(() => {
+    const previous = previousBufferRef.current;
+    previousBufferRef.current = buffer;
+    const completed = completeBufferAfterTyping(buffer, previous, learnedTypes);
+    if (completed !== buffer) setBuffer(completed);
+  }, [buffer, learnedTypes]);
+
+  const nextServe = useMemo(() => {
+    const predicted = predictNextAction(actions[actions.length - 1], { homeSetter: setterNumbers.home, awaySetter: setterNumbers.away });
+    if (predicted) return predicted.code;
+    return prefillWithLearnedType(serverPrefill(boardState), learnedTypes);
+  }, [actions, boardState, learnedTypes, setterNumbers]);
+
+  // --- Fin de point rapide (`[`, `]`, `*p`, `ap`) et annulation (`Ctrl+A`) ---
+  const markPointEnd = useCallback(
+    async (winner) => {
+      if (isViewer) return;
+      const list = actionsRef.current;
+      const last = list[list.length - 1];
+      if (!last) {
+        notifyEvent(false, 'Aucune action à clore.');
+        return;
+      }
+      if (isTerminalEvaluation(last.action, last.evaluation)) {
+        notifyEvent(false, `Le point est déjà terminé (${last.code}).`);
+        return;
+      }
+      const team = winner === 'away' ? 'away' : 'home';
+      const evaluation = last.team === team ? '#' : '=';
+      const code = formatCode({
+        teamKey: last.team === 'away' ? 'a' : '*',
+        player_number: last.player_number,
+        action: last.action,
+        type: last.type || '',
+        evaluation,
+        start_zone: last.start_zone || '',
+        end_zone: last.end_zone || '',
+        end_subzone: last.end_subzone || '',
+      });
+      try {
+        const res = await liveAPI.updateAction(sessionId, last.id, { code });
+        setActions((prev) => sortActions(prev.map((a) => (a.id === last.id ? res.data.action : a))));
+        const who = team === 'away' ? session?.team2_name || 'Extérieur' : session?.team1_name || 'Domicile';
+        notifyEvent(true, `Point pour ${who} : ${last.code} → ${code}`);
+      } catch (err) {
+        notifyEvent(false, 'Impossible de clore le point.');
+      }
+    },
+    [isViewer, sessionId, session, notifyEvent]
+  );
+
+  const undoPointEnd = useCallback(async () => {
+    if (isViewer) return;
+    const list = actionsRef.current;
+    const last = list[list.length - 1];
+    if (!last || !isTerminalEvaluation(last.action, last.evaluation)) {
+      notifyEvent(false, 'Aucune fin de point à annuler.');
+      return;
+    }
+    const code = formatCode({
+      teamKey: last.team === 'away' ? 'a' : '*',
+      player_number: last.player_number,
+      action: last.action,
+      type: last.type || '',
+      evaluation: '',
+      start_zone: last.start_zone || '',
+      end_zone: last.end_zone || '',
+      end_subzone: last.end_subzone || '',
+    });
+    try {
+      const res = await liveAPI.updateAction(sessionId, last.id, { code });
+      setActions((prev) => sortActions(prev.map((a) => (a.id === last.id ? res.data.action : a))));
+      notifyEvent(true, `Fin de point annulée : ${last.code} → ${code}`);
+    } catch (err) {
+      notifyEvent(false, 'Impossible d’annuler la fin de point.');
+    }
+  }, [isViewer, sessionId, notifyEvent]);
+
+  // --- Saisie clavier (console) avec horodatage par bloc & codes composés ---
   const submitBuffer = useCallback(async (overrideBuffer = null) => {
-    const raw = typeof overrideBuffer === 'string' ? overrideBuffer : bufferRef.current;
-    if (!raw.trim()) return;
+    const sourceBuf = typeof overrideBuffer === 'string' ? overrideBuffer : bufferRef.current;
+    const raw = stripSpaces(sourceBuf);
+    if (!raw) return;
     const items = parseSequence(raw);
+    const validItems = items.filter((it) => it.valid);
+    if (validItems.length === 0) return;
+
+    // Si l'utilisateur a uniquement saisi un marqueur de fin de point (*p ou ap)
+    const onlyPointMarkers = validItems.every((it) => it.pointMarker);
+    if (onlyPointMarkers) {
+      const lastMarker = validItems[validItems.length - 1];
+      bufferRef.current = '';
+      setBuffer('');
+      await markPointEnd(lastMarker.team || 'home');
+      return;
+    }
+
+    const fallbackNow = syncedTimeMs(clockOffsetRef.current) / 1000;
+    const perItemTimes = itemTimecodes(raw, blockTimesRef.current);
+
+    // Prépare les nouvelles actions avec leur horodatage individuel de frappe
+    const draftActions = [];
+    items.forEach((it, idx) => {
+      if (!it.code || it.pointMarker) return;
+      const t = Number.isFinite(perItemTimes[idx]) ? perItemTimes[idx] : fallbackNow;
+      draftActions.push({
+        code: it.code,
+        ...decomposeCode(it.code),
+        timecode: t,
+        effective_time: t,
+        system_time: Math.floor(t),
+      });
+    });
+
+    // Applique les règles de codes automatiques composés DataVolley 4 (R -> E, A= -> B#, etc.)
+    const expandedActions = applyCompoundAutoCodes(actionsRef.current, draftActions, {
+      homeSetter: setterNumbers.home,
+      awaySetter: setterNumbers.away,
+      homeSetterNumber: setterNumbers.home,
+      awaySetterNumber: setterNumbers.away,
+      rawInput: raw,
+    });
+
     let sent = 0;
     const created = [];
-    for (const it of items) {
-      if (!it.code || it.pointMarker) continue;
-      const parts = decomposeCode(it.code);
+    for (let i = 0; i < expandedActions.length; i += 1) {
+      const act = expandedActions[i];
+      if (!act?.code) continue;
+      const parts = decomposeCode(act.code);
       const assigned = myAssignmentRef.current.includes(parts.action);
+      // Légère incrémentation (+1ms) pour préserver l'ordre strict des actions auto-générées
+      const effTime = Number(act.effective_time ?? act.timecode ?? fallbackNow) + i * 0.001;
       try {
         const res = await liveAPI.addAction(sessionId, {
-          code: it.code,
-          effective_time: syncedTimeMs(clockOffsetRef.current) / 1000,
-          system_time: Math.floor(Date.now() / 1000),
+          code: act.code,
+          effective_time: effTime,
+          system_time: Math.floor(effTime),
           assigned,
-          // Set courant du tableau de marque : il fait foi dans le replay.
           set_number: currentSetRef.current,
+          is_auto: act.is_auto ? 1 : 0,
         });
         setActions((prev) => sortActions(dedupeAdd(prev, res.data.action)));
         created.push(res.data.action);
@@ -595,19 +1015,22 @@ function LiveDashboard({ user, onLogout }) {
         setFlash({ ok: false, text: "Erreur d'envoi d'une action" });
       }
     }
+
     bufferRef.current = '';
+    blockTimesRef.current = [];
+    blockTimeBufferRef.current = '';
     setBuffer('');
     if (sent) setFlash({ ok: true, text: `${sent} action(s) codée(s)` });
 
     // Pré-remplit le prochain service attendu (équipe qui mène le point suivant).
     if (autoServe && !isViewer && sent > 0) {
       const full = sortActions([...actionsRef.current, ...created]);
-      const nextState = computeMatchState(groupActionsIntoRallies(full), setups);
+      const nextState = computeMatchState(groupActionsIntoRallies(full), setups, {}, events);
       const prefill = prefillWithLearnedType(serverPrefill(nextState), learnActionTypes(full));
       bufferRef.current = prefill;
       setBuffer(prefill);
     }
-  }, [sessionId, isViewer, autoServe, setups]);
+  }, [sessionId, isViewer, autoServe, setups, events, setterNumbers, markPointEnd]);
 
   // Termine le point : envoie les actions puis signale la fin côté statisticien.
   const finishPoint = useCallback(async (overrideBuffer = null) => {
@@ -620,6 +1043,258 @@ function LiveDashboard({ user, onLogout }) {
       setFlash({ ok: false, text: 'Erreur de synchronisation du point' });
     }
   }, [submitBuffer, isViewer, sessionId]);
+
+  // --- Temps morts, remplacements, fenêtre de commandes & rotations ---------
+  const addTimeout = async (team) => {
+    if (isViewer) return;
+    try {
+      const res = await liveAPI.saveEvent(sessionId, {
+        kind: 'timeout',
+        set_number: matchState.currentSet,
+        point_number: matchState.score.team1 + matchState.score.team2,
+        team,
+      });
+      if (res.data?.event) {
+        setEvents((prev) => {
+          if (prev.some((ev) => Number(ev.id) === Number(res.data.event.id))) return prev;
+          return sortEvents([...prev, res.data.event]);
+        });
+      }
+      const who = team === 'away' ? session?.team2_name || 'Extérieur' : session?.team1_name || 'Domicile';
+      notifyEvent(
+        true,
+        `Temps mort ${who} — set ${matchState.currentSet} (${matchState.score.team1}-${matchState.score.team2}).`
+      );
+    } catch (err) {
+      notifyEvent(false, err?.response?.data?.error || 'Enregistrement du temps mort impossible.');
+    }
+  };
+
+  const confirmSubstitution = async () => {
+    const out = Number(subOut);
+    const inn = Number(subIn);
+    if (!Number.isInteger(out) || out <= 0 || !Number.isInteger(inn) || inn <= 0 || out === inn) {
+      notifyEvent(false, 'Choisissez le joueur sortant et le joueur entrant.');
+      return;
+    }
+    setSavingEvent(true);
+    try {
+      const res = await liveAPI.saveEvent(sessionId, {
+        kind: 'substitution',
+        set_number: matchState.currentSet,
+        point_number: matchState.score.team1 + matchState.score.team2,
+        team: subTeam,
+        payload: { out, in: inn },
+      });
+      if (res.data?.event) {
+        setEvents((prev) => {
+          if (prev.some((ev) => Number(ev.id) === Number(res.data.event.id))) return prev;
+          return sortEvents([...prev, res.data.event]);
+        });
+      }
+      setShowSub(false);
+      setSubOut('');
+      setSubIn('');
+      const who = subTeam === 'away' ? session?.team2_name || 'Extérieur' : session?.team1_name || 'Domicile';
+      notifyEvent(true, `Remplacement ${who} : n°${out} → n°${inn}.`);
+    } catch (err) {
+      notifyEvent(false, err?.response?.data?.error || 'Enregistrement du remplacement impossible.');
+    } finally {
+      setSavingEvent(false);
+    }
+  };
+
+  const submitCommand = useCallback(
+    async (command) => {
+      const body = commandToEvent(command, {
+        setNumber: matchState.currentSet,
+        pointNumber: matchState.score.team1 + matchState.score.team2,
+      });
+      if (!body) return;
+      try {
+        const res = await liveAPI.saveEvent(sessionId, body);
+        if (res.data?.event) {
+          setEvents((prev) => {
+            if (prev.some((ev) => Number(ev.id) === Number(res.data.event.id))) return prev;
+            return sortEvents([...prev, res.data.event]);
+          });
+        }
+        const who = body.team === 'away' ? session?.team2_name || 'Extérieur' : session?.team1_name || 'Domicile';
+        const text =
+          command.kind === 'timeout'
+            ? `Temps mort ${who} (set ${body.set_number}).`
+            : command.kind === 'substitution'
+            ? `Remplacement ${who} : n°${command.out} → n°${command.in}.`
+            : `Code libre « ${command.text} » enregistré.`;
+        notifyEvent(true, text);
+      } catch (err) {
+        notifyEvent(false, err?.response?.data?.error || 'Commande non enregistrée.');
+      }
+    },
+    [sessionId, matchState.currentSet, matchState.score, session, notifyEvent]
+  );
+
+  const onCourtPlayers = (team) => {
+    const lineup = team === 'away' ? boardState.awayLineup : boardState.homeLineup;
+    const cfg = team === 'away' ? awayConfig : homeConfig;
+    return COURT_POSITIONS.map((p) => Number(lineup?.[p]) || 0)
+      .filter((n) => n > 0)
+      .map((n) => ({ number: n, name: (cfg?.roster || []).find((x) => Number(x.number) === n)?.name || '' }));
+  };
+
+  const benchPlayers = (team) => {
+    const cfg = team === 'away' ? awayConfig : homeConfig;
+    const onCourt = new Set(onCourtPlayers(team).map((p) => p.number));
+    return (cfg?.roster || [])
+      .map((p) => ({ number: Number(p.number) || 0, name: p.name || '', role: p.role || 'universal' }))
+      .filter((p) => p.number > 0 && !onCourt.has(p.number) && p.role !== 'libero');
+  };
+
+  const currentSetEvents = useMemo(
+    () => events.filter((ev) => Number(ev.set_number) === matchState.currentSet),
+    [events, matchState.currentSet]
+  );
+  const timeoutCount = (team) =>
+    currentSetEvents.filter((ev) => ev.kind === 'timeout' && (ev.team || 'home') === team).length;
+  const substitutionCount = currentSetEvents.filter((ev) => ev.kind === 'substitution').length;
+
+  // Rotation manuelle rapide (+1 / -1) synchronisée via liveAPI.saveSetups
+  const persistSetups = (updated) => {
+    setSetups(updated);
+    if (rotSaveTimer.current) clearTimeout(rotSaveTimer.current);
+    rotSaveTimer.current = setTimeout(() => {
+      liveAPI.saveSetups(sessionId, updated).catch(() => {});
+    }, 500);
+  };
+
+  const rotateTeam = (team, dir) => {
+    if (isViewer) return;
+    const setNum = String(matchState.currentSet);
+    const key = team === 'home' ? 'home_setter_pos' : 'away_setter_pos';
+    const s = setups[setNum] || {};
+    persistSetups({ ...setups, [setNum]: { ...s, [key]: rotateSetterPos(s[key] || null, dir) } });
+  };
+
+  const setSetterPos = (team, pos) => {
+    if (isViewer) return;
+    const setNum = String(matchState.currentSet);
+    const key = team === 'home' ? 'home_setter_pos' : 'away_setter_pos';
+    const s = setups[setNum] || {};
+    persistSetups({ ...setups, [setNum]: { ...s, [key]: pos } });
+  };
+
+  // --- Directions d'attaque & édition rapide des codes ----------------------
+  const lastAttack = useMemo(() => {
+    for (let i = actions.length - 1; i >= 0; i -= 1) {
+      if (actions[i]?.action === 'A') return actions[i];
+    }
+    return null;
+  }, [actions]);
+
+  const attackOptions = useMemo(() => {
+    return actions.filter((a) => a?.action === 'A').slice(-12).reverse();
+  }, [actions]);
+
+  const directionTarget = useMemo(
+    () => (directionId ? actions.find((a) => a.id === Number(directionId)) || lastAttack : lastAttack),
+    [actions, directionId, lastAttack]
+  );
+
+  const directionHistory = useMemo(() => {
+    if (!directionTarget) return [];
+    return actions
+      .filter(
+        (a) =>
+          a?.action === 'A' &&
+          a.team === directionTarget.team &&
+          Number(a.player_number) === Number(directionTarget.player_number) &&
+          a.id !== directionTarget.id &&
+          a.start_zone &&
+          a.end_zone
+      )
+      .map((a) => ({ start: String(a.start_zone), end: String(a.end_zone) }));
+  }, [actions, directionTarget]);
+
+  const setDirection = useCallback(
+    async (action, start, end, coords = {}) => {
+      if (!action?.id || isViewer) return;
+      const withUid = [{ ...action, uid: action.id }];
+      const updated = applyDirection(withUid, action.id, start, end, coords)[0];
+      if (!updated) return;
+      try {
+        const res = await liveAPI.updateAction(sessionId, action.id, {
+          code: updated.code,
+          attack_zone: updated.attack_zone || start || null,
+          start_subzone: updated.start_subzone || null,
+          end_subzone: updated.end_subzone || null,
+          start_x: updated.start_x ?? null,
+          start_y: updated.start_y ?? null,
+          mid_x: updated.mid_x ?? null,
+          mid_y: updated.mid_y ?? null,
+          end_x: updated.end_x ?? null,
+          end_y: updated.end_y ?? null,
+        });
+        setActions((prev) => sortActions(prev.map((a) => (a.id === action.id ? res.data.action : a))));
+        notifyEvent(true, `Direction ${start || '—'} → ${end || '—'} enregistrée.`);
+      } catch (err) {
+        notifyEvent(false, "Erreur d'enregistrement de la direction.");
+      }
+    },
+    [sessionId, isViewer, notifyEvent]
+  );
+
+  const goToAttackWithoutDirection = useCallback(() => {
+    const first = attacksWithoutDirection(actionsRef.current)[0];
+    if (first) {
+      setDirectionId(first.id);
+      openPanelById('direction');
+    } else {
+      notifyEvent(true, 'Toutes les attaques ont une direction.');
+    }
+  }, [openPanelById, notifyEvent]);
+
+  /** Double-clic sur une action dans la liste des codes : modifier son code en direct. */
+  const editActionCode = useCallback(
+    async (action, rawCode) => {
+      if (!action?.id || isViewer) return;
+      const trimmed = stripSpaces(rawCode);
+      if (!trimmed) return;
+      const check = validateAction(trimmed);
+      if (!check.valid) {
+        notifyEvent(false, `Code invalide : ${(check.issues || []).join(', ')}`);
+        return;
+      }
+      try {
+        const res = await liveAPI.updateAction(sessionId, action.id, { code: trimmed });
+        setActions((prev) => sortActions(prev.map((a) => (a.id === action.id ? res.data.action : a))));
+        notifyEvent(true, `Action modifiée : ${action.code} → ${res.data.action?.code || trimmed}`);
+      } catch (err) {
+        notifyEvent(false, 'Modification impossible.');
+      }
+    },
+    [sessionId, isViewer, notifyEvent]
+  );
+
+  // Clic sur la vidéo calibrée (4 coins) → ajoute la zone (et sous-zone) au tampon de codage
+  const handleZoneFromVideoClick = useCallback(
+    ({ zone, subzone }) => {
+      if (!zone || isViewer) return;
+      const current = bufferRef.current || '';
+      let next = tryAppendChar(current, String(zone));
+      if (next != null) {
+        if (subzone) {
+          const withSub = tryAppendChar(next, String(subzone).toUpperCase());
+          if (withSub != null) next = withSub;
+        }
+        bufferRef.current = next;
+        setBuffer(next);
+        notifyEvent(true, `Zone ajoutée au code : Z${zone}${subzone || ''} → ${next}`);
+      } else {
+        notifyEvent(true, `Zone détectée sur vidéo : Z${zone}${subzone || ''}`);
+      }
+    },
+    [isViewer, notifyEvent]
+  );
 
   // Corrige la zone d'une action (le code est réécrit, la zone y est intégrée).
   const applyZoneToAction = async (zoneId) => {
@@ -648,13 +1323,41 @@ function LiveDashboard({ user, onLogout }) {
     }
   };
 
+  // --- Clavier DataVolley 4 Pro (Remapping + Macros Alt+1..0 + [ / ] / Ctrl+A + DVR)
   const keyboardHandler = useCallback((e) => {
     // Le téléphone qui filme (caméra) ne code pas : aucun raccourci de codage.
     if (tab !== 'codage' || isViewer || isCamera) return;
     const tag = (e.target?.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.ctrlKey && e.altKey) return;
 
+    // Échap : ferme la fenêtre de commandes ou vide le tampon.
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (showCommand) { setShowCommand(false); return; }
+      if (showSub) { setShowSub(false); return; }
+      bufferRef.current = '';
+      setBuffer('');
+      return;
+    }
+
+    // Ctrl+Shift+C : fenêtre de commandes DataVolley (temps morts, remplacements, sanctions, code libre)
+    if ((e.key === 'c' || e.key === 'C') && e.ctrlKey && e.shiftKey) {
+      e.preventDefault();
+      setShowCommand((v) => !v);
+      return;
+    }
+
+    // Ctrl+A : annule la dernière fin de point
+    if ((e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      undoPointEnd();
+      return;
+    }
+
+    if (e.ctrlKey || e.metaKey) return;
+
+    // 1. Interception Keyboard Remapping (Standard AZERTY Scout & Macros 1-to-Many)
     const remapRes = handleRemappedKeyDown(e, {
       value: bufferRef.current || '',
       profile: keymapProfile,
@@ -668,11 +1371,55 @@ function LiveDashboard({ user, onLogout }) {
     });
     if (remapRes.handled) return;
 
-    if (matchesShortcut(e, shortcuts.togglePanels)) {
+    // 2. Raccourcis Macros Clavier (Alt+1..0 configurés dans Codes Auto & Macros)
+    const matchedMacro = matchMacroShortcut(e);
+    if (matchedMacro) {
       e.preventDefault();
-      setMany(['score', 'court', 'actions', 'shortcuts'], !arePanelsVisible);
+      const macroSnippet = matchedMacro.snippet || matchedMacro.code || '';
+      const nextBuf = (bufferRef.current || '') + macroSnippet;
+      bufferRef.current = nextBuf;
+      setBuffer(nextBuf);
+      notifyEvent(true, `Macro ${matchedMacro.shortcut || matchedMacro.key} (${matchedMacro.label}) → ${macroSnippet}`);
       return;
     }
+
+    if (e.altKey) return;
+
+    if (matchesShortcut(e, shortcuts.togglePanels)) {
+      e.preventDefault();
+      setMany(SECONDARY_PANELS, !arePanelsVisible);
+      return;
+    }
+
+    // Contrôles vidéo DVR au clavier (Pause, Reculer -5s, Avancer +5s)
+    if (matchesShortcut(e, shortcuts.pause)) {
+      e.preventDefault();
+      handleCameraTogglePause();
+      return;
+    }
+    if (matchesShortcut(e, shortcuts.seekBack)) {
+      e.preventDefault();
+      handleCameraSeekRelative(-5);
+      return;
+    }
+    if (matchesShortcut(e, shortcuts.seekForward)) {
+      e.preventDefault();
+      handleCameraSeekRelative(5);
+      return;
+    }
+
+    // Gestes de fin de point DataVolley : [ (domicile) et ] (extérieur)
+    if (e.key === '[') {
+      e.preventDefault();
+      markPointEnd('home');
+      return;
+    }
+    if (e.key === ']') {
+      e.preventDefault();
+      markPointEnd('away');
+      return;
+    }
+
     if (matchesShortcut(e, shortcuts.validate)) {
       e.preventDefault();
       finishPoint();
@@ -688,25 +1435,34 @@ function LiveDashboard({ user, onLogout }) {
       setBuffer('');
       return;
     }
-    if (e.key.length === 1 && !matchesShortcut(e, shortcuts.pause)
-      && !matchesShortcut(e, shortcuts.seekBack) && !matchesShortcut(e, shortcuts.seekForward)
-      && !matchesShortcut(e, shortcuts.speedDown) && !matchesShortcut(e, shortcuts.speedUp)
+    if (e.key.length === 1 && !matchesShortcut(e, shortcuts.speedDown)
+      && !matchesShortcut(e, shortcuts.speedUp)
       && !matchesShortcut(e, shortcuts.speedReset)) {
       setBuffer((b) => b + e.key);
     }
-  }, [tab, isViewer, isCamera, finishPoint, shortcuts, keymapProfile, setMany, arePanelsVisible]);
+  }, [
+    tab,
+    isViewer,
+    isCamera,
+    showCommand,
+    showSub,
+    finishPoint,
+    shortcuts,
+    keymapProfile,
+    setMany,
+    arePanelsVisible,
+    markPointEnd,
+    undoPointEnd,
+    notifyEvent,
+    handleCameraTogglePause,
+    handleCameraSeekRelative,
+  ]);
 
   useEffect(() => {
     window.addEventListener('keydown', keyboardHandler);
     return () => window.removeEventListener('keydown', keyboardHandler);
   }, [keyboardHandler]);
 
-  /**
-   * Champs « séquence » de l'onglet Séquences : même clavier que la console
-   * (Keyboard Remapping AZERTY Scout + raccourci de validation commun). Échap
-   * reste la fermeture de l'éditeur ; la macro n'auto-valide pas ici, une
-   * séquence se relit avant d'être enregistrée.
-   */
   const sequenceKeyHandler = (e) => {
     handleCodeFieldKeyDown(e, {
       value: editingSequence,
@@ -784,7 +1540,7 @@ function LiveDashboard({ user, onLogout }) {
   };
 
   const openTeamsModal = () => {
-    applySetToEditor(1);
+    applySetToEditor(matchState.currentSet || 1);
     setShowTeams(true);
   };
 
@@ -830,13 +1586,10 @@ function LiveDashboard({ user, onLogout }) {
 
   const saveRallySequence = async () => {
     if (!editingRally) return;
-    // On ignore les espaces afin que « a02R# a04A# » soit interprété comme « a02R#a04A# ».
     const raw = editingSequence.replace(/\s+/g, '');
     const items = parseSequence(raw).filter((it) => it.code);
     const oldIds = new Set(editingRally.ids);
     const old = actionsRef.current.filter((a) => oldIds.has(a.id));
-    // Une séquence éditée garde son set d'origine ; un nouveau point prend le
-    // set courant du tableau de marque.
     const rallySetNumber =
       Number(old[0]?.set_number) > 0 ? Math.round(Number(old[0].set_number)) : currentSetRef.current;
 
@@ -875,7 +1628,7 @@ function LiveDashboard({ user, onLogout }) {
           const assigned = myAssignmentRef.current.includes(parts.action);
           await liveAPI.addAction(sessionId, {
             code: item.code,
-            effective_time: now,
+            effective_time: now + i * 0.001,
             system_time: Math.floor(Date.now() / 1000),
             assigned,
             set_number: rallySetNumber,
@@ -907,67 +1660,39 @@ function LiveDashboard({ user, onLogout }) {
     }
   };
 
-  // --- Dérivés -------------------------------------------------------------
-  const rallies = useMemo(() => groupActionsIntoRallies(actions), [actions]);
-  const matchState = useMemo(() => computeMatchState(rallies, setups), [rallies, setups]);
-
-  // Le set courant est tenu par le tableau de marque (rotation) : on le garde
-  // dans une référence pour l'envoyer avec chaque action codée.
-  useEffect(() => {
-    currentSetRef.current = matchState.currentSet;
-  }, [matchState.currentSet]);
-
-  // Six + fiches équipe du set en cours (rôles, libéro).
-  const currentSetup = setups?.[String(matchState.currentSet)] || {};
-  const savedHome = useMemo(() => parseSavedLineup(currentSetup.home_lineup), [currentSetup.home_lineup]);
-  const savedAway = useMemo(() => parseSavedLineup(currentSetup.away_lineup), [currentSetup.away_lineup]);
-  const homeConfig = savedHome.config;
-  const awayConfig = savedAway.config;
-  const hasAnyPosition = (l) => !!l && Object.values(l).some((v) => Number(v) > 0);
-  const boardState = {
-    currentSet: matchState.currentSet,
-    score: matchState.score,
-    setsWon: matchState.setsWon,
-    matchOver: matchState.matchOver,
-    server: matchState.server,
-    homeLineup: hasAnyPosition(matchState.homeLineup) ? matchState.homeLineup : savedHome.lineup,
-    awayLineup: hasAnyPosition(matchState.awayLineup) ? matchState.awayLineup : savedAway.lineup,
-    homeSetterPos: matchState.homeSetterPos,
-    awaySetterPos: matchState.awaySetterPos,
-  };
-  // Types de service déjà codés par joueur : ils sont proposés d'office ensuite.
-  const learnedTypes = useMemo(() => learnActionTypes(actions), [actions]);
-  const previousBufferRef = useRef('');
-  useEffect(() => {
-    const previous = previousBufferRef.current;
-    previousBufferRef.current = buffer;
-    // Complète à la frappe uniquement (pas après une suppression) : le type
-    // proposé reste effaçable, et une autre lettre de type le remplace.
-    const completed = completeBufferAfterTyping(buffer, previous, learnedTypes);
-    if (completed !== buffer) setBuffer(completed);
-  }, [buffer, learnedTypes]);
-
-  const setterNumbers = useMemo(() => {
-    const pickSetter = (config) => {
-      const p = (config?.roster || []).find((x) => x.role === 'setter');
-      return p ? Number(p.number) : null;
-    };
-    return { home: pickSetter(homeConfig), away: pickSetter(awayConfig) };
-  }, [homeConfig, awayConfig]);
-
-  const nextServe = useMemo(() => {
-    const predicted = predictNextAction(actions[actions.length - 1], { homeSetter: setterNumbers.home, awaySetter: setterNumbers.away });
-    if (predicted) return predicted.code;
-    return prefillWithLearnedType(serverPrefill(boardState), learnedTypes);
-  }, [actions, boardState, learnedTypes, setterNumbers]);
-
+  // --- Statistiques, cohérence DataVolley & Export .dvw ---------------------
   const setterDist = useMemo(
     () => computeSetterDistributionByRotation(actions, rallies, setups, setterNumbers),
     [actions, rallies, setups, setterNumbers]
   );
 
-  // Bilan de match standardisé (filtré par set).
   const actionSetMap = useMemo(() => indexActionSets(rallies, matchState), [rallies, matchState]);
+  const setOfAction = useCallback(
+    (a) => {
+      if (!a) return null;
+      const key = a.uid ?? a.id ?? a.action_index;
+      return actionSetMap.get(key) ?? a.set_number ?? null;
+    },
+    [actionSetMap]
+  );
+
+  // Contrôles de cohérence DataVolley 4 en temps réel (joueurs hors six, double touche, etc.)
+  const issues = useMemo(
+    () =>
+      codeIssues(actions, {
+        roster: {
+          home: (homeConfig?.roster || []).map((p) => p.number),
+          away: (awayConfig?.roster || []).map((p) => p.number),
+        },
+        requireTimecode: false,
+        enriched: true,
+        matchState,
+        events,
+        liberos: { home: homeConfig?.libero, away: awayConfig?.libero },
+      }),
+    [actions, homeConfig, awayConfig, matchState, events]
+  );
+
   const matchReport = useMemo(
     () =>
       computeMatchReport(actions, {
@@ -981,7 +1706,6 @@ function LiveDashboard({ user, onLogout }) {
     [actions, homeConfig, awayConfig, actionSetMap, reportSets, session]
   );
 
-  // Rapport complet : ventilations, zones, situations, rotations, classements.
   const scouting = useMemo(
     () =>
       computeScouting({
@@ -1038,7 +1762,7 @@ function LiveDashboard({ user, onLogout }) {
     return m ? m.nickname : '';
   };
 
-  // Bilan de match : sets disponibles, filtre, export CSV et impression.
+  // Bilan de match : sets disponibles, filtre, export CSV et export .dvw.
   const reportSetsAvailable = useMemo(
     () => Array.from({ length: matchState.currentSet }, (_, i) => i + 1),
     [matchState.currentSet]
@@ -1055,6 +1779,35 @@ function LiveDashboard({ user, onLogout }) {
       .filter(Boolean)
       .join('_');
     downloadTextFile(`bilan_live_${slug || 'match'}.csv`, rowsToCsv(reportToRows(matchReport)), 'text/csv;charset=utf-8');
+  };
+
+  const exportDvwFile = () => {
+    const team1 = session?.team1_name || 'Domicile';
+    const team2 = session?.team2_name || 'Extérieur';
+    const slug = [team1, team2].map((n) => String(n || '').replace(/\s+/g, '_')).filter(Boolean).join('_');
+    const rosterOf = (cfg) => (cfg?.roster || []).map((p) => ({ number: p.number, name: p.name }));
+    const lineupMap = indexActionLineups(rallies, matchState);
+    const firstT = actions.length ? Number(actions[0].effective_time) : 0;
+    const dvw = buildDvw({
+      match: { date: '', league: '', scout: user?.name || '' },
+      teams: { home: team1, away: team2 },
+      rosters: { home: rosterOf(homeConfig), away: rosterOf(awayConfig) },
+      sets: [],
+      actions: actions.map((a, idx) => {
+        const key = a.uid ?? a.id ?? idx;
+        const relTime = Number.isFinite(Number(a.effective_time))
+          ? Math.max(0, Math.round(Number(a.effective_time) - firstT))
+          : null;
+        return {
+          ...a,
+          timecode: a.timecode ?? relTime,
+          ...(lineupMap.get(key) || {}),
+          set_number: actionSetMap.get(key) || a.set_number || 1,
+          rally_number: idx + 1,
+        };
+      }),
+    });
+    downloadTextFile(`match_live_${slug || 'asul'}.dvw`, dvw, 'text/plain;charset=utf-8');
   };
 
   const tabs = [
@@ -1091,8 +1844,10 @@ function LiveDashboard({ user, onLogout }) {
     );
   }
 
-  // Écran du téléphone : rôle « caméra ». Il filme, il ne code pas et ne
-  // consulte pas les statistiques.
+  const team1 = session.team1_name || 'Domicile';
+  const team2 = session.team2_name || 'Extérieur';
+
+  // Écran du téléphone dédié : rôle « caméra ». Il filme, il ne code pas.
   if (isCamera) {
     const supported = cameraSupported();
     return (
@@ -1103,7 +1858,7 @@ function LiveDashboard({ user, onLogout }) {
             <div className="dv-title">
               <strong>Caméra du match</strong>
               <span className="dv-teams">
-                <House size={12} /> {session.team1_name} &nbsp;·&nbsp; <Plane size={12} /> {session.team2_name}
+                <House size={12} /> {team1} &nbsp;·&nbsp; <Plane size={12} /> {team2}
               </span>
             </div>
             <div className="dv-save-state">
@@ -1122,7 +1877,7 @@ function LiveDashboard({ user, onLogout }) {
                     <StopCircle size={16} /> Arrêter la caméra
                   </button>
                 ) : (
-                  <button className="btn btn-primary" onClick={startCamera} disabled={cameraBusy || !connected}>
+                  <button className="btn btn-primary" onClick={() => startCamera()} disabled={cameraBusy || !connected}>
                     <Video size={16} /> {cameraBusy ? 'Démarrage…' : 'Démarrer la caméra'}
                   </button>
                 )}
@@ -1150,8 +1905,9 @@ function LiveDashboard({ user, onLogout }) {
               {cameraMsg && <p className="dv-hint">{cameraMsg.text}</p>}
               {!supported && (
                 <p className="dv-hint live-camera-msg err">
-                  Ce navigateur ne peut pas filmer en direct : il faut une page ouverte en HTTPS (ou sur le réseau
-                  local) et l’autorisation d’utiliser la caméra.
+                  Ce navigateur ne peut pas filmer en direct : il faut une page ouverte en HTTPS (ou sur localhost)
+                  et l’autorisation d’utiliser la caméra. Vous pouvez aussi activer la caméra directement depuis le PC
+                  du statisticien.
                 </p>
               )}
               <p className="dv-hint">
@@ -1176,13 +1932,21 @@ function LiveDashboard({ user, onLogout }) {
           <div className="dv-fullpage-title">
             <PancakeLogo size={18} />
             <strong>Rapport de match</strong>
-            <span className="dv-fullpage-sub">{session.team1_name} — {session.team2_name}</span>
+            <span className="dv-fullpage-sub">{team1} — {team2}</span>
             <span className="dv-fullpage-meta">
               {reportSets.length === 0 ? 'Tous les sets' : `Set ${reportSets.join(', ')}`} · Sets{' '}
               {matchState.setsWon.team1}–{matchState.setsWon.team2} · {matchReport.actionCount} action(s) codée(s)
             </span>
           </div>
-          <div className="dv-fullpage-actions">
+          <div className="dv-fullpage-actions" style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={exportDvwFile}
+              title="Exporter le match au format DataVolley (.dvw)"
+            >
+              <FileDown size={13} /> .DVW
+            </button>
             <button
               type="button"
               className="btn btn-secondary btn-sm"
@@ -1201,6 +1965,14 @@ function LiveDashboard({ user, onLogout }) {
             delay={camera.delay}
             canChangeDelay={isOwner}
             onDelayChange={changeCameraDelay}
+            canStartLocal={!isViewer}
+            localActive={localCapturing}
+            cameraBusy={cameraBusy}
+            onStartLocal={startCamera}
+            onStopLocal={stopCamera}
+            onSeekRelative={handleCameraSeekRelative}
+            onJumpToLive={handleCameraJumpToLive}
+            onTogglePause={handleCameraTogglePause}
             message={cameraMsg}
             extra={camera.active ? <span className="live-camera-lat">lecture {cameraLatency} s</span> : null}
           />
@@ -1219,6 +1991,9 @@ function LiveDashboard({ user, onLogout }) {
 
   const firstTime = actions.length ? actions[0].effective_time : null;
   const elapsed = (a) => formatElapsed(firstTime, a.effective_time);
+  const activeOverlayAction = actions.length ? actions[actions.length - 1] : null;
+  const directionTeam = directionTarget?.team === 'away' ? team2 : team1;
+  const directionOpponent = directionTarget?.team === 'away' ? team1 : team2;
 
   // Classes et messages partagés par la console de codage (mode normal).
   const liveBlockClass = (it) => {
@@ -1231,8 +2006,6 @@ function LiveDashboard({ user, onLogout }) {
       {it.valid && !myAssignment.includes(decomposeCode(it.code).action) ? ' · hors assignation' : ''}
     </>
   );
-  const liveRallyHead = (r) => `Point ${r.pointNumber} · ${rallyWinMethod(r).label}`;
-  const liveChipClass = (a) => `${blockClass(a)} ${isTerminalEvaluation(a.action, a.evaluation) ? 'terminal' : ''}`;
   const liveWarnings = matchState.warnings?.length > 0 ? (
     <p className="dv-hint" style={{ marginTop: 8, color: 'var(--danger, #e05252)' }}>
       <AlertTriangle size={13} /> {matchState.warnings.length} point(s) servi(s) par une équipe qui n’avait pas le
@@ -1245,6 +2018,33 @@ function LiveDashboard({ user, onLogout }) {
     </p>
   ) : null;
 
+  const liveVideoOverlay = (
+    <VideoTvOverlay
+      showScoreboard={showTvOverlay}
+      team1={team1}
+      team2={team2}
+      score={boardState.score}
+      setsWon={boardState.setsWon}
+      currentSet={boardState.currentSet}
+      server={boardState.server}
+      homeSetterPos={boardState.homeSetterPos}
+      awaySetterPos={boardState.awaySetterPos}
+      activeAction={activeOverlayAction}
+      calibrationMode={calibMode}
+      corners={courtCorners}
+      onSaveCorners={(pts) => {
+        saveCourtCalibration(calibStorageKey, pts);
+        setCourtCorners(pts);
+        setCalibMode(pts && pts.length === 4 ? 'active' : false);
+      }}
+      onZoneDetected={handleZoneFromVideoClick}
+      onCloseCalibration={() =>
+        setCalibMode(courtCorners && courtCorners.length === 4 ? 'active' : false)
+      }
+      onStartCalibration={() => setCalibMode('calibrating')}
+    />
+  );
+
   return (
     <div className="video-dashboard dv-page">
       <div className="vd-workspace">
@@ -1255,7 +2055,7 @@ function LiveDashboard({ user, onLogout }) {
           <div className="dv-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <strong>{session.name}</strong>
             <span className="dv-teams">
-              <House size={12} /> {session.team1_name} &nbsp;·&nbsp; <Plane size={12} /> {session.team2_name}
+              <House size={12} /> {team1} &nbsp;·&nbsp; <Plane size={12} /> {team2}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-tertiary)', border: '1px solid var(--border-accent)', borderRadius: 12, padding: '4px 14px' }}>
@@ -1275,6 +2075,24 @@ function LiveDashboard({ user, onLogout }) {
           <button className="btn btn-secondary btn-sm" onClick={openTeamsModal} title="Six de départ, rôles et libéro">
             <Users size={14} /> Six &amp; rôles
           </button>
+          {!isViewer && (
+            <button
+              type="button"
+              className={`btn btn-sm ${showCommand ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setShowCommand((v) => !v)}
+              title="Fenêtre de commandes rapides DataVolley : Temps mort, Remplacement, Sanction (Ctrl+Shift+C)"
+            >
+              <ArrowDownUp size={14} /> Commandes
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={exportDvwFile}
+            title="Exporter le match en direct au format DataVolley (.dvw)"
+          >
+            <FileDown size={14} /> .DVW
+          </button>
           <button
             className={`btn btn-sm ${isOpen('aide') ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => togglePanelById('aide')}
@@ -1288,7 +2106,11 @@ function LiveDashboard({ user, onLogout }) {
             onToggle={togglePanelById}
             onSetMany={setMany}
             onReset={resetPanels}
-            compactIds={['console', 'score', 'court', 'actions', 'shortcuts', 'aide', 'keypad']}
+            onApplyDvLayout={applyDvLayout}
+            profiles={panelProfiles}
+            onSaveProfile={saveLayoutProfile}
+            onApplyProfile={applyLayoutProfile}
+            onDeleteProfile={deleteLayoutProfile}
           />
           <button
             type="button"
@@ -1299,6 +2121,29 @@ function LiveDashboard({ user, onLogout }) {
           >
             {modeAide ? <EyeOff size={14} /> : <Eye size={14} />} Mode Aide
           </button>
+          {isOwner && (
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={finalizeRecording}
+                disabled={finalizing}
+                title="Finaliser l'enregistrement du direct en une vidéo de replay ancrée (les actions, six et événements seront liés à la vidéo)"
+              >
+                <Save size={13} /> {finalizing ? 'Finalisation…' : 'Finaliser'}
+              </button>
+              {replayVideoId && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => navigate(`/datavolley/${replayVideoId}`)}
+                  title="Ouvrir la vidéo de replay finalisée dans Data Volley (codage, séquences, rapports)"
+                >
+                  <ArrowRight size={13} /> Data Volley
+                </button>
+              )}
+            </>
+          )}
           <div className="dv-save-state">
             {camera.active && (
               <span className="dv-cam-badge" title={`Caméra du match : vidéo diffusée avec ${camera.delay} s de retard`}>
@@ -1319,74 +2164,82 @@ function LiveDashboard({ user, onLogout }) {
         </nav>
 
         <div className="vd-main">
-          <div className="dv-live-body">
-            {flash && !flash.ok && (
-              <div className={`dv-flash ${flash.ok ? 'ok' : 'err'}`}>{flash.text}</div>
-            )}
-            <AnimatePresence mode="wait">
-              {tab === 'banc' && (
-                <motion.div key="banc" className="dv-panel" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
-                  <LiveCoachTablet
-                    team1={session.team1_name}
-                    team2={session.team2_name}
-                    boardState={boardState}
-                    scouting={scouting}
-                    actions={actions}
-                    rallies={rallies}
-                    setups={setups}
-                    setterNumbers={setterNumbers}
-                    homeConfig={homeConfig}
-                    awayConfig={awayConfig}
-                    videoSlot={
-                      <LiveCameraPanel
-                        compact
-                        bindVideo={bindCameraVideo}
-                        active={camera.active}
-                        delay={camera.delay}
-                        canChangeDelay={isOwner}
-                        onDelayChange={changeCameraDelay}
-                        message={cameraMsg}
-                        extra={camera.active ? <span className="live-camera-lat">lecture {cameraLatency} s</span> : null}
-                      />
-                    }
-                  />
-                </motion.div>
+          {tab === 'codage' ? (
+            <>
+              {flash && (
+                <div className={`dv-flash ${flash.ok ? 'ok' : 'err'}`} style={{ margin: '6px 12px 0' }}>
+                  {flash.text}
+                </div>
               )}
-              {tab === 'codage' && (
-                <motion.div key="codage" className="dv-panel" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
-                  <LiveCameraPanel
-                    bindVideo={bindCameraVideo}
-                    active={camera.active}
-                    delay={camera.delay}
-                    canChangeDelay={isOwner}
-                    onDelayChange={changeCameraDelay}
-                    message={cameraMsg}
-                    extra={camera.active ? <span className="live-camera-lat">lecture {cameraLatency} s</span> : null}
-                  />
-                  {isOwner && (
-                    <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={finalizeRecording}
-                        disabled={finalizing}
-                        title="Finaliser l'enregistrement du direct en une vidéo de replay ancrée (les actions codées seront liées à la vidéo)"
+              <div className="dv-canvas" ref={setCanvasEl} style={{ minHeight: canvasHeight, minWidth: canvasWidth ? `${canvasWidth}px` : undefined }}>
+                {/* Vidéo — ancre : déplaçable et redimensionnable, jamais fermée (identique à DataVolleyDashboard). */}
+                {isOpen('video') && (
+                  <FloatingPanel
+                    id="video"
+                    title="Vidéo"
+                    icon={MonitorPlay}
+                    className="panel-video"
+                    rect={rect('video')}
+                    onRectChange={(patch) => setRect('video', patch)}
+                    active={activePanelId === 'video'}
+                    onFocus={setActivePanelId}
+                    size={canvasSize}
+                    closable={false}
+                    headerExtra={
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              type="button"
+                              className={`btn btn-xs ${showTvOverlay ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowTvOverlay((v) => !v);
+                              }}
+                              title="Afficher / masquer le bandeau TV Score + Rotations"
+                              style={{ padding: '2px 7px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Tv size={11} /> TV
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-xs ${calibMode === 'calibrating' ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (calibMode === 'calibrating') {
+                                  setCalibMode(courtCorners?.length === 4 ? 'active' : false);
+                                } else {
+                                  setCalibMode('calibrating');
+                                }
+                              }}
+                              title={calibMode === 'calibrating' ? 'Annuler la calibration' : 'Calibrer les 4 coins du terrain sur la vidéo pour cliquer les zones'}
+                              style={{ padding: '2px 7px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Crosshair size={11} />
+                              {calibMode === 'calibrating' ? 'Annuler coins' : '4 coins'}
+                            </button>
+                          </div>
+                        }
                       >
-                        <Save size={13} /> {finalizing ? 'Finalisation…' : 'Finaliser l’enregistrement'}
-                      </button>
-                      {replayVideoId && (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          onClick={() => navigate(`/datavolley/${replayVideoId}`)}
-                          title="Ouvrir la vidéo de replay finalisée dans Data Volley (codage, séquences, rapports)"
-                        >
-                          <ArrowRight size={13} /> Ouvrir dans Data Volley
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <div className="dv-canvas" ref={setCanvasEl} style={{ minHeight: canvasHeight, minWidth: canvasWidth ? `${canvasWidth}px` : undefined }}>
+                        <LiveCameraPanel
+                          bindVideo={bindCameraVideo}
+                          active={camera.active}
+                          delay={camera.delay}
+                          canChangeDelay={isOwner}
+                          onDelayChange={changeCameraDelay}
+                          canStartLocal={!isViewer}
+                          localActive={localCapturing}
+                          cameraBusy={cameraBusy}
+                          onStartLocal={startCamera}
+                          onStopLocal={stopCamera}
+                          onSeekRelative={handleCameraSeekRelative}
+                          onJumpToLive={handleCameraJumpToLive}
+                          onTogglePause={handleCameraTogglePause}
+                          overlaySlot={liveVideoOverlay}
+                          message={cameraMsg}
+                          extra={camera.active ? <span className="live-camera-lat">lecture {cameraLatency} s</span> : null}
+                        />
+                      </FloatingPanel>
+                    )}
+
                     {/* Zone de code — ancre : déplaçable et redimensionnable, jamais fermée. */}
                     {isOpen('console') && (
                       <FloatingPanel
@@ -1395,6 +2248,8 @@ function LiveDashboard({ user, onLogout }) {
                         icon={Keyboard}
                         rect={rect('console')}
                         onRectChange={(patch) => setRect('console', patch)}
+                        active={activePanelId === 'console'}
+                        onFocus={setActivePanelId}
                         size={canvasSize}
                         closable={false}
                       >
@@ -1410,8 +2265,9 @@ function LiveDashboard({ user, onLogout }) {
                             }}
                             hint={
                               <p className="dv-hint">
-                                Tapez librement puis Entrée (n° joueur sur 1 ou 2 chiffres). Les blocs en{' '}
-                                <span style={{ color: '#4ea1ff' }}>bleu</span> sont hors de votre assignation, ceux en{' '}
+                                Tapez librement puis Entrée (<code>[</code> point {team1}, <code>]</code> point {team2},{' '}
+                                <code>Ctrl+A</code> annuler fin, <code>Ctrl+Shift+C</code> commandes, <code>Alt+1..0</code> macros).
+                                Les blocs en <span style={{ color: '#4ea1ff' }}>bleu</span> sont hors assignation, ceux en{' '}
                                 <span style={{ color: 'var(--dv-err, #ff6b6b)' }}>rouge</span> sont invalides.
                               </p>
                             }
@@ -1445,18 +2301,65 @@ function LiveDashboard({ user, onLogout }) {
                         )}
                       </FloatingPanel>
                     )}
-                    {/* Fenêtre « score ». */}
+
+                    {/* Fenêtre « Score & rotation » façon DataVolley 4 */}
                     {isOpen('score') && (
                       <FloatingPanel
                         id="score"
-                        title="Score"
+                        title="Score &amp; rotation"
                         icon={Trophy}
                         rect={rect('score')}
                         onRectChange={(patch) => setRect('score', patch)}
                         onClose={() => close('score')}
+                        active={activePanelId === 'score'}
+                        onFocus={setActivePanelId}
                         size={canvasSize}
                       >
-                        <MatchBoard state={boardState} team1={session.team1_name} team2={session.team2_name} showScore showCourt={false} />
+                        <DvRotationWindow
+                          state={{ ...boardState, setNumber: boardState.currentSet }}
+                          team1={team1}
+                          team2={team2}
+                          homeConfig={homeConfig}
+                          awayConfig={awayConfig}
+                          events={events}
+                          setsWon1={boardState.setsWon?.team1 || 0}
+                          setsWon2={boardState.setsWon?.team2 || 0}
+                        />
+                        {!isViewer && (
+                          <div className="dv-match-events">
+                            {['home', 'away'].map((teamKey) => {
+                              const label = teamKey === 'away' ? team2 : team1;
+                              const count = timeoutCount(teamKey);
+                              return (
+                                <button
+                                  key={teamKey}
+                                  type="button"
+                                  className={`btn btn-secondary btn-sm${count >= 2 ? ' over-limit' : ''}`}
+                                  onClick={() => addTimeout(teamKey)}
+                                  title={`Temps mort ${label} au score en cours (${count}/2 ce set)`}
+                                >
+                                  <Clock size={13} /> Temps mort · {label} ({count}/2)
+                                </button>
+                              );
+                            })}
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                setSubTeam('home');
+                                setSubOut('');
+                                setSubIn('');
+                                setShowSub(true);
+                              }}
+                              title="Enregistrer un remplacement (entrant / sortant)"
+                            >
+                              <ArrowDownUp size={13} /> Remplacement
+                            </button>
+                            <span className="dv-hint">
+                              Set {matchState.currentSet} : {substitutionCount} remplacement(s)
+                            </span>
+                          </div>
+                        )}
                       </FloatingPanel>
                     )}
 
@@ -1470,12 +2373,14 @@ function LiveDashboard({ user, onLogout }) {
                         rect={rect('court')}
                         onRectChange={(patch) => setRect('court', patch)}
                         onClose={() => close('court')}
+                        active={activePanelId === 'court'}
+                        onFocus={setActivePanelId}
                         size={canvasSize}
                       >
                         <MatchBoard
                           state={boardState}
-                          team1={session.team1_name}
-                          team2={session.team2_name}
+                          team1={team1}
+                          team2={team2}
                           homeConfig={homeConfig}
                           awayConfig={awayConfig}
                           showScore={false}
@@ -1486,7 +2391,94 @@ function LiveDashboard({ user, onLogout }) {
                       </FloatingPanel>
                     )}
 
-                    {/* Fenêtre « actions codées ». */}
+                    {/* Fenêtre « positions » : rotation rapide (+1 / -1) et position du passeur */}
+                    {isOpen('positions') && (
+                      <FloatingPanel
+                        id="positions"
+                        title="Positions"
+                        icon={Users}
+                        rect={rect('positions')}
+                        onRectChange={(patch) => setRect('positions', patch)}
+                        onClose={() => close('positions')}
+                        active={activePanelId === 'positions'}
+                        onFocus={setActivePanelId}
+                        size={canvasSize}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                          <RotationBadge label={team1} pos={matchState.homeSetterPos} onRotate={(d) => rotateTeam('home', d)} />
+                          <RotationBadge label={team2} pos={matchState.awaySetterPos} onRotate={(d) => rotateTeam('away', d)} />
+                        </div>
+                        <SetterRow label={team1} serving={matchState.server === 'team1'} pos={matchState.homeSetterPos} onChange={(p) => setSetterPos('home', p)} />
+                        <SetterRow label={team2} serving={matchState.server === 'team2'} pos={matchState.awaySetterPos} onChange={(p) => setSetterPos('away', p)} />
+                      </FloatingPanel>
+                    )}
+
+                    {/* Fenêtre « direction d'attaque » — clic départ, clic arrivée */}
+                    {isOpen('direction') && (
+                      <FloatingPanel
+                        id="direction"
+                        title="Direction d’attaque"
+                        icon={Target}
+                        rect={rect('direction')}
+                        onRectChange={(patch) => setRect('direction', patch)}
+                        onClose={() => close('direction')}
+                        active={activePanelId === 'direction'}
+                        onFocus={setActivePanelId}
+                        size={canvasSize}
+                      >
+                        {directionTarget ? (
+                          <>
+                            <div className="dvc-direction-head">
+                              <code>{directionTarget.code}</code> · set {setOfAction(directionTarget) ?? '—'} ·{' '}
+                              {elapsed(directionTarget)}
+                            </div>
+                            <label className="adc-picker">
+                              <span>Attaque</span>
+                              <select
+                                value={directionTarget.id || ''}
+                                onChange={(e) => setDirectionId(e.target.value ? Number(e.target.value) : null)}
+                              >
+                                {!attackOptions.some((a) => a.id === directionTarget.id) && (
+                                  <option value={directionTarget.id}>{directionTarget.code}</option>
+                                )}
+                                {attackOptions.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.code} · n°{String(a.player_number || 0).padStart(2, '0')} · {elapsed(a)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <AttackDirectionCourt
+                              key={directionTarget.id}
+                              side={directionTarget.team === 'away' ? 'away' : 'home'}
+                              startZone={directionTarget.start_zone}
+                              endZone={directionTarget.end_zone}
+                              startSubzone={directionTarget.start_subzone}
+                              endSubzone={directionTarget.end_subzone}
+                              startX={directionTarget.start_x}
+                              startY={directionTarget.start_y}
+                              midX={directionTarget.mid_x}
+                              midY={directionTarget.mid_y}
+                              endX={directionTarget.end_x}
+                              endY={directionTarget.end_y}
+                              history={directionHistory}
+                              playerLabel={`n°${String(directionTarget.player_number || 0).padStart(2, '0')}`}
+                              teamName={directionTeam}
+                              opponentName={directionOpponent}
+                              disabled={isViewer}
+                              onChange={(payload) => setDirection(directionTarget, payload.start, payload.end, payload)}
+                            />
+                          </>
+                        ) : (
+                          <p className="dv-hint">
+                            Codez d’abord une attaque (<code>A</code>) : sa direction se trace ici, d’un clic de départ puis
+                            d’un clic d’arrivée.
+                          </p>
+                        )}
+                      </FloatingPanel>
+                    )}
+
+                    {/* Fenêtre « actions codées » avec contrôle de cohérence & double-clic d'édition */}
                     {isOpen('actions') && (
                       <FloatingPanel
                         id="actions"
@@ -1495,9 +2487,22 @@ function LiveDashboard({ user, onLogout }) {
                         rect={rect('actions')}
                         onRectChange={(patch) => setRect('actions', patch)}
                         onClose={() => close('actions')}
+                        active={activePanelId === 'actions'}
+                        onFocus={setActivePanelId}
                         size={canvasSize}
                       >
-                        <DvCodeList rallies={rallies} mode='saisie' matchState={matchState} onSeek={(a) => setZoneActionId(a.id)} />
+                        <DvCodeList
+                          rallies={rallies}
+                          mode="saisie"
+                          matchState={matchState}
+                          issues={issues}
+                          actionSet={setOfAction}
+                          autoScroll
+                          directionMissing={attacksWithoutDirection(actions).length}
+                          onDirectionMissing={goToAttackWithoutDirection}
+                          onSeek={(a) => setZoneActionId(a.id)}
+                          onEditCode={!isViewer ? editActionCode : undefined}
+                        />
                       </FloatingPanel>
                     )}
 
@@ -1510,9 +2515,11 @@ function LiveDashboard({ user, onLogout }) {
                         rect={rect('shortcuts')}
                         onRectChange={(patch) => setRect('shortcuts', patch)}
                         onClose={() => close('shortcuts')}
+                        active={activePanelId === 'shortcuts'}
+                        onFocus={setActivePanelId}
                         size={canvasSize}
                       >
-                        <VideoShortcuts coding video={false} />
+                        <VideoShortcuts coding video />
                       </FloatingPanel>
                     )}
                     {/* Fenêtres d'aide — Mode Aide : pédagogique uniquement. */}
@@ -1524,6 +2531,8 @@ function LiveDashboard({ user, onLogout }) {
                         rect={rect('aide')}
                         onRectChange={(patch) => setRect('aide', patch)}
                         onClose={() => close('aide')}
+                        active={activePanelId === 'aide'}
+                        onFocus={setActivePanelId}
                         size={canvasSize}
                       >
                         <DvSyntaxHelp />
@@ -1538,6 +2547,8 @@ function LiveDashboard({ user, onLogout }) {
                         rect={rect('keypad')}
                         onRectChange={(patch) => setRect('keypad', patch)}
                         onClose={() => close('keypad')}
+                        active={activePanelId === 'keypad'}
+                        onFocus={setActivePanelId}
                         size={canvasSize}
                       >
                         <DvKeyPad
@@ -1561,9 +2572,50 @@ function LiveDashboard({ user, onLogout }) {
                         />
                       </FloatingPanel>
                     )}
-                  </div>
-                </motion.div>
+              </div>
+            </>
+          ) : (
+            <div className="dv-live-body">
+              {flash && (
+                <div className={`dv-flash ${flash.ok ? 'ok' : 'err'}`}>{flash.text}</div>
               )}
+              <AnimatePresence mode="wait">
+                {tab === 'banc' && (
+                  <motion.div key="banc" className="dv-panel" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
+                    <LiveCoachTablet
+                      team1={team1}
+                      team2={team2}
+                      boardState={boardState}
+                      scouting={scouting}
+                      actions={actions}
+                      rallies={rallies}
+                      setups={setups}
+                      setterNumbers={setterNumbers}
+                      homeConfig={homeConfig}
+                      awayConfig={awayConfig}
+                      videoSlot={
+                        <LiveCameraPanel
+                          compact
+                          bindVideo={bindCameraVideo}
+                          active={camera.active}
+                          delay={camera.delay}
+                          canChangeDelay={isOwner}
+                          onDelayChange={changeCameraDelay}
+                          canStartLocal={!isViewer}
+                          localActive={localCapturing}
+                          cameraBusy={cameraBusy}
+                          onStartLocal={startCamera}
+                          onStopLocal={stopCamera}
+                          onSeekRelative={handleCameraSeekRelative}
+                          onJumpToLive={handleCameraJumpToLive}
+                          onTogglePause={handleCameraTogglePause}
+                          message={cameraMsg}
+                          extra={camera.active ? <span className="live-camera-lat">lecture {cameraLatency} s</span> : null}
+                        />
+                      }
+                    />
+                  </motion.div>
+                )}
 
               {tab === 'sequences' && (
                 <motion.div key="sequences" className="dv-panel" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
@@ -1672,12 +2724,12 @@ function LiveDashboard({ user, onLogout }) {
                       ))}
                     </div>
                     <div className="btn-group-horizontal">
-                      <button type="button" className={`btn-choice ${distTeam === 'home' ? 'active team1' : ''}`} onClick={() => setDistTeam('home')}><House size={13} /> {session.team1_name}</button>
-                      <button type="button" className={`btn-choice ${distTeam === 'away' ? 'active team2' : ''}`} onClick={() => setDistTeam('away')}><Plane size={13} /> {session.team2_name}</button>
+                      <button type="button" className={`btn-choice ${distTeam === 'home' ? 'active team1' : ''}`} onClick={() => setDistTeam('home')}><House size={13} /> {team1}</button>
+                      <button type="button" className={`btn-choice ${distTeam === 'away' ? 'active team2' : ''}`} onClick={() => setDistTeam('away')}><Plane size={13} /> {team2}</button>
                     </div>
                   </div>
                   <div className="dv-stat-team">
-                    <h5>{distTeam === 'home' ? session.team1_name : session.team2_name}{distPos !== 'Total' ? ` — passeur en ${distPos}` : ''}</h5>
+                    <h5>{distTeam === 'home' ? team1 : team2}{distPos !== 'Total' ? ` — passeur en ${distPos}` : ''}</h5>
                     <DistributionCourt distribution={setterDist[distTeam]?.[distPos]} />
                   </div>
                 </motion.div>
@@ -1686,24 +2738,42 @@ function LiveDashboard({ user, onLogout }) {
                 <motion.div key="parametres" className="dv-panel" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
                   <h4><Settings size={14} /> Paramètres</h4>
 
+                  <h5 style={{ marginTop: 12 }}>Disposition de l’écran de saisie</h5>
+                  <p className="dv-hint">
+                    <strong>Disposition DataVolley</strong> range les fenêtres comme le logiciel de référence :
+                    vidéo en haut à gauche, score et terrain en dessous, zone de code en bas, liste des codes à
+                    droite. <strong>Disposition libre</strong> laisse tout en place pour organiser l’écran à votre
+                    façon (chaque fenêtre se déplace par sa barre de titre et se redimensionne par ses bords). Les
+                    profils de disposition enregistrés dans le menu <strong>Fenêtres</strong> sont partagés entre le
+                    mode DataVolley et le mode en direct.
+                  </p>
+                  <div className="dv-panels-actions">
+                    <button type="button" className="btn btn-primary btn-sm" onClick={applyDvLayout}>
+                      <Grid3x3 size={13} /> Disposition DataVolley
+                    </button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={applyFreeLayout}>
+                      Disposition libre
+                    </button>
+                  </div>
+
                   <h5 style={{ marginTop: 12 }}>Raccourcis clavier</h5>
-                  <ShortcutSettings shortcuts={shortcuts} onChange={setShortcuts} video={false} />
+                  <ShortcutSettings shortcuts={shortcuts} onChange={setShortcuts} video />
 
                   <h5 style={{ marginTop: 20 }}>Fenêtres de codage</h5>
                   <p className="dv-hint">
-                    Chaque fenêtre se déplace par sa barre de titre, se redimensionne par ses bords et se ferme par sa
-                    croix — sauf la <strong>zone de code</strong>, toujours affichée. La disposition est mémorisée sur cet
-                    appareil.
+                    Chaque fenêtre se déplace par sa barre de titre, se redimensionne par ses bords (droit, bas, coin) et
+                    se ferme par sa croix — sauf la <strong>vidéo</strong> et la <strong>zone de code</strong>, qui restent
+                    toujours affichées. La disposition est mémorisée sur cet appareil.
                   </p>
                   <div className="dv-panels-actions">
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMany(['score', 'court', 'actions', 'shortcuts', 'aide', 'keypad'], true)}>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMany(['score', 'court', 'positions', 'actions', 'direction', 'shortcuts', 'aide', 'keypad'], true)}>
                       Tout afficher
                     </button>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMany(['score', 'court', 'actions', 'shortcuts', 'aide', 'keypad'], false)}>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMany(['score', 'court', 'positions', 'actions', 'direction', 'shortcuts', 'aide', 'keypad'], false)}>
                       Tout masquer
                     </button>
                     <button type="button" className="btn btn-primary btn-sm" onClick={resetPanels}>
-                      Réinitialiser la disposition
+                      <RotateCcw size={13} /> Réinitialiser la disposition
                     </button>
                   </div>
 
@@ -1803,10 +2873,111 @@ function LiveDashboard({ user, onLogout }) {
                   )}
                 </motion.div>
               )}
-            </AnimatePresence>
-          </div>
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Fenêtre de commandes DataVolley (Ctrl+Shift+C) : temps morts, remplacements, sanctions, code libre */}
+      <AnimatePresence>
+        {showCommand && (
+          <DvCommandWindow
+            open={showCommand}
+            onClose={() => setShowCommand(false)}
+            onSubmit={submitCommand}
+            team1={team1}
+            team2={team2}
+            disabled={isViewer}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Modale Remplacement : joueur sortant → joueur entrant */}
+      <AnimatePresence>
+        {showSub && (
+          <motion.div
+            className="modal-overlay"
+            onClick={() => setShowSub(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="modal dv-sub-modal"
+              onClick={(event) => event.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+            >
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ArrowDownUp size={18} /> Remplacement
+              </h2>
+              <p className="dv-hint">
+                Enregistré au point en cours du set {matchState.currentSet} ({matchState.score.team1}-{matchState.score.team2}) :
+                le joueur entrant prend le poste du sortant pour la suite du set. Le libéro entre automatiquement à
+                l’arrière : aucun remplacement à saisir pour lui.
+              </p>
+
+              <div className="form-group">
+                <label>Équipe</label>
+                <select
+                  value={subTeam}
+                  onChange={(event) => {
+                    setSubTeam(event.target.value);
+                    setSubOut('');
+                    setSubIn('');
+                  }}
+                >
+                  <option value="home">{team1}</option>
+                  <option value="away">{team2}</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Joueur sortant (sur le terrain)</label>
+                <select value={subOut} onChange={(event) => setSubOut(event.target.value)}>
+                  <option value="">— choisir —</option>
+                  {onCourtPlayers(subTeam).map((p) => (
+                    <option key={p.number} value={p.number}>
+                      n°{p.number}
+                      {p.name ? ` — ${p.name}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Joueur entrant (remplaçant)</label>
+                <select value={subIn} onChange={(event) => setSubIn(event.target.value)}>
+                  <option value="">— choisir —</option>
+                  {benchPlayers(subTeam).map((p) => (
+                    <option key={p.number} value={p.number}>
+                      n°{p.number}
+                      {p.name ? ` — ${p.name}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {benchPlayers(subTeam).length === 0 && (
+                <p className="dv-hint">
+                  Aucun remplaçant disponible : complétez l’effectif et le six de départ dans « Six &amp; rôles ».
+                </p>
+              )}
+
+              <div style={{ display: 'flex', gap: 12, marginTop: 14 }}>
+                <button className="btn btn-primary" onClick={confirmSubstitution} disabled={savingEvent}>
+                  {savingEvent ? 'Enregistrement…' : 'Enregistrer le remplacement'}
+                </button>
+                <button className="btn btn-secondary" onClick={() => setShowSub(false)}>
+                  Annuler
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showTeams && (
@@ -1823,23 +2994,23 @@ function LiveDashboard({ user, onLogout }) {
               <div className="form-group">
                 <label>Premier serveur (set {editSet})</label>
                 <div className="btn-group-horizontal">
-                  <button type="button" className={`btn-choice ${editFirstServer === 'team1' ? 'active team1' : ''}`} onClick={() => setEditFirstServer('team1')}>{session.team1_name}</button>
-                  <button type="button" className={`btn-choice ${editFirstServer === 'team2' ? 'active team2' : ''}`} onClick={() => setEditFirstServer('team2')}>{session.team2_name}</button>
+                  <button type="button" className={`btn-choice ${editFirstServer === 'team1' ? 'active team1' : ''}`} onClick={() => setEditFirstServer('team1')}>{team1}</button>
+                  <button type="button" className={`btn-choice ${editFirstServer === 'team2' ? 'active team2' : ''}`} onClick={() => setEditFirstServer('team2')}>{team2}</button>
                 </div>
               </div>
 
-              <SetterPositionPicker title={session.team1_name} value={editHomeSetterPos} onChange={(p) => setEditHomeSetterPos(p)} />
-              <SetterPositionPicker title={session.team2_name} value={editAwaySetterPos} onChange={(p) => setEditAwaySetterPos(p)} />
+              <SetterPositionPicker title={team1} value={editHomeSetterPos} onChange={(p) => setEditHomeSetterPos(p)} />
+              <SetterPositionPicker title={team2} value={editAwaySetterPos} onChange={(p) => setEditAwaySetterPos(p)} />
 
               <LineupEditor
-                title={session.team1_name}
+                title={team1}
                 lineup={editHomeLineup || emptyLineup()}
                 config={editHomeConfig}
                 onLineupChange={setEditHomeLineup}
                 onConfigChange={setEditHomeConfig}
               />
               <LineupEditor
-                title={session.team2_name}
+                title={team2}
                 lineup={editAwayLineup || emptyLineup()}
                 config={editAwayConfig}
                 onLineupChange={setEditAwayLineup}
@@ -1885,4 +3056,3 @@ function LiveDashboard({ user, onLogout }) {
 }
 
 export default LiveDashboard;
-

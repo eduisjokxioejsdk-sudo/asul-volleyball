@@ -19,6 +19,9 @@ const proxyDir = path.join(uploadsDir, 'trimmed');
 
 const router = express.Router();
 
+const EVENT_KINDS = ['timeout', 'substitution', 'note', 'sanction', 'delay', 'challenge', 'point_adjust'];
+const EVENT_TEAMS = ['home', 'away'];
+
 // --- Helpers ---------------------------------------------------------------
 
 function generateJoinCode() {
@@ -40,6 +43,21 @@ function isValidCode(code) {
 function safeParse(str) {
   if (!str) return null;
   try { return JSON.parse(str); } catch { return null; }
+}
+
+function safeParsePayload(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function withPayload(row) {
+  return row ? { ...row, payload: safeParsePayload(row.payload) } : row;
 }
 
 function loadSession(sessionId, res, callback) {
@@ -87,7 +105,16 @@ function loadSessionState(sessionId, res, callback) {
           [sessionId],
           (err, actions) => {
             if (err) return res.status(500).json({ error: 'Database error' });
-            callback({ session, members, actions });
+            db.all(
+              `SELECT * FROM live_events
+                WHERE session_id = ?
+                ORDER BY COALESCE(set_number, 1) ASC, COALESCE(point_number, 0) ASC, id ASC`,
+              [sessionId],
+              (errEv, eventRows) => {
+                const events = !errEv && Array.isArray(eventRows) ? eventRows.map(withPayload) : [];
+                callback({ session, members, actions, events });
+              }
+            );
           }
         );
       }
@@ -171,16 +198,17 @@ router.get('/trash', authenticateToken, (req, res) => {
   );
 });
 
-// État complet d'une session (session + membres + actions).
+// État complet d'une session (session + membres + actions + événements).
 router.get('/:sessionId', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, (s) => {
-      loadSessionState(s.id, res, ({ session: full, members, actions }) => {
+      loadSessionState(s.id, res, ({ session: full, members, actions, events }) => {
         const me = members.find((m) => m.user_id === req.user.id) || null;
         res.json({
           session: full,
           members,
           actions,
+          events,
           me,
           isOwner: full.owner_user_id === req.user.id,
         });
@@ -283,6 +311,20 @@ router.post('/:sessionId/finish', authenticateToken, (req, res) => {
   });
 });
 
+// Rouvrir un match terminé (propriétaire uniquement).
+router.post('/:sessionId/reopen', authenticateToken, (req, res) => {
+  loadSession(req.params.sessionId, res, (session) => {
+    if (session.owner_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Réservé au propriétaire' });
+    }
+    db.run("UPDATE live_sessions SET status = 'active' WHERE id = ?", [session.id], (err) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      emitToSession(session.id, 'session:update', {});
+      res.json({ message: 'Match rouvert' });
+    });
+  });
+});
+
 // Mettre un match à la corbeille (soft delete, propriétaire uniquement).
 router.post('/:sessionId/trash', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
@@ -327,6 +369,7 @@ router.delete('/:sessionId', authenticateToken, (req, res) => {
     }
     db.serialize(() => {
       db.run('DELETE FROM live_actions WHERE session_id = ?', [session.id]);
+      db.run('DELETE FROM live_events WHERE session_id = ?', [session.id]);
       db.run('DELETE FROM live_members WHERE session_id = ?', [session.id]);
       db.run('DELETE FROM set_setups WHERE match_key = ?', ['session:' + session.id]);
       db.run('DELETE FROM live_sessions WHERE id = ?', [session.id], (err) => {
@@ -441,7 +484,21 @@ router.put('/:sessionId/members/:memberId', authenticateToken, (req, res) => {
 // Une formule combinée (`a04SM.06#`) crée DEUX actions : le service puis la
 // réception adverse, avec la même estampille temporelle.
 router.post('/:sessionId/actions', authenticateToken, (req, res) => {
-  const { code, effective_time, system_time, assigned, attack_zone, set_number } = req.body || {};
+  const {
+    code,
+    effective_time,
+    system_time,
+    assigned,
+    attack_zone,
+    set_number,
+    start_x,
+    start_y,
+    mid_x,
+    mid_y,
+    end_x,
+    end_y,
+    is_auto,
+  } = req.body || {};
   if (!isValidCode(code)) {
     return res.status(400).json({ error: 'Code invalide' });
   }
@@ -452,7 +509,7 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
       const eff = typeof effective_time === 'number' && !Number.isNaN(effective_time)
         ? effective_time
         : nowSec;
-      const sys = typeof system_time === 'number' ? system_time : Math.floor(nowSec);
+      const sys = typeof system_time === 'number' ? Math.floor(system_time) : Math.floor(nowSec);
       const codes = dvCode.expandSequence(code);
       const myMember = member && member.user_id === req.user.id ? member : null;
 
@@ -466,6 +523,7 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
           // Numéro de set (1 par défaut) : indispensable pour retrouver les
           // stats par set dans le replay finalisé.
           const setNumber = Number(set_number) > 0 ? Math.round(Number(set_number)) : 1;
+          const autoFlag = is_auto ? 1 : 0;
           const created = [];
           let pending = codes.length;
 
@@ -485,8 +543,9 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
             db.run(
               `INSERT INTO live_actions
                 (session_id, effective_time, seq, member_id, assigned, code, system_time, team, player_number,
-                 action, evaluation, type, start_zone, end_zone, end_subzone, attack_zone, set_number)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 action, evaluation, type, start_zone, end_zone, end_subzone, attack_zone, set_number,
+                 start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 session.id,
                 eff,
@@ -505,6 +564,13 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
                 parts.end_subzone || null,
                 attack_zone ?? parts.start_zone ?? null,
                 setNumber,
+                start_x ?? null,
+                start_y ?? null,
+                mid_x ?? null,
+                mid_y ?? null,
+                end_x ?? null,
+                end_y ?? null,
+                autoFlag,
               ],
               function (err2) {
                 if (err2) return res.status(500).json({ error: 'Failed to save action' });
@@ -518,9 +584,14 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
                   code: one,
                   system_time: sys,
                   attack_zone: attack_zone ?? parts.start_zone ?? null,
-                  // Le set est celui du codage au moment de la saisie : il fait
-                  // foi partout ensuite (replay, rapport, conversion DataVolley).
                   set_number: setNumber,
+                  start_x: start_x ?? null,
+                  start_y: start_y ?? null,
+                  mid_x: mid_x ?? null,
+                  mid_y: mid_y ?? null,
+                  end_x: end_x ?? null,
+                  end_y: end_y ?? null,
+                  is_auto: autoFlag,
                   ...parts,
                 });
                 done();
@@ -533,9 +604,22 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
   });
 });
 
-// Modifier une action (code + effective_time + assigned).
+// Modifier une action (code + effective_time + assigned + coordonnées de direction).
 router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
-  const { code, effective_time, assigned, attack_zone } = req.body || {};
+  const {
+    code,
+    effective_time,
+    assigned,
+    attack_zone,
+    start_x,
+    start_y,
+    mid_x,
+    mid_y,
+    end_x,
+    end_y,
+    start_subzone,
+    end_subzone,
+  } = req.body || {};
   const actionId = Number(req.params.actionId);
 
   loadSession(req.params.sessionId, res, (session) => {
@@ -556,20 +640,46 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
             : (assigned === true || assigned === 1 ? 1 : existing.assigned);
           const newZone = attack_zone !== undefined ? attack_zone : existing.attack_zone;
           const parts = decomposeCode(newCode);
+          const newStartX = start_x !== undefined ? start_x : existing.start_x;
+          const newStartY = start_y !== undefined ? start_y : existing.start_y;
+          const newMidX = mid_x !== undefined ? mid_x : existing.mid_x;
+          const newMidY = mid_y !== undefined ? mid_y : existing.mid_y;
+          const newEndX = end_x !== undefined ? end_x : existing.end_x;
+          const newEndY = end_y !== undefined ? end_y : existing.end_y;
+          const newStartSub = start_subzone !== undefined ? start_subzone : existing.start_subzone;
+          const newEndSub = end_subzone !== undefined ? end_subzone : (parts.end_subzone || existing.end_subzone);
 
           db.run(
             `UPDATE live_actions
                 SET code = ?, effective_time = ?, assigned = ?, team = ?, player_number = ?, action = ?,
-                    evaluation = ?, type = ?, start_zone = ?, end_zone = ?, end_subzone = ?, attack_zone = ?
+                    evaluation = ?, type = ?, start_zone = ?, end_zone = ?, end_subzone = ?, attack_zone = ?,
+                    start_x = ?, start_y = ?, mid_x = ?, mid_y = ?, end_x = ?, end_y = ?
               WHERE id = ?`,
             [
               newCode, newEff, newAssigned, parts.team, parts.player_number, parts.action,
               parts.evaluation, parts.type || null, parts.start_zone || null, parts.end_zone || null,
-              parts.end_subzone || null, newZone ?? parts.start_zone ?? null, actionId,
+              newEndSub || null, newZone ?? parts.start_zone ?? null,
+              newStartX ?? null, newStartY ?? null, newMidX ?? null, newMidY ?? null, newEndX ?? null, newEndY ?? null,
+              actionId,
             ],
             (err2) => {
               if (err2) return res.status(500).json({ error: 'Failed to update action' });
-              const action = { ...existing, code: newCode, effective_time: newEff, assigned: newAssigned, attack_zone: newZone, ...parts };
+              const action = {
+                ...existing,
+                code: newCode,
+                effective_time: newEff,
+                assigned: newAssigned,
+                attack_zone: newZone ?? parts.start_zone ?? null,
+                start_x: newStartX ?? null,
+                start_y: newStartY ?? null,
+                mid_x: newMidX ?? null,
+                mid_y: newMidY ?? null,
+                end_x: newEndX ?? null,
+                end_y: newEndY ?? null,
+                start_subzone: newStartSub ?? null,
+                ...parts,
+                end_subzone: newEndSub || parts.end_subzone || null,
+              };
               emitToSession(session.id, 'action:update', { action });
               res.json({ action });
             }
@@ -592,6 +702,123 @@ router.delete('/:sessionId/actions/:actionId', authenticateToken, (req, res) => 
           if (err) return res.status(500).json({ error: 'Database error' });
           emitToSession(session.id, 'action:delete', { actionId });
           res.json({ message: 'Action supprimée' });
+        }
+      );
+    });
+  });
+});
+
+// --- Événements de match en direct (Temps morts, Remplacements, Sanctions) --
+
+router.get('/:sessionId/events', authenticateToken, (req, res) => {
+  loadSession(req.params.sessionId, res, (session) => {
+    verifyAccess(session, req, res, () => {
+      db.all(
+        `SELECT * FROM live_events
+          WHERE session_id = ?
+          ORDER BY COALESCE(set_number, 1) ASC, COALESCE(point_number, 0) ASC, id ASC`,
+        [session.id],
+        (err, rows) => {
+          if (err) return res.status(500).json({ error: 'Database error' });
+          res.json({ events: (rows || []).map(withPayload) });
+        }
+      );
+    });
+  });
+});
+
+router.post('/:sessionId/events', authenticateToken, (req, res) => {
+  const { kind, set_number, point_number, team, payload } = req.body || {};
+  if (!EVENT_KINDS.includes(kind)) {
+    return res.status(400).json({ error: 'Type d’événement invalide' });
+  }
+  if (team != null && team !== '' && !EVENT_TEAMS.includes(team)) {
+    return res.status(400).json({ error: 'Équipe invalide' });
+  }
+
+  let cleanPayload = {};
+  if (kind === 'substitution') {
+    const out = Number(payload?.out);
+    const inn = Number(payload?.in);
+    if (!Number.isInteger(out) || out <= 0 || !Number.isInteger(inn) || inn <= 0) {
+      return res.status(400).json({ error: 'Remplacement incomplet : joueur sortant et entrant requis.' });
+    }
+    if (out === inn) {
+      return res.status(400).json({ error: 'Le joueur entrant doit être différent du sortant.' });
+    }
+    cleanPayload = { out, in: inn };
+  } else if (kind === 'note') {
+    const text = String(payload?.text || '').trim().slice(0, 5).toUpperCase();
+    if (!text) return res.status(400).json({ error: 'Code libre vide.' });
+    cleanPayload = { text };
+  } else if (kind === 'sanction') {
+    const card = ['Y', 'R', 'E', 'D'].includes(String(payload?.card || '').toUpperCase())
+      ? String(payload.card).toUpperCase()
+      : 'Y';
+    const player = payload?.player != null && payload.player !== '' ? Number(payload.player) : null;
+    cleanPayload = {
+      card,
+      player,
+      reason: String(payload?.reason || '').trim().slice(0, 80),
+      awardOpponentPoint: card === 'R',
+    };
+  } else if (kind === 'delay') {
+    const card = String(payload?.card || 'Y').toUpperCase() === 'R' ? 'R' : 'Y';
+    cleanPayload = {
+      card,
+      reason: String(payload?.reason || 'Retard de jeu').trim().slice(0, 80),
+      awardOpponentPoint: card === 'R',
+    };
+  } else if (kind === 'challenge') {
+    const outcome = ['won', 'lost', 'replay'].includes(String(payload?.outcome || ''))
+      ? String(payload.outcome)
+      : 'won';
+    cleanPayload = {
+      outcome,
+      reason: String(payload?.reason || 'Video Check').trim().slice(0, 80),
+    };
+  } else if (kind === 'point_adjust') {
+    const delta = Number(payload?.delta) || 1;
+    cleanPayload = {
+      delta,
+      reason: String(payload?.reason || 'Décision arbitrale').trim().slice(0, 80),
+    };
+  }
+
+  const setNumber = Number(set_number) > 0 ? Number(set_number) : 1;
+  const pointNumber = Number.isFinite(Number(point_number)) ? Number(point_number) : 0;
+
+  loadSession(req.params.sessionId, res, (session) => {
+    verifyAccess(session, req, res, () => {
+      db.run(
+        `INSERT INTO live_events (session_id, kind, set_number, point_number, team, payload)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [session.id, kind, setNumber, pointNumber, team || null, JSON.stringify(cleanPayload)],
+        function (err) {
+          if (err) return res.status(500).json({ error: 'Failed to save event' });
+          db.get('SELECT * FROM live_events WHERE id = ?', [this.lastID], (err2, row) => {
+            if (err2 || !row) return res.status(500).json({ error: 'Database error' });
+            const event = withPayload(row);
+            emitToSession(session.id, 'event:add', { event });
+            res.status(201).json({ event });
+          });
+        }
+      );
+    });
+  });
+});
+
+router.delete('/:sessionId/events/:eventId', authenticateToken, (req, res) => {
+  const eventId = Number(req.params.eventId);
+  loadSession(req.params.sessionId, res, (session) => {
+    verifyAccess(session, req, res, () => {
+      db.run(
+        'DELETE FROM live_events WHERE id = ? AND session_id = ?',
+        [eventId, session.id],
+        function (err) {
+          if (err) return res.status(500).json({ error: 'Failed to delete event' });
+          emitToSession(session.id, 'event:delete', { eventId });
+          res.json({ message: 'Event deleted', deleted: this.changes });
         }
       );
     });
@@ -745,7 +972,7 @@ router.put('/:sessionId/setups', authenticateToken, (req, res) => {
 // --- Finalisation de l'enregistrement du direct (replay ancré) --------------
 // Transcode la piste enregistrée en MP4 (+ proxy), crée la vidéo, ancre le
 // temps système de la session sur la piste, et recopie les actions codées en
-// live vers les actions de la vidéo (avec leur timecode ancré).
+// live (ainsi que les six de départ et les événements) vers la vidéo.
 router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
   const { sessionId } = req.params;
   loadSession(sessionId, res, (session) => {
@@ -812,6 +1039,28 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
               [videoId, anchorSystemTime]
             );
             db.run('UPDATE live_sessions SET video_id = ? WHERE id = ?', [videoId, sessionId]);
+
+            // Copie les six de départ (set_setups) de la session live vers la vidéo.
+            getSetups(`session:${sessionId}`, (setupErr, sessionSetups) => {
+              if (!setupErr && sessionSetups && Object.keys(sessionSetups).length > 0) {
+                saveSetups(`video:${videoId}`, sessionSetups, () => {});
+              }
+            });
+
+            // Copie les événements du direct (temps morts, remplacements) vers la vidéo.
+            db.all('SELECT * FROM live_events WHERE session_id = ? ORDER BY id ASC', [sessionId], (evErr, evRows) => {
+              if (!evErr && Array.isArray(evRows) && evRows.length > 0) {
+                for (const ev of evRows) {
+                  db.run(
+                    `INSERT INTO volley_events (video_id, kind, set_number, point_number, team, payload)
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [videoId, ev.kind, ev.set_number, ev.point_number, ev.team, ev.payload],
+                    () => {}
+                  );
+                }
+              }
+            });
+
             // La nouvelle vidéo doit apparaître sans rechargement dans le Centre
             // Vidéo et dans la liste Data Volley (et partir vers le cloud si la
             // synchronisation est configurée, comme un upload classique).
@@ -824,22 +1073,26 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
               if (!rows.length) return res.json({ videoId, actionCount: 0 });
               db.run('BEGIN TRANSACTION', () => {
                 const stmt = db.prepare(
-                  `INSERT INTO volley_actions (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation, type, start_zone, end_zone, end_subzone, set_number, note, attack_zone)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                  `INSERT INTO volley_actions (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation, type, start_zone, end_zone, end_subzone, set_number, note, attack_zone, start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                 );
                 stmt.on('error', () => {});
                 rows.forEach((a, i) => {
                   const parts = decomposeCode(a.code);
-                  const timecode = typeof a.system_time === 'number' ? a.system_time - anchorSystemTime : null;
-                  // Le numéro de set saisi pendant le direct est recopié tel quel :
-                  // c'est la référence unique pour regrouper replay et rapports.
+                  // On privilégie effective_time (précis à la fraction de seconde) s'il est disponible, sinon system_time.
+                  const rawTime = typeof a.effective_time === 'number' && a.effective_time > 1e9
+                    ? a.effective_time
+                    : (typeof a.system_time === 'number' ? a.system_time : null);
+                  const timecode = rawTime != null ? Math.max(0, rawTime - anchorSystemTime) : null;
                   const setNumber = Number(a.set_number) > 0 ? Math.round(Number(a.set_number)) : 1;
                   stmt.run(
                     videoId, i, a.code, timecode, a.system_time ?? null,
                     a.team || parts.team, a.player_number ?? parts.player_number, a.action || parts.action,
                     a.evaluation || parts.evaluation, parts.type || null, parts.start_zone || null,
-                    parts.end_zone || null, parts.end_subzone || null, setNumber, null,
-                    a.attack_zone ?? parts.start_zone ?? null
+                    parts.end_zone || null, a.end_subzone || parts.end_subzone || null, setNumber, null,
+                    a.attack_zone ?? parts.start_zone ?? null,
+                    a.start_x ?? null, a.start_y ?? null, a.mid_x ?? null, a.mid_y ?? null,
+                    a.end_x ?? null, a.end_y ?? null, a.is_auto ? 1 : 0
                   );
                 });
                 stmt.finalize(() => db.run('COMMIT', () => {

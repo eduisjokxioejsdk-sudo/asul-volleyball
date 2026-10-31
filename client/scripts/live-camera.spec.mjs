@@ -54,12 +54,18 @@ globalThis.window.MediaRecorder.isTypeSupported = (t) => t.startsWith('video/mp4
 globalThis.window.MediaSource.isTypeSupported = (t) => t.startsWith('video/mp4');
 eq('repli sur le MP4 quand le WebM est absent', pickCameraMimeType(), 'video/mp4;codecs=avc1.42E01E');
 
+// iOS Safari (rôle caméra sans window.MediaSource)
+delete globalThis.window.MediaSource;
+eq('iOS Safari sans MediaSource choisit quand même le format supporté par MediaRecorder', pickCameraMimeType(), 'video/mp4;codecs=avc1.42E01E');
+
 console.log('\n== Contraintes de capture ==');
 const constraints = cameraConstraints();
 check('pas de son', constraints.audio === false);
-check('caméra arrière du téléphone', JSON.stringify(constraints.video.facingMode) === JSON.stringify({ ideal: 'environment' }));
+check('caméra arrière du téléphone par défaut', JSON.stringify(constraints.video.facingMode) === JSON.stringify({ ideal: 'environment' }));
 check('résolution 720p demandée', constraints.video.height.ideal === 720 && constraints.video.width.ideal === 1280);
 check('cadence plafonnée à 30 i/s', constraints.video.frameRate.max === 30);
+const usbConstraints = cameraConstraints('usb-capture-card-01');
+eq('sélection d’une source USB/HDMI par deviceId', usbConstraints.video.deviceId, { exact: 'usb-capture-card-01' });
 
 console.log('\n== Délai : mêmes règles des deux côtés ==');
 eq('même délai par défaut que le serveur', DEFAULT_DELAY_S, serverStream.DEFAULT_DELAY_S);
@@ -146,9 +152,11 @@ console.log('\n== Lecture différée (MediaSource simulé) ==');
 
   const video = {
     currentTime: 0,
+    paused: false,
     playCalled: false,
     src: null,
-    play() { this.playCalled = true; return Promise.resolve(); },
+    play() { this.playCalled = true; this.paused = false; return Promise.resolve(); },
+    pause() { this.paused = true; },
     removeAttribute() { this.src = null; },
     load() {},
   };
@@ -157,11 +165,11 @@ console.log('\n== Lecture différée (MediaSource simulé) ==');
   const player = createCameraPlayer(video, (text, ok) => messages.push({ text, ok }));
 
   // --- Arrivée en cours de match : les morceaux attendent l'en-tête du flux ---
-  player.push(new Uint8Array([1, 2, 3]), 'video/webm;codecs=vp8');
+  player.push(new Uint8Array([1, 2, 3]), 'video/webm;codecs=vp8', 2);
   eq('aucune source tant que l’en-tête manque', FakeMediaSource.instances.length, 0);
   eq('aucun morceau poussé sans en-tête', appended.length, 0);
 
-  player.push(new Uint8Array([4, 5, 6, 7]), 'video/webm;codecs=vp8');
+  player.push(new Uint8Array([4, 5, 6, 7]), 'video/webm;codecs=vp8', 3);
   eq('les morceaux s’accumulent en attendant', appended.length, 0);
 
   // Le serveur renvoie l'en-tête : la lecture peut démarrer.
@@ -174,7 +182,11 @@ console.log('\n== Lecture différée (MediaSource simulé) ==');
   eq('la vidéo est muette (obligatoire pour l’autoplay)', video.muted, true);
   check('une URL d’objet est créée', createdUrls === 1);
 
-  player.push(new Uint8Array([8]), 'video/webm;codecs=vp8');
+  // Si seq=1 arrive une seconde fois (après pushInit), il est dédupliqué
+  player.push(new Uint8Array([9, 9]), 'video/webm;codecs=vp8', 1);
+  eq('le morceau seq=1 déjà reçu par pushInit est dédupliqué', appended, [2, 3, 4]);
+
+  player.push(new Uint8Array([8]), 'video/webm;codecs=vp8', 4);
   eq('les morceaux suivants s’enchaînent', appended, [2, 3, 4, 1]);
   eq('une seule source pour le flux', FakeMediaSource.instances.length, 1);
 
@@ -183,7 +195,7 @@ console.log('\n== Lecture différée (MediaSource simulé) ==');
   sb.ranges = [[0, 0.25], [30, 30.5]];
   video.currentTime = 0.1;
   const gapsBefore = player.gapCount();
-  player.push(new Uint8Array([5]), 'video/webm;codecs=vp8');
+  player.push(new Uint8Array([5]), 'video/webm;codecs=vp8', 5);
   eq('la tête de lecture franchit le trou', video.currentTime, 30);
   eq('le trou est compté', player.gapCount(), gapsBefore + 1);
   eq('le morceau est quand même poussé', appended[appended.length - 1], 1);
@@ -193,30 +205,39 @@ console.log('\n== Lecture différée (MediaSource simulé) ==');
   video.currentTime = 29.3;
   check('retard lu ≈ 1,2 s', Math.abs(player.latency() - 1.2) < 0.05, String(player.latency()));
 
+  // Contrôles DVR : seekRelative, jumpToLive, togglePause
+  check('seekRelative(-5) réussit', player.seekRelative(-5) === true);
+  check('seekRelative(-5) recule de 5s dans le buffer', Math.abs(video.currentTime - 24.3) < 0.05, String(video.currentTime));
+  check('jumpToLive() réussit', player.jumpToLive() === true);
+  check('jumpToLive() ramène près du bord du direct', Math.abs(video.currentTime - 30.35) < 0.05, String(video.currentTime));
+  eq('togglePause() met en pause', player.togglePause(), true);
+  eq('togglePause() relance la lecture', player.togglePause(), false);
+
   // Mémoire bornée : les données déjà vues sont libérées pendant le match.
   const removedBefore = removed.length;
   sb.ranges = [[0, 120]];
   video.currentTime = 100;
-  player.push(new Uint8Array([6]), 'video/webm;codecs=vp8');
+  player.push(new Uint8Array([6]), 'video/webm;codecs=vp8', 6);
   eq('le passé est purgé', removed.length, removedBefore + 1);
   eq('seules les images non vues sont conservées', removed[removed.length - 1], [0, 98]);
   eq('le morceau est tout de même poussé', appended[appended.length - 1], 1);
 
   // Buffer saturé : le morceau fautif est écarté et le lecteur se resynchronise.
   sb.failNext = true;
-  player.push(new Uint8Array([7]), 'video/webm;codecs=vp8');
+  player.push(new Uint8Array([7]), 'video/webm;codecs=vp8', 7);
   eq('un trou est compté', player.gapCount(), gapsBefore + 2);
   eq('le buffer est vidé', removed.length, removedBefore + 2);
-  player.push(new Uint8Array([9]), 'video/webm;codecs=vp8');
+  player.push(new Uint8Array([9]), 'video/webm;codecs=vp8', 8);
   eq('le flux reprend après le trou', appended[appended.length - 1], 1);
 
-  // Nouvelle caméra : on repart de zéro, en-tête compris.
+  // Nouvelle caméra : on repart de zéro, et si seq=1 arrive par push() sans pushInit,
+  // le lecteur démarre automatiquement.
   player.reset();
   check('l’URL de l’ancien flux est libérée', revokedUrls === 1);
   eq('la source est refermée', ms.readyState, 'ended');
-  player.pushInit(new Uint8Array([2, 2]), 'video/webm;codecs=vp8');
-  eq('une nouvelle source est créée', FakeMediaSource.instances.length, 2);
-  eq('le nouvel en-tête est poussé', appended[appended.length - 1], 2);
+  player.push(new Uint8Array([2, 2]), 'video/webm;codecs=vp8', 1);
+  eq('une nouvelle source est créée automatiquement sur seq=1', FakeMediaSource.instances.length, 2);
+  eq('le premier morceau seq=1 est poussé comme en-tête', appended[appended.length - 1], 2);
 
   // Fin du flux.
   player.end();
@@ -224,6 +245,58 @@ console.log('\n== Lecture différée (MediaSource simulé) ==');
   player.destroy();
   eq('l’URL de la nouvelle source est libérée', revokedUrls, 2);
   check('aucun message d’erreur pendant la lecture', messages.filter((m) => !m.ok).length === 0, JSON.stringify(messages));
+}
+
+console.log('\n== MediaSource avec sourceopen asynchrone (comportement réel des navigateurs) ==');
+{
+  const appendedAsync = [];
+  class AsyncMediaSource {
+    constructor() {
+      this.readyState = 'closed';
+      this.listeners = {};
+    }
+    addEventListener(ev, fn) {
+      this.listeners[ev] = fn;
+      // Dans Chrome/Firefox/Edge/Safari, sourceopen est déclenché de façon asynchrone
+      if (ev === 'sourceopen') {
+        setTimeout(() => {
+          this.readyState = 'open';
+          fn();
+        }, 5);
+      }
+    }
+    addSourceBuffer() {
+      return {
+        updating: false,
+        mode: 'segments',
+        buffered: { length: 0, start: () => 0, end: () => 0 },
+        listeners: {},
+        addEventListener(ev, fn) { this.listeners[ev] = fn; },
+        appendBuffer(data) {
+          appendedAsync.push(data.length);
+          if (this.listeners.updateend) this.listeners.updateend();
+        },
+        remove() {},
+      };
+    }
+    endOfStream() { this.readyState = 'ended'; }
+  }
+
+  globalThis.window.MediaSource = AsyncMediaSource;
+  const video = {
+    currentTime: 0,
+    src: null,
+    play() { return Promise.resolve(); },
+    removeAttribute() { this.src = null; },
+    load() {},
+  };
+  const player = createCameraPlayer(video);
+  player.pushInit(new Uint8Array([10, 20, 30]), 'video/webm;codecs=vp8');
+  player.push(new Uint8Array([40, 50]), 'video/webm;codecs=vp8', 2);
+  eq('avant sourceopen : les morceaux sont gardés en file d’attente', appendedAsync.length, 0);
+  await new Promise((r) => setTimeout(r, 20));
+  eq('après sourceopen asynchrone : l’en-tête et le morceau suivant sont bien décodés', appendedAsync, [3, 2]);
+  player.destroy();
 }
 
 console.log('\n== Navigateur sans MediaSource ==');

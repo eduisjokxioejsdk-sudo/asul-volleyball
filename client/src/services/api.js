@@ -207,6 +207,7 @@ export const liveAPI = {
   join: (payload) => api.post('/live/join', payload),
   update: (sessionId, payload) => api.patch(`/live/${sessionId}`, payload),
   finish: (sessionId) => api.post(`/live/${sessionId}/finish`),
+  reopen: (sessionId) => api.post(`/live/${sessionId}/reopen`),
   trash: (sessionId) => api.post(`/live/${sessionId}/trash`),
   restore: (sessionId) => api.post(`/live/${sessionId}/restore`),
   deletePermanently: (sessionId) => api.delete(`/live/${sessionId}`),
@@ -225,6 +226,9 @@ export const liveAPI = {
   saveTeams: (sessionId, payload) => api.put(`/live/${sessionId}/teams`, payload),
   getSetups: (sessionId) => api.get(`/live/${sessionId}/setups`),
   saveSetups: (sessionId, setups) => api.put(`/live/${sessionId}/setups`, { setups }),
+  getEvents: (sessionId) => api.get(`/live/${sessionId}/events`),
+  saveEvent: (sessionId, event) => api.post(`/live/${sessionId}/events`, event),
+  deleteEvent: (sessionId, eventId) => api.delete(`/live/${sessionId}/events/${eventId}`),
   // Enregistrement du direct : finalise la piste en une vidéo de replay ancrée.
   finalizeRecording: (sessionId) => api.post(`/live/${sessionId}/finalize-recording`, {}, { timeout: 0 }),
 };

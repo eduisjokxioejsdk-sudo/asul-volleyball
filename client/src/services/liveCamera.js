@@ -1,12 +1,13 @@
 // ============================================================================
-// Capture caméra du match en direct (téléphone, rôle « caméra »).
+// Capture caméra du match en direct (PC statisticien : webcam USB / carte
+// d'acquisition HDMI / OBS Virtual Camera, ou téléphone avec rôle « caméra »).
 //
-// Le téléphone filme avec sa caméra arrière et envoie la vidéo au serveur par
-// morceaux (`MediaRecorder` → Socket.IO). Le serveur la rediffuse aux autres
-// appareils avec le délai choisi (voir server/src/liveStream.js).
+// La caméra filme et envoie la vidéo au serveur par morceaux (`MediaRecorder`
+// → Socket.IO). Le serveur la rediffuse aux appareils avec le délai choisi
+// (voir server/src/liveStream.js) et l'enregistre pour le replay DataVolley.
 //
 // Aucune dépendance externe : `getUserMedia` et `MediaRecorder` sont des API
-// navigateur standard (Chrome / Firefox / Safari mobiles).
+// navigateur standard (Chrome / Firefox / Safari / Electron).
 // ============================================================================
 
 /** Types MIME essayés, du plus efficace au plus compatible. */
@@ -30,21 +31,37 @@ export function recorderSupports(mimeType) {
 
 /** Vrai si le navigateur sait LIRE ce type dans un MediaSource. */
 export function sourceSupports(mimeType) {
-  if (typeof window === 'undefined' || typeof window.MediaSource === 'undefined') return false;
+  if (typeof window === 'undefined') return false;
+  const MS = window.MediaSource || window.ManagedMediaSource;
+  if (typeof MS === 'undefined') {
+    // Sur certains appareils mobiles (Safari iOS), `window.MediaSource` n'est
+    // pas exposé alors que `MediaRecorder` sait enregistrer en MP4/WebM que les
+    // PC statisticiens savent lire.
+    return false;
+  }
   try {
-    return window.MediaSource.isTypeSupported(mimeType);
+    return MS.isTypeSupported(mimeType);
   } catch {
     return false;
   }
 }
 
 /**
- * Type MIME commun à la capture et à la lecture : le téléphone enregistre et
- * les PCs doivent pouvoir lire le même flux.
+ * Type MIME commun à la capture et à la lecture : la caméra enregistre et
+ * les PCs doivent pouvoir lire le même flux. Sur iOS où `MediaSource` est
+ * absent, on retient le premier format supporté par `MediaRecorder`.
  */
 export function pickCameraMimeType() {
-  const candidates = CAMERA_MIME_CANDIDATES.filter((m) => recorderSupports(m) && sourceSupports(m));
-  return candidates[0] || '';
+  const both = CAMERA_MIME_CANDIDATES.filter((m) => recorderSupports(m) && sourceSupports(m));
+  if (both.length > 0) return both[0];
+  const hasMS =
+    typeof window !== 'undefined' &&
+    typeof (window.MediaSource || window.ManagedMediaSource) !== 'undefined';
+  if (!hasMS) {
+    const recOnly = CAMERA_MIME_CANDIDATES.filter((m) => recorderSupports(m));
+    return recOnly[0] || '';
+  }
+  return '';
 }
 
 /** Vrai si l'appareil peut filmer (contexte sécurisé + API disponibles). */
@@ -53,6 +70,22 @@ export function cameraSupported() {
   const hasApi = !!navigator.mediaDevices?.getUserMedia && typeof window.MediaRecorder !== 'undefined';
   const secure = typeof window !== 'undefined' ? window.isSecureContext !== false : true;
   return hasApi && secure;
+}
+
+/** Liste les caméras vidéo disponibles (webcam USB, carte d'acquisition HDMI, OBS…). */
+export async function listCameraDevices() {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return [];
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((d) => d.kind === 'videoinput')
+      .map((d, i) => ({
+        deviceId: d.deviceId,
+        label: d.label || `Caméra ${i + 1}`,
+      }));
+  } catch {
+    return [];
+  }
 }
 
 /** Intervalle d'envoi des morceaux (ms) : court pour limiter la latence. */
@@ -75,16 +108,21 @@ export function clampDelay(seconds) {
   return Math.max(0, Math.min(60, Math.round(v)));
 }
 
-/** Contraintes vidéo : caméra arrière du téléphone, résolution raisonnable. */
-export function cameraConstraints() {
+/** Contraintes vidéo : caméra arrière du téléphone ou périphérique précis (USB/HDMI/OBS). */
+export function cameraConstraints(deviceId = '') {
+  const video = {
+    facingMode: { ideal: 'environment' },
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    frameRate: { ideal: 25, max: 30 },
+  };
+  if (deviceId && typeof deviceId === 'string') {
+    delete video.facingMode;
+    video.deviceId = { exact: deviceId };
+  }
   return {
     audio: false,
-    video: {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      frameRate: { ideal: 25, max: 30 },
-    },
+    video,
   };
 }
 
@@ -95,18 +133,29 @@ export function cameraConstraints() {
  * @param {Object} options.socket - socket Socket.IO connecté
  * @param {string} options.sessionId
  * @param {number} [options.delay] - délai de rediffusion voulu (secondes)
+ * @param {string} [options.deviceId] - identifiant de caméra (USB / HDMI / OBS)
  * @param {(stream:MediaStream)=>void} [options.onStream] - aperçu local
  * @param {(text:string, ok?:boolean)=>void} [options.onStatus]
- * @returns {Promise<{stop:Function, mimeType:string}>}
+ * @returns {Promise<{stop:Function, mimeType:string, stream:MediaStream}>}
  */
-export async function startCameraCapture({ socket, sessionId, delay, onStream, onStatus } = {}) {
+export async function startCameraCapture({ socket, sessionId, delay, deviceId, onStream, onStatus } = {}) {
   if (!cameraSupported()) {
     throw new Error(
-      'Caméra indisponible : ouvrez la page en HTTPS (ou sur le réseau local) et autorisez la caméra.'
+      'Caméra indisponible : ouvrez la page en HTTPS (ou directement sur le PC hôte) et autorisez la caméra.'
     );
   }
 
-  const stream = await navigator.mediaDevices.getUserMedia(cameraConstraints());
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(cameraConstraints(deviceId));
+  } catch (err) {
+    if (deviceId) {
+      // Repli sur la caméra par défaut si le périphérique choisi n'accepte pas les contraintes.
+      stream = await navigator.mediaDevices.getUserMedia(cameraConstraints());
+    } else {
+      throw err;
+    }
+  }
   if (onStream) onStream(stream);
 
   const mimeType = pickCameraMimeType();
@@ -138,7 +187,7 @@ export async function startCameraCapture({ socket, sessionId, delay, onStream, o
   };
 
   recorder.start(CHUNK_INTERVAL_MS);
-  if (onStatus) onStatus('Caméra en direct : la vidéo arrive sur les autres appareils.', true);
+  if (onStatus) onStatus('Caméra en direct : la vidéo arrive avec le délai choisi.', true);
 
   const stop = () => {
     try {
@@ -151,5 +200,5 @@ export async function startCameraCapture({ socket, sessionId, delay, onStream, o
     if (onStatus) onStatus('Caméra arrêtée.', false);
   };
 
-  return { stop, mimeType: recorder.mimeType || mimeType };
+  return { stop, mimeType: recorder.mimeType || mimeType, stream };
 }

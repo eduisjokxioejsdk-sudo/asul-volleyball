@@ -1,8 +1,22 @@
 {
-  "version": "3.3.1",
+  "version": "3.3.2",
   "releasedAt": "2026-10-31",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.2",
+      "date": "2026-10-31",
+      "title": "Direct : temps morts, remplacements, caméra sur le PC et dispositions partagées",
+      "items": [
+        "Événements du direct : temps morts (avec le compteur 2 par set), remplacements (joueur sortant → entrant) et sanctions sont enregistrés au point en cours du set, avec une fenêtre dédiée et un envoi immédiat aux autres appareils du match",
+        "Fenêtre de commandes rapides (Ctrl+Shift+C) : temps mort, remplacement, sanction ou code libre depuis la zone de codage, sans changer d’écran",
+        "Match terminé : un bouton permet de le rouvrir pour reprendre le codage, et le statut « en cours » est rétabli pour tous les appareils connectés",
+        "Caméra du match sur le PC statisticien : démarrez directement une webcam USB, une carte d’acquisition HDMI (CamLink) ou OBS Virtual Camera depuis le panneau Caméra, choisissez le périphérique ou saisissez l’URL d’une caméra IP, avec les commandes DVR (rembobiner ‑5 s, pause / lecture, avancer +5 s, recoller au direct)",
+        "Lecteur du direct plus robuste : les morceaux vidéo reçus sont mis en attente jusqu’à l’ouverture du tampon de lecture (plus d’erreur au démarrage du flux) et la lecture fonctionne aussi sur les appareils où l’API MediaSource n’est pas exposée (iPhone / iPad)",
+        "Dispositions de fenêtres partagées entre le codage Data Volley et le Direct, avec profils enregistrés ; une ancienne disposition du Direct est reprise automatiquement pour éviter que la vidéo ne recouvre la zone de code",
+        "Trajectoires du direct : le départ, le milieu et l’arrivée d’une action sont désormais enregistrés (coordonnées + sous-zone de départ), pour tracer le geste dans le replay et les bilans"
+      ]
+    },
     {
       "version": "3.3.1",
       "date": "2026-10-31",

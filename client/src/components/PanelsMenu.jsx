@@ -1,23 +1,44 @@
 // ============================================================================
 // Menu « Fenêtres » : ouvrir / fermer chaque fenêtre de la page de codage,
 // tout réafficher, tout masquer (sauf la vidéo et la zone de code) et
-// réinitialiser la disposition.
+// réinitialiser la disposition. Partagé à l'identique entre le mode DataVolley
+// et le mode En Direct (les profils enregistrés dans l'un sont disponibles
+// dans l'autre).
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PANEL_IDS, PANEL_META, isClosable } from '../utils/panelLayout';
 import * as icons from './icons';
-import { Check, LayoutGrid, RotateCcw, Save, Trash, X } from './icons';
+import { Check, Grid3x3, LayoutGrid, RotateCcw, Save, Trash, X } from './icons';
 
 /** Largeur du menu (voir .dv-panels-dropdown) + marge de sécurité. */
 const MENU_WIDTH = 270;
 const MENU_MARGIN = 12;
+const LAST_PROFILE_KEY = 'dv.lastPanelProfileId.v1';
+
+function readLastProfileId() {
+  try {
+    return globalThis.localStorage?.getItem(LAST_PROFILE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function writeLastProfileId(id) {
+  try {
+    if (id) globalThis.localStorage?.setItem(LAST_PROFILE_KEY, String(id));
+    else globalThis.localStorage?.removeItem(LAST_PROFILE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 export default function PanelsMenu({
   layout,
   onToggle,
   onSetMany,
   onReset,
+  onApplyDvLayout,
   compactIds = [],
   profiles = [],
   onSaveProfile,
@@ -28,13 +49,21 @@ export default function PanelsMenu({
   const [open, setOpen] = useState(initialOpen);
   const [openRight, setOpenRight] = useState(false);
   const [profileName, setProfileName] = useState('');
-  const [selectedProfile, setSelectedProfile] = useState('');
+  const [selectedProfile, setSelectedProfile] = useState(() => readLastProfileId());
   const wrapRef = useRef(null);
 
-  // Un profil supprimé (ou remplacé) ne doit pas rester sélectionné.
+  // Un profil supprimé (ou remplacé) ne doit pas rester sélectionné ;
+  // si aucun n'est sélectionné mais qu'un dernier profil utilisé existe, on le reprend.
   useEffect(() => {
-    if (selectedProfile && !(profiles || []).some((p) => p.id === selectedProfile)) {
-      setSelectedProfile('');
+    const list = profiles || [];
+    if (selectedProfile && !list.some((p) => p.id === selectedProfile)) {
+      const fallback = readLastProfileId();
+      setSelectedProfile(list.some((p) => p.id === fallback) ? fallback : '');
+    } else if (!selectedProfile && list.length > 0) {
+      const last = readLastProfileId();
+      if (last && list.some((p) => p.id === last)) {
+        setSelectedProfile(last);
+      }
     }
   }, [profiles, selectedProfile]);
 
@@ -44,17 +73,22 @@ export default function PanelsMenu({
     const saved = onSaveProfile(name);
     if (saved?.id) {
       setSelectedProfile(saved.id);
+      writeLastProfileId(saved.id);
       setProfileName('');
     }
   };
 
   const applyProfile = () => {
-    if (selectedProfile && onApplyProfile) onApplyProfile(selectedProfile);
+    if (selectedProfile && onApplyProfile) {
+      writeLastProfileId(selectedProfile);
+      onApplyProfile(selectedProfile);
+    }
   };
 
   const deleteProfile = () => {
     if (!selectedProfile || !onDeleteProfile) return;
     onDeleteProfile(selectedProfile);
+    writeLastProfileId('');
     setSelectedProfile('');
   };
 
@@ -147,6 +181,16 @@ export default function PanelsMenu({
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => onSetMany(visibleIds, false)}>
               Tout masquer
             </button>
+            {onApplyDvLayout && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={onApplyDvLayout}
+                title="Disposition DataVolley : vidéo en haut à gauche, score et terrain dessous, zone de code en bas, directions et actions à droite"
+              >
+                <Grid3x3 size={13} /> Disposition DataVolley
+              </button>
+            )}
             <button type="button" className="btn btn-secondary btn-sm" onClick={onReset} title="Revenir à la disposition d'origine">
               <RotateCcw size={13} /> Réinitialiser
             </button>
@@ -157,12 +201,16 @@ export default function PanelsMenu({
               <strong>Profils de fenêtres</strong>
               <p className="dv-panels-hint">
                 Enregistrez la disposition actuelle (positions, tailles, fenêtres ouvertes), puis appliquez-la à
-                n’importe quel match. Les profils restent sur ce poste.
+                n’importe quel match (DataVolley ou En Direct). Les profils sont partagés sur ce poste.
               </p>
               <select
                 className="dv-profile-select"
                 value={selectedProfile}
-                onChange={(e) => setSelectedProfile(e.target.value)}
+                onChange={(e) => {
+                  const nextId = e.target.value;
+                  setSelectedProfile(nextId);
+                  if (nextId) writeLastProfileId(nextId);
+                }}
                 aria-label="Profil de fenêtres"
               >
                 <option value="">Choisir un profil…</option>

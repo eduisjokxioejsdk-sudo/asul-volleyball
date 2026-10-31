@@ -11,7 +11,9 @@
 //     du flux : un appareil qui rejoint en cours de match ne peut pas décoder
 //     sans lui. Le serveur le renvoie (`live:video-init`) sur demande ;
 //   • en attendant cet en-tête, les morceaux reçus sont mis de côté au lieu
-//     d'être poussés, sinon le lecteur partirait en erreur.
+//     d'être poussés, sinon le lecteur partirait en erreur ;
+//   • dans un vrai navigateur, `sourceopen` est asynchrone : les morceaux sont
+//     donc placés dans `pending` avant que `sourceopen` ne crée `sourceBuffer`.
 // ============================================================================
 
 /** Données déjà lues à conserver derrière la tête de lecture (secondes). */
@@ -31,24 +33,30 @@ const MAX_WAITING_CHUNKS = 240;
  *
  * @param {HTMLVideoElement} video - élément vidéo (muet, lecture automatique)
  * @param {(text:string, ok?:boolean)=>void} [onStatus]
- * @returns {{pushInit:Function, push:Function, reset:Function, end:Function, destroy:Function, latency:Function}}
+ * @returns {{pushInit:Function, push:Function, reset:Function, end:Function, destroy:Function, latency:Function, seekRelative:Function, jumpToLive:Function, togglePause:Function, isStarted:Function}}
  */
 export function createCameraPlayer(video, onStatus) {
   let mediaSource = null;
   let sourceBuffer = null;
   let objectUrl = null;
-  let pending = []; // morceaux prêts à être poussés (SourceBuffer occupé)
+  let pending = []; // morceaux prêts à être poussés (SourceBuffer occupé ou en ouverture)
   let waiting = []; // morceaux reçus avant l'en-tête du flux
   let mimeType = '';
   let started = false;
   let gapCount = 0;
+  let lastSeq = 0;
+  let userPaused = false;
 
-  const isSupported = () =>
-    typeof window !== 'undefined' && typeof window.MediaSource !== 'undefined';
+  const getMediaSourceCtor = () =>
+    (typeof window !== 'undefined' && (window.MediaSource || window.ManagedMediaSource)) || null;
+
+  const isSupported = () => !!getMediaSourceCtor();
 
   const detach = () => {
     pending = [];
     waiting = [];
+    lastSeq = 0;
+    userPaused = false;
     sourceBuffer = null;
     if (mediaSource && mediaSource.readyState === 'open') {
       try {
@@ -96,6 +104,7 @@ export function createCameraPlayer(video, onStatus) {
   /** La tête de lecture est-elle bloquée derrière un trou du flux ? */
   const skipGap = () => {
     try {
+      if (userPaused) return false;
       const buffered = sourceBuffer.buffered;
       if (buffered.length < 2 || !video) return false;
       const t = video.currentTime || 0;
@@ -123,7 +132,13 @@ export function createCameraPlayer(video, onStatus) {
     skipGap();
 
     const chunk = pending.shift();
-    if (!chunk) return;
+    if (!chunk) {
+      if (video && video.paused && !userPaused && sourceBuffer.buffered?.length) {
+        const p = video.play?.();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      }
+      return;
+    }
     try {
       sourceBuffer.appendBuffer(chunk);
     } catch {
@@ -139,7 +154,8 @@ export function createCameraPlayer(video, onStatus) {
 
   /** Prépare le MediaSource pour un type MIME donné (appelé au 1er morceau). */
   const attach = (type) => {
-    if (!video || !isSupported()) {
+    const MSCtor = getMediaSourceCtor();
+    if (!video || !MSCtor || !isSupported()) {
       if (onStatus) onStatus('Lecture du flux caméra non supportée par ce navigateur.', false);
       return false;
     }
@@ -147,7 +163,7 @@ export function createCameraPlayer(video, onStatus) {
     if (started && mediaSource) return true;
 
     detach();
-    mediaSource = new window.MediaSource();
+    mediaSource = new MSCtor();
     mediaSource.addEventListener('sourceopen', () => {
       if (!mediaSource) return;
       try {
@@ -172,7 +188,7 @@ export function createCameraPlayer(video, onStatus) {
   };
 
   /** Reçoit l'en-tête du flux : sans lui, aucune image ne peut être décodée. */
-  const pushInit = (data, type) => {
+  const pushInit = (data, type, seq = 1) => {
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
     if (!bytes || !bytes.length) return;
     // Nouvelle source : on repart proprement. L'en-tête passe en premier
@@ -180,18 +196,28 @@ export function createCameraPlayer(video, onStatus) {
     const waitingCopy = waiting;
     started = false;
     pending = [];
-    attach(type);
-    if (!sourceBuffer) return;
-    pending = [bytes, ...waitingCopy];
     waiting = [];
+    if (!attach(type)) return;
+    lastSeq = Number(seq) > 0 ? Number(seq) : 1;
+    // Dans un vrai navigateur, `sourceopen` est asynchrone : `sourceBuffer`
+    // n'existe pas encore à cette ligne. En plaçant `bytes` dans `pending`,
+    // `drain()` les consommera dès l'ouverture du `sourceBuffer` (et tout de
+    // suite si `sourceopen` est synchrone).
+    pending.push(bytes, ...waitingCopy);
     drain();
   };
 
   /** Reçoit un morceau du serveur. */
-  const push = (data, type) => {
+  const push = (data, type, seq) => {
     if (!data) return;
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
     if (!started) {
+      // Le tout premier morceau du flux (seq === 1) porte l'en-tête WebM/MP4 :
+      // on démarre la lecture immédiatement sans attendre 240 morceaux.
+      if (seq === 1) {
+        pushInit(bytes, type, 1);
+        return;
+      }
       // Tant que l'en-tête n'est pas arrivé, on met de côté : pousser un
       // morceau sans en-tête mettrait le lecteur en erreur.
       waiting.push(bytes);
@@ -199,13 +225,16 @@ export function createCameraPlayer(video, onStatus) {
         // Repli : si l'en-tête ne vient pas, on tente sans lui.
         const queued = waiting;
         waiting = [];
-        attach(type);
-        if (sourceBuffer) {
-          pending = queued;
+        if (attach(type)) {
+          pending.push(...queued);
           drain();
         }
       }
       return;
+    }
+    if (Number.isFinite(Number(seq)) && Number(seq) > 0) {
+      if (Number(seq) <= lastSeq) return;
+      lastSeq = Number(seq);
     }
     pending.push(bytes);
     drain();
@@ -240,7 +269,64 @@ export function createCameraPlayer(video, onStatus) {
     }
   };
 
-  return { pushInit, push, reset, end, destroy: detach, latency, gapCount: () => gapCount };
+  /** Contrôle DVR : recule ou avance dans la mémoire tampon du direct différé. */
+  const seekRelative = (deltaSeconds) => {
+    try {
+      const buffered = sourceBuffer?.buffered;
+      if (!buffered || !buffered.length || !video) return false;
+      const start = buffered.start(0);
+      const end = buffered.end(buffered.length - 1);
+      const next = Math.max(start, Math.min(end - 0.05, (video.currentTime || 0) + Number(deltaSeconds || 0)));
+      video.currentTime = next;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /** Contrôle DVR : revient au point le plus récent du flux différé. */
+  const jumpToLive = () => {
+    try {
+      const buffered = sourceBuffer?.buffered;
+      if (!buffered || !buffered.length || !video) return false;
+      const end = buffered.end(buffered.length - 1);
+      video.currentTime = Math.max(0, end - 0.15);
+      userPaused = false;
+      const p = video.play?.();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /** Contrôle DVR : pause / reprise sur le flux différé. */
+  const togglePause = () => {
+    if (!video) return false;
+    if (video.paused) {
+      userPaused = false;
+      const p = video.play?.();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+      return false;
+    }
+    userPaused = true;
+    video.pause?.();
+    return true;
+  };
+
+  return {
+    pushInit,
+    push,
+    reset,
+    end,
+    destroy: detach,
+    latency,
+    gapCount: () => gapCount,
+    seekRelative,
+    jumpToLive,
+    togglePause,
+    isStarted: () => started,
+  };
 }
 
 /**

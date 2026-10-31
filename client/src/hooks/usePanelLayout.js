@@ -29,6 +29,12 @@ function loadLayout(storageKey, size, skip = []) {
     const raw = localStorage.getItem(storageKey);
     if (!raw) return base;
     const parsed = JSON.parse(raw);
+    // Migration : si une ancienne session live avait été enregistrée sans la
+    // fenêtre « video » (console en y=0), on repart sur la disposition complète
+    // pour éviter que la vidéo et la zone de code ne se superposent en (0,0).
+    if (!skip.includes('video') && !parsed?.video) {
+      return base;
+    }
     const merged = { ...base };
     for (const id of Object.keys(base)) {
       const saved = parsed?.[id];
@@ -52,7 +58,7 @@ function loadLayout(storageKey, size, skip = []) {
 /**
  * @param {string} storageKey - clé de persistance
  * @param {{width:number,height:number}} size - taille courante du canevas
- * @param {string[]} [skip] - fenêtres absentes de la page (ex. « video » en live)
+ * @param {string[]} [skip] - fenêtres absentes de la page
  */
 export default function usePanelLayout(storageKey, size, skip = []) {
   const sizeRef = useRef(size);

@@ -316,6 +316,21 @@ db.serialize(() => {
 
   db.run('CREATE INDEX IF NOT EXISTS idx_volley_events_video ON volley_events (video_id, set_number, point_number)');
 
+  // Événements de match en direct (temps morts, remplacements, sanctions, arbitrage)
+  db.run(`CREATE TABLE IF NOT EXISTS live_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    set_number INTEGER,
+    point_number INTEGER,
+    team TEXT,
+    payload TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
+  )`);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_live_events_session ON live_events (session_id, set_number, point_number)');
+
   // Attribution de sets (codage collaboratif) : un scout revendique un set d'une
   // vidéo partagée. L'identité du titulaire est embarquée (uuid + nom + email)
   // pour être lisible sur tous les postes, sans table de comptes partagée.
@@ -617,6 +632,7 @@ db.serialize(() => {
     const cols = [
       ['type', 'TEXT'],
       ['start_zone', 'TEXT'],
+      ['start_subzone', 'TEXT'],
       ['end_zone', 'TEXT'],
       ['end_subzone', 'TEXT'],
       ['start_x', 'REAL'],

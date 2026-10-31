@@ -46,6 +46,7 @@ import SetClaimsBar from '../components/SetClaimsBar';
 import usePanelLayout from '../hooks/usePanelLayout';
 import { PANEL_GAP } from '../utils/panelLayout';
 import {
+  PANEL_PROFILES_KEY,
   loadPanelProfiles,
   removePanelProfile,
   savePanelProfile,
@@ -454,11 +455,18 @@ function DataVolleyDashboard({ user, onLogout }) {
   const rect = useCallback((pid) => layout[pid] || { x: 0, y: 0, w: 300, h: 200 }, [layout]);
   const isOpen = useCallback((pid) => !!layout?.[pid]?.open, [layout]);
 
-  // Profils de fenêtres : enregistrés sur le poste, réutilisables sur tous les matchs.
+  // Profils de fenêtres : enregistrés sur le poste, partagés entre DataVolley et le Direct.
   const [panelProfiles, setPanelProfiles] = useState(() => loadPanelProfiles());
   useEffect(() => {
     setPanelProfiles(loadPanelProfiles());
-  }, [id]);
+    const onStorage = (e) => {
+      if (!e.key || e.key === PANEL_PROFILES_KEY) {
+        setPanelProfiles(loadPanelProfiles());
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [id, mode]);
 
   const actionsRef = useRef([]);
   const saveTimer = useRef(null);
@@ -2941,6 +2949,7 @@ function DataVolleyDashboard({ user, onLogout }) {
             onToggle={togglePanelById}
             onSetMany={setMany}
             onReset={resetPanels}
+            onApplyDvLayout={applyDvLayout}
             profiles={panelProfiles}
             onSaveProfile={saveLayoutProfile}
             onApplyProfile={applyLayoutProfile}
