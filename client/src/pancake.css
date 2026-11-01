@@ -642,6 +642,16 @@ kbd, .pk-kbd {
   pointer-events: none;
 }
 
+/* Variante compacte : bannière sans titre ni chapô (accueil), où seuls
+   l'identité, les compteurs et le pancake animé restent. */
+.pk-hero-banner--compact {
+  padding: 20px 32px;
+  gap: 24px;
+}
+@media (max-width: 820px) {
+  .pk-hero-banner--compact { padding: 18px 20px; }
+}
+
 .pk-hero-eyebrow {
   display: inline-flex;
   align-items: center;

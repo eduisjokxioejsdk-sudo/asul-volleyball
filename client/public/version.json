@@ -1,8 +1,18 @@
 {
-  "version": "3.3.3",
+  "version": "3.3.4",
   "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.4",
+      "date": "2026-11-01",
+      "title": "Bannière d’accueil allégée",
+      "items": [
+        "Page d’accueil : le titre « Le futur de la statistique au volley » et le paragraphe de présentation (« Une station d’analyse haute précision inspirée de DataVolley 4… ») sont retirés de la bannière",
+        "La bannière ne conserve que l’identité Pancake Stats, le sous-titre « Suite scouting & vidéo volleyball », les quatre compteurs (matchs vidéo, fiches trajectoires, équipes actives, directs en cours) et le pancake animé",
+        "Bannière plus compacte : espacements réduits (environ un tiers de hauteur en moins), avec un réglage dédié aux petits écrans ; la page Entraînement conserve son titre et sa description"
+      ]
+    },
     {
       "version": "3.3.3",
       "date": "2026-11-01",

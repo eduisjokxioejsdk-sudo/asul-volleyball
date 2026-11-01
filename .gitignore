@@ -19,6 +19,8 @@ client/build/
 *.sqlite3
 jwt-secret.key
 server/jwt-secret.key
+# Configuration de synchronisation locale (contient la clé anon du projet Supabase)
+server/sync.json
 *.db-shm
 *.db-wal
 server/asul.db

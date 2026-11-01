@@ -246,9 +246,9 @@ export default function Dashboard({ user, onLogout }) {
         {/* ================================================================
             1. HERO VITRINE AVEC PANCAKE ANIMÉ
            ================================================================ */}
-        <section className="pk-hero-banner">
+        <section className="pk-hero-banner pk-hero-banner--compact">
           <div style={{ position: 'relative', zIndex: 2 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
               <PancakeLogo size={54} />
               <div>
                 <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.05em', color: '#ffffff', lineHeight: 1.1 }}>
@@ -259,14 +259,6 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
               </div>
             </div>
-            <h1 className="pk-hero-title">
-              Le futur de la <span>statistique au volley</span>.
-            </h1>
-            <p className="pk-hero-lead">
-              Une station d’analyse haute précision inspirée de DataVolley 4. Codez vos matchs en Play-by-Play,
-              cartographiez toutes les trajectoires d’impact et filtrez chaque séquence vidéo par équipe, joueur et
-              qualité d’évaluation.
-            </p>
 
             <div className="pk-hero-metrics">
               <div className="pk-hero-metric">
