@@ -14,6 +14,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronsLeft, ChevronsRight, Clock, Pause, Play, Repeat, Trash } from './icons';
 import { playlistsAPI, videosAPI } from '../services/api';
 import { formatTimecode, getAdaptiveMargins } from '../utils/datavolley';
+import SmartVideoPlayer from './SmartVideoPlayer';
+import { extractYouTubeId } from '../utils/youtube';
 
 export default function PlaylistManagerModal({
   open = true,
@@ -279,6 +281,8 @@ export default function PlaylistManagerModal({
   const items = selectedPlaylist?.items || [];
   const activeClip = items[activeClipIndex] || null;
   const activeClipUrl = activeClip?.filename ? videosAPI.getFileUrl(activeClip.filename) : null;
+  const activeClipYt = activeClip?.youtube_url || null;
+  const hasPlayableClip = Boolean(activeClipUrl || extractYouTubeId(activeClipYt));
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -348,17 +352,20 @@ export default function PlaylistManagerModal({
 
           {/* Colonne droite : lecteur séquentiel + clips de la playlist */}
           <div>
-            {activeClip && activeClipUrl ? (
+            {activeClip && hasPlayableClip ? (
               <div style={{ marginBottom: 14 }}>
-                <video
-                  key={`${activeClip.id}-${activeClip.video_id}`}
+                <SmartVideoPlayer
+                  key={`${activeClip.id}-${activeClip.video_id}-${activeClipYt || activeClipUrl}`}
                   src={activeClipUrl}
+                  youtubeUrl={activeClipYt}
                   controls
                   autoPlay
                   style={{ width: '100%', maxHeight: 340, background: '#000', borderRadius: 8 }}
                   onLoadedMetadata={(e) => {
                     const start = Math.max(0, (Number(activeClip.timecode) || 0) - (Number(activeClip.lead_in) || 3));
-                    e.currentTarget.currentTime = start;
+                    try {
+                      e.currentTarget.currentTime = start;
+                    } catch {}
                   }}
                   onTimeUpdate={(e) => {
                     const end = (Number(activeClip.timecode) || 0) + (Number(activeClip.lead_out) || 4);
@@ -366,7 +373,9 @@ export default function PlaylistManagerModal({
                       if (activeClipIndex + 1 < items.length) {
                         setActiveClipIndex((i) => i + 1);
                       } else {
-                        e.currentTarget.pause();
+                        try {
+                          e.currentTarget.pause();
+                        } catch {}
                       }
                     }
                   }}
@@ -374,6 +383,11 @@ export default function PlaylistManagerModal({
                 <div style={{ fontSize: 12, marginTop: 4, color: 'var(--text-secondary)' }}>
                   Clip {activeClipIndex + 1}/{items.length} · <strong>{activeClip.video_title || 'Match'}</strong> ·{' '}
                   <code>{activeClip.action_code}</code> ({activeClip.note})
+                  {activeClipYt && (
+                    <span style={{ marginLeft: 8, fontSize: 11, color: '#f87171', fontWeight: 600 }}>
+                      ▶ YouTube
+                    </span>
+                  )}
                 </div>
               </div>
             ) : (

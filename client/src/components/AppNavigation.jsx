@@ -112,7 +112,7 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
     <header className={`app-global-nav ${compact ? 'is-compact' : ''}`}>
       <div className="nav-brand-section" onClick={() => navigate('/dashboard')} title="Accueil">
         <span className="brand-logo-glow"><PancakeLogo size={compact ? 24 : 40} /></span>
-        <span className="brand-name">Pancake <b>Stats</b></span>
+        <span className="brand-name">Pancake</span>
       </div>
 
       <nav className="nav-apps-menu">

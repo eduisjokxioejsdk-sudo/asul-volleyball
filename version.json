@@ -1,8 +1,19 @@
 {
-  "version": "3.3.5",
+  "version": "3.3.6",
   "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.6",
+      "date": "2026-11-01",
+      "title": "Barre de navigation : la marque affiche « Pancake » seul",
+      "items": [
+        "Barre de navigation globale : la marque n’affiche plus que « Pancake » — le mot « Stats » est retiré à côté du bouton Hub",
+        "Le reste de la barre est inchangé : logo, onglets (Hub, Data Volley, Multi-Matchs, Trajectoires, Centre Vidéo, Académie) et badges de raccourcis clavier",
+        "Le logo animé, la bannière d’accueil et la page Entraînement conservent leur identité Pancake Stats",
+        "Playlist de rallies : un clip dont la vidéo est un lien YouTube est lu dans le lecteur universel, avec un repère « ▶ YouTube » sous le clip"
+      ]
+    },
     {
       "version": "3.3.5",
       "date": "2026-11-01",
