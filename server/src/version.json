@@ -1,8 +1,20 @@
 {
-  "version": "3.3.9",
+  "version": "3.5.0",
   "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.5.0",
+      "date": "2026-11-01",
+      "title": "Journée du championnat sur la page d’accueil Data Volley",
+      "items": [
+        "Page d’accueil Data Volley : chaque match affiche désormais sa journée de championnat devant son nom, dans un badge « J0 » par défaut",
+        "Journée modifiable sur place : un double-clic sur le badge ouvre un champ de saisie — « 3 » ou « j3 » deviennent « J3 », une saisie vide revient à « J0 » ; Entrée valide, Échap annule et un clic hors du champ enregistre",
+        "Enregistrement immédiat : la journée est écrite avec le match ; si le serveur refuse, l’ancienne valeur est rétablie et un message d’erreur s’affiche",
+        "Journée partagée entre les postes : la valeur est stockée avec le match dans la base locale (colonne « journee », « J0 » pour les matchs déjà créés) et synchronisée par le cloud comme les autres informations du match",
+        "Bouton « + Lien YouTube » retiré de la liste des matchs : le lien YouTube se renseigne à la création du match ; le badge « YouTube partagé » reste affiché pour les matchs qui en possèdent un"
+      ]
+    },
     {
       "version": "3.3.9",
       "date": "2026-11-01",
