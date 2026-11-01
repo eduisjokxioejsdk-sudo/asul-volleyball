@@ -1,8 +1,19 @@
 {
-  "version": "3.3.7",
+  "version": "3.3.8",
   "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.8",
+      "date": "2026-11-01",
+      "title": "Mode En Direct : la même barre vidéo que Data Volley",
+      "items": [
+        "Mode En Direct : la barre située sous la vidéo reprend exactement celle du mode Data Volley — Dessin, TV Score, Grille 3D ON/OFF et Recalibrer 4 coins, dans le même ordre et avec les mêmes libellés",
+        "Dessin sur le direct : le calque d’annotations (trait, flèche, rectangle, ellipse, main levée, texte, couleurs, épaisseurs, annuler, effacer) s’applique désormais au flux caméra, comme sur la vidéo d’un match",
+        "Les boutons « TV » et « 4 coins » quittent l’en-tête du panneau vidéo pour rejoindre la barre sous l’image, avec l’indication de latence de lecture à gauche",
+        "Le reste du panneau caméra est inchangé : DVR (rembobiner ‑5 s, pause / lecture, avancer +5 s, recoller au direct), réglage du délai et choix de la source (webcam USB, carte HDMI, OBS, caméra IP, lien YouTube)"
+      ]
+    },
     {
       "version": "3.3.7",
       "date": "2026-11-01",

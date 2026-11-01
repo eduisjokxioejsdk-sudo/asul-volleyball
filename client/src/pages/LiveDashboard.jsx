@@ -265,6 +265,9 @@ function LiveDashboard({ user, onLogout }) {
   const [showTvOverlay, setShowTvOverlay] = useState(true);
   const [calibMode, setCalibMode] = useState(false); // false | 'calibrating' | 'active'
   const [courtCorners, setCourtCorners] = useState(() => loadCourtCalibration(calibStorageKey));
+  // Dessin sur la vidéo du direct : même calque et mêmes boutons qu'en Data Volley.
+  const [annotOn, setAnnotOn] = useState(false);
+  const [annotations, setAnnotations] = useState([]);
 
   useEffect(() => {
     const saved = loadCourtCalibration(calibStorageKey);
@@ -2225,40 +2228,7 @@ function LiveDashboard({ user, onLogout }) {
                     onFocus={setActivePanelId}
                     size={canvasSize}
                     closable={false}
-                    headerExtra={
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <button
-                              type="button"
-                              className={`btn btn-xs ${showTvOverlay ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShowTvOverlay((v) => !v);
-                              }}
-                              title="Afficher / masquer le bandeau TV Score + Rotations"
-                              style={{ padding: '2px 7px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                            >
-                              <Tv size={11} /> TV
-                            </button>
-                            <button
-                              type="button"
-                              className={`btn btn-xs ${calibMode === 'calibrating' ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (calibMode === 'calibrating') {
-                                  setCalibMode(courtCorners?.length === 4 ? 'active' : false);
-                                } else {
-                                  setCalibMode('calibrating');
-                                }
-                              }}
-                              title={calibMode === 'calibrating' ? 'Annuler la calibration' : 'Calibrer les 4 coins du terrain sur la vidéo pour cliquer les zones'}
-                              style={{ padding: '2px 7px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                            >
-                              <Crosshair size={11} />
-                              {calibMode === 'calibrating' ? 'Annuler coins' : '4 coins'}
-                            </button>
-                          </div>
-                        }
-                      >
+                  >
                         <LiveCameraPanel
                           sessionId={sessionId}
                           bindVideo={bindCameraVideo}
@@ -2275,9 +2245,80 @@ function LiveDashboard({ user, onLogout }) {
                           onJumpToLive={handleCameraJumpToLive}
                           onTogglePause={handleCameraTogglePause}
                           overlaySlot={liveVideoOverlay}
+                          annotations={{ enabled: annotOn, onChange: setAnnotations }}
                           message={cameraMsg}
                           extra={camera.active ? <span className="live-camera-lat">lecture {cameraLatency} s</span> : null}
                         />
+                        {/* Barre sous la vidéo — même disposition et mêmes boutons que le mode Data Volley */}
+                        <div
+                          className="dv-timecode"
+                          style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}
+                        >
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              fontFamily: 'JetBrains Mono, monospace',
+                            }}
+                          >
+                            <Clock size={12} />{' '}
+                            {camera.active
+                              ? `Direct${cameraLatency ? ` · lecture ${cameraLatency} s` : ''}`
+                              : 'Caméra inactive'}
+                          </span>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${annotOn ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => setAnnotOn((v) => !v)}
+                            title={
+                              annotOn
+                                ? 'Quitter le dessin sur la vidéo'
+                                : `Dessiner sur la vidéo${annotations.length ? ` (${annotations.length} tracé(s))` : ''}`
+                            }
+                            style={{ marginLeft: 4 }}
+                          >
+                            <Pencil size={11} /> Dessin
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${showTvOverlay ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => setShowTvOverlay((v) => !v)}
+                            title="Afficher / masquer le bandeau TV Score + Rotations + Code actif"
+                          >
+                            <Tv size={11} /> TV Score
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${calibMode === 'active' ? 'btn-success' : 'btn-secondary'}`}
+                            onClick={() => {
+                              if (calibMode === 'active') {
+                                setCalibMode(false);
+                              } else if (courtCorners?.length === 4) {
+                                setCalibMode('active');
+                              } else {
+                                setCalibMode('calibrating');
+                              }
+                            }}
+                            title={calibMode === 'active' ? 'Masquer la grille 3D' : 'Afficher la grille 3D du terrain'}
+                          >
+                            <Crosshair size={11} /> {calibMode === 'active' ? 'Grille 3D ON' : 'Grille 3D OFF'}
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${calibMode === 'calibrating' ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => {
+                              if (calibMode === 'calibrating') {
+                                setCalibMode(courtCorners?.length === 4 ? 'active' : false);
+                              } else {
+                                setCalibMode('calibrating');
+                              }
+                            }}
+                            title="Redéfinir les 4 coins du terrain sur la vidéo (si la caméra a bougé)"
+                          >
+                            <RotateCcw size={11} /> {calibMode === 'calibrating' ? 'Annuler 4 coins' : 'Recalibrer 4 coins'}
+                          </button>
+                        </div>
                       </FloatingPanel>
                     )}
 

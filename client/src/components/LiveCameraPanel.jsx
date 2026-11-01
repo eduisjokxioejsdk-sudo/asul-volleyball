@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { DELAY_CHOICES, cameraSupported, listCameraDevices } from '../services/liveCamera';
 import { Camera, RefreshCw, RotateCcw, StopCircle, Video } from './icons';
 import SmartVideoPlayer from './SmartVideoPlayer';
+import VideoAnnotationLayer from './VideoAnnotationLayer';
 import { extractYouTubeId } from '../utils/youtube';
 
 /**
@@ -57,6 +58,7 @@ export default function LiveCameraPanel({
   onJumpToLive = null,
   onTogglePause = null,
   overlaySlot = null,
+  annotations = null,
   sessionId = null,
 }) {
   const [devices, setDevices] = useState([]);
@@ -123,6 +125,46 @@ export default function LiveCameraPanel({
 
   const youtubeLiveId = extractYouTubeId(activeIpUrl);
   const isStreaming = active || !!activeIpUrl;
+
+  // Source vidéo principale : flux du téléphone / caméra PC, caméra IP ou lien YouTube.
+  const mainVideo = activeIpUrl && !active ? (
+    youtubeLiveId ? (
+      <SmartVideoPlayer
+        youtubeUrl={activeIpUrl}
+        className="live-camera-video"
+        style={{ width: '100%', height: '100%' }}
+        controls
+        playsInline
+        autoPlay
+      />
+    ) : activeIpUrl.includes('/video') || activeIpUrl.includes('mjpg') || activeIpUrl.includes('mjpeg') ? (
+      <img
+        src={activeIpUrl}
+        alt="Flux caméra IP"
+        className="live-camera-video"
+        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+      />
+    ) : (
+      <video
+        src={activeIpUrl}
+        className="live-camera-video"
+        playsInline
+        muted
+        autoPlay
+        controls
+        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+      />
+    )
+  ) : (
+    <video
+      ref={bindVideo}
+      className="live-camera-video"
+      playsInline
+      muted
+      autoPlay
+      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+    />
+  );
 
   return (
     <div className={`live-camera${compact ? ' compact' : ''}`} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -332,44 +374,16 @@ export default function LiveCameraPanel({
       )}
 
       {/* Conteneur vidéo + incrustation TV Score / Calibration 4 coins */}
-      <div style={{ position: 'relative', flex: 1, minHeight: compact ? 140 : 180, background: '#09090b', overflow: 'hidden', borderRadius: 4 }}>
-        {activeIpUrl && !active ? (
-          youtubeLiveId ? (
-            <SmartVideoPlayer
-              youtubeUrl={activeIpUrl}
-              className="live-camera-video"
-              style={{ width: '100%', height: '100%' }}
-              controls
-              playsInline
-              autoPlay
-            />
-          ) : activeIpUrl.includes('/video') || activeIpUrl.includes('mjpg') || activeIpUrl.includes('mjpeg') ? (
-            <img
-              src={activeIpUrl}
-              alt="Flux caméra IP"
-              className="live-camera-video"
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          ) : (
-            <video
-              src={activeIpUrl}
-              className="live-camera-video"
-              playsInline
-              muted
-              autoPlay
-              controls
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          )
+      <div
+        className="live-camera-stage"
+        style={{ position: 'relative', flex: 1, minHeight: compact ? 140 : 180, background: '#09090b', overflow: 'hidden', borderRadius: 4 }}
+      >
+        {annotations ? (
+          <VideoAnnotationLayer enabled={!!annotations.enabled} onAnnotationsChange={annotations.onChange}>
+            {mainVideo}
+          </VideoAnnotationLayer>
         ) : (
-          <video
-            ref={bindVideo}
-            className="live-camera-video"
-            playsInline
-            muted
-            autoPlay
-            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-          />
+          mainVideo
         )}
         {overlaySlot}
       </div>

@@ -5698,6 +5698,18 @@ body {
   max-height: 34vh;
 }
 
+/* Cadre vidéo du direct : le calque de dessin occupe toute la surface de
+   l'image, comme dans le panneau vidéo du mode Data Volley. */
+.live-camera-stage {
+  display: flex;
+  flex-direction: column;
+}
+.live-camera-stage > .video-annot-layer {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
 .live-camera-msg.err {
   color: var(--danger, #e05252);
 }
