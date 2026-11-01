@@ -2848,9 +2848,9 @@ function DataVolleyDashboard({ user, onLogout }) {
           type="button"
           className={`btn btn-sm ${showTvOverlay ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => setShowTvOverlay((v) => !v)}
-          title="Afficher / masquer le bandeau TV Score + Rotations + Code actif"
+          title="Afficher / masquer le bandeau Score + Rotations + Code actif"
         >
-          <Tv size={11} /> TV Score
+          <Tv size={11} /> Score
         </button>
         <button
           type="button"
@@ -2880,7 +2880,7 @@ function DataVolleyDashboard({ user, onLogout }) {
           }}
           title="Redéfinir les 4 coins du terrain sur la vidéo (si la caméra a bougé)"
         >
-          <RotateCcw size={11} /> {calibMode === 'calibrating' ? 'Annuler 4 coins' : 'Recalibrer 4 coins'}
+          <RotateCcw size={11} /> {calibMode === 'calibrating' ? 'Annuler coins' : 'Recalibrer coins'}
         </button>
         {hasAngle2 && (
           <div className="btn-group-horizontal" style={{ marginLeft: 2 }}>
@@ -2914,22 +2914,6 @@ function DataVolleyDashboard({ user, onLogout }) {
           title="Uploader Caméra 1 et/ou Caméra 2 après coup et régler la synchro multi-angles"
         >
           <Camera size={11} /> {hasAngle2 ? 'Cam 1/2' : '+ Cam 1/2'}
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={() => videoAction('frameBack')}
-          title="Image précédente (-0.04s, touche ,)"
-        >
-          ⏮ -1 img
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={() => videoAction('frameForward')}
-          title="Image suivante (+0.04s, touche .)"
-        >
-          ⏭ +1 img
         </button>
         <select
           className="dvx-input"

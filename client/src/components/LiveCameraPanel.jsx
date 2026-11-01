@@ -7,7 +7,7 @@
 //   avoir besoin d'un second appareil dédié ;
 // - Offre les contrôles DVR en direct : Rembobiner (-5s), Pause/Lecture,
 //   Avancer (+5s) et Recoller au direct différé ;
-// - Peut accueillir en surimpression le bandeau TV Score et la grille 3D
+// - Peut accueillir en surimpression le bandeau Score et la grille 3D
 //   homographique (calibration 4 coins) pour cliquer les zones sur la vidéo.
 // ============================================================================
 
@@ -373,7 +373,7 @@ export default function LiveCameraPanel({
         </div>
       )}
 
-      {/* Conteneur vidéo + incrustation TV Score / Calibration 4 coins */}
+      {/* Conteneur vidéo + incrustation Score / Calibration 4 coins */}
       <div
         className="live-camera-stage"
         style={{ position: 'relative', flex: 1, minHeight: compact ? 140 : 180, background: '#09090b', overflow: 'hidden', borderRadius: 4 }}

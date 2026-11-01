@@ -856,9 +856,9 @@ export default function VideoCenterPage({ user, onLogout }) {
                       type="button"
                       className={`btn btn-sm ${showTvOverlay ? 'btn-primary' : 'btn-secondary'}`}
                       onClick={() => setShowTvOverlay((v) => !v)}
-                      title="Afficher / masquer le bandeau TV Score + Code actif"
+                      title="Afficher / masquer le bandeau Score + Code actif"
                     >
-                      <Tv size={12} /> TV Score
+                      <Tv size={12} /> Score
                     </button>
                     {hasAngle2 && (
                       <div className="btn-group-horizontal">

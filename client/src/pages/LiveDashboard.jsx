@@ -2284,9 +2284,9 @@ function LiveDashboard({ user, onLogout }) {
                             type="button"
                             className={`btn btn-sm ${showTvOverlay ? 'btn-primary' : 'btn-secondary'}`}
                             onClick={() => setShowTvOverlay((v) => !v)}
-                            title="Afficher / masquer le bandeau TV Score + Rotations + Code actif"
+                            title="Afficher / masquer le bandeau Score + Rotations + Code actif"
                           >
-                            <Tv size={11} /> TV Score
+                            <Tv size={11} /> Score
                           </button>
                           <button
                             type="button"
@@ -2316,7 +2316,7 @@ function LiveDashboard({ user, onLogout }) {
                             }}
                             title="Redéfinir les 4 coins du terrain sur la vidéo (si la caméra a bougé)"
                           >
-                            <RotateCcw size={11} /> {calibMode === 'calibrating' ? 'Annuler 4 coins' : 'Recalibrer 4 coins'}
+                            <RotateCcw size={11} /> {calibMode === 'calibrating' ? 'Annuler coins' : 'Recalibrer coins'}
                           </button>
                         </div>
                       </FloatingPanel>
