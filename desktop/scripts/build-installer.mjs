@@ -21,7 +21,7 @@ const ATTEMPTS = 5;
 const MIN_SIZE = 100 * 1024 * 1024; // 100 Mo : un installeur complet pèse ~160 Mo
 
 const version = JSON.parse(fs.readFileSync(path.join(DESKTOP, 'package.json'), 'utf8')).version;
-const target = path.join(DESKTOP, OUT, `ASUL-Setup-${version}.exe`);
+const target = path.join(DESKTOP, OUT, `PancakeStats-Setup-${version}.exe`);
 
 function built() {
   return fs.existsSync(target) && fs.statSync(target).size > MIN_SIZE;

@@ -1,5 +1,5 @@
 ; ============================================================================
-; Script NSIS personnalisé — installeur ASUL
+; Script NSIS personnalisé — installeur Pancake Stats
 ;
 ; AUCUNE action personnalisée n'est nécessaire :
 ;   • la règle de pare-feu du match en direct n'est plus créée ici, mais par

@@ -1849,7 +1849,7 @@ function LiveDashboard({ user, onLogout }) {
         };
       }),
     });
-    downloadTextFile(`match_live_${slug || 'asul'}.dvw`, dvw, 'text/plain;charset=utf-8');
+    downloadTextFile(`match_live_${slug || 'pancake'}.dvw`, dvw, 'text/plain;charset=utf-8');
   };
 
   const tabs = [

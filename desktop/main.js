@@ -1,5 +1,5 @@
 // ============================================================================
-// ASUL — coquille Electron (poste statisticien Windows)
+// Pancake Stats — coquille Electron (poste statisticien Windows)
 //
 // Principe : l'application contient le backend Node complet et le frontend
 // buildé. Au démarrage, l'app lance le serveur (Express + Socket.IO) puis
@@ -22,9 +22,10 @@ const http = require('node:http');
 const net = require('node:net');
 const { spawn, execFileSync } = require('node:child_process');
 
-app.setName('ASUL');
+app.setName('Pancake Stats');
 // Emplacement utilisateur déterministe (identique en développement et après
-// installation) : %APPDATA%\ASUL
+// installation) : %APPDATA%\ASUL — le dossier garde son ancien nom pour que les
+// matchs, vidéos et comptes existants soient retrouvés sans migration.
 app.setPath('userData', path.join(app.getPath('appData'), 'ASUL'));
 
 const USER_DIR = app.getPath('userData');
@@ -262,7 +263,7 @@ function startServer(port) {
     } else if (!mainWindow) {
       setSplashState({
         screen: 'error',
-        message: 'Le serveur ASUL s’est arrêté plusieurs fois.',
+        message: 'Le serveur Pancake Stats s’est arrêté plusieurs fois.',
         detail: tailLogs(),
       });
     }
@@ -389,10 +390,10 @@ function promptInstall(version) {
     buttons: ['Redémarrer et installer', 'Plus tard'],
     defaultId: 0,
     cancelId: 1,
-    title: 'Mise à jour ASUL',
+    title: 'Mise à jour Pancake Stats',
     message: `La version ${version || ''} est prête.`,
     detail:
-      'ASUL va redémarrer pour installer la mise à jour. Vos données, vos vidéos et vos comptes sont conservés.',
+      'Pancake Stats va redémarrer pour installer la mise à jour. Vos données, vos vidéos et vos comptes sont conservés.',
   });
   if (answer === 0) installUpdate();
 }
@@ -404,8 +405,8 @@ function checkForUpdates(manual = false) {
     if (manual) {
       dialog.showMessageBox(mainWindow || undefined, {
         type: 'info',
-        title: 'Mise à jour ASUL',
-        message: `ASUL ${app.getVersion()}`,
+        title: 'Mise à jour Pancake Stats',
+        message: `Pancake Stats ${app.getVersion()}`,
         detail: app.isPackaged
           ? 'Le module de mise à jour n’a pas pu être chargé.'
           : 'La mise à jour automatique agit dans l’application installée (pas en mode développement).',
@@ -437,7 +438,7 @@ function scheduleUpdateChecks() {
   if (updateTimer.unref) updateTimer.unref();
 }
 
-let splashState = { screen: 'loading', message: 'Démarrage d’ASUL…', detail: '' };
+let splashState = { screen: 'loading', message: 'Démarrage de Pancake Stats…', detail: '' };
 
 function setSplashState(state) {
   splashState = { ...splashState, ...state };
@@ -499,7 +500,7 @@ function openMainWindow(url) {
     show: false,
     backgroundColor: '#151311',
     icon: appIcon(),
-    title: 'ASUL — Analyse volleyball',
+    title: 'Pancake Stats — Analyse volleyball',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -575,7 +576,7 @@ async function boot(options = {}) {
     if (!health || health.status !== 'ok') {
       setSplashState({
         screen: 'error',
-        message: `Aucun poste ASUL ne répond sur ${config.host}:${config.port}.`,
+        message: `Aucun poste Pancake Stats ne répond sur ${config.host}:${config.port}.`,
         detail:
           'Vérifiez que le PC hôte est allumé, que l’application y est lancée en mode « Hôte », ' +
           'et que les deux postes sont bien sur le même réseau (Wi-Fi ou partage de connexion).',
@@ -587,7 +588,7 @@ async function boot(options = {}) {
   }
 
   // Mode hôte : ce PC héberge le serveur et les données du match.
-  setSplashState({ screen: 'loading', message: 'Préparation du serveur ASUL…' });
+  setSplashState({ screen: 'loading', message: 'Préparation du serveur Pancake Stats…' });
   try {
     const port = await findFreePort(DEFAULT_CONFIG.port);
     if (port !== config.port) {
@@ -603,7 +604,7 @@ async function boot(options = {}) {
     const ready = await waitForServer(port, 60000, (attempt) => {
       setSplashState({
         screen: 'loading',
-        message: attempt < 3 ? 'Démarrage du serveur ASUL…' : `Le serveur démarre (${attempt})…`,
+        message: attempt < 3 ? 'Démarrage du serveur Pancake Stats…' : `Le serveur démarre (${attempt})…`,
         detail: attempt >= 3 ? tailLogs(3) : '',
       });
     });
@@ -611,7 +612,7 @@ async function boot(options = {}) {
     if (!ready) {
       setSplashState({
         screen: 'error',
-        message: 'Le serveur ASUL n’a pas répondu dans les temps.',
+        message: 'Le serveur Pancake Stats n’a pas répondu dans les temps.',
         detail: tailLogs(10),
       });
       return;
@@ -713,7 +714,7 @@ function offerFirewallRule({ force = false } = {}) {
     if (force) {
       dialog.showMessageBox(mainWindow || undefined, {
         type: 'info',
-        title: 'Pare-feu ASUL',
+        title: 'Pare-feu Pancake Stats',
         message: 'La règle de pare-feu ne concerne que le poste hôte.',
         detail: 'En mode « rejoindre », aucun autre poste ne se connecte à celui-ci.',
       });
@@ -725,7 +726,7 @@ function offerFirewallRule({ force = false } = {}) {
     if (force) {
       dialog.showMessageBox(mainWindow || undefined, {
         type: 'info',
-        title: 'Pare-feu ASUL',
+        title: 'Pare-feu Pancake Stats',
         message: 'Le match en direct est déjà autorisé.',
         detail: `Règle « ${FIREWALL_RULE} » présente (port ${config.port}).`,
       });
@@ -757,7 +758,7 @@ function offerFirewallRule({ force = false } = {}) {
     message: ok ? 'Match en direct autorisé.' : 'La règle de pare-feu n’a pas pu être créée.',
     detail: ok
       ? `Règle « ${FIREWALL_RULE} » active sur le port ${config.port}.`
-      : `Autorisez ASUL dans le pare-feu, puis réessayez depuis le menu Serveur.`,
+      : `Autorisez Pancake Stats dans le pare-feu, puis réessayez depuis le menu Serveur.`,
   });
   return ok;
 }
@@ -775,8 +776,8 @@ function openDataFolder() {
 async function backupData() {
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   const result = await dialog.showSaveDialog(mainWindow || undefined, {
-    title: 'Sauvegarder les données ASUL',
-    defaultPath: path.join(app.getPath('documents'), `ASUL-sauvegarde-${stamp}.zip`),
+    title: 'Sauvegarder les données Pancake Stats',
+    defaultPath: path.join(app.getPath('documents'), `Pancake-Stats-sauvegarde-${stamp}.zip`),
     filters: [{ name: 'Archive ZIP', extensions: ['zip'] }],
   });
   if (result.canceled || !result.filePath) return;
@@ -817,7 +818,7 @@ async function backupData() {
 /** Restaure une sauvegarde ZIP dans le dossier de données puis redémarre l'app. */
 async function restoreData() {
   const result = await dialog.showOpenDialog(mainWindow || undefined, {
-    title: 'Restaurer une sauvegarde ASUL',
+    title: 'Restaurer une sauvegarde Pancake Stats',
     properties: ['openFile'],
     filters: [{ name: 'Archive ZIP', extensions: ['zip'] }],
   });
@@ -890,7 +891,7 @@ async function showNetworkInfo() {
   }
 
   if (!info) {
-    error = '\n\nLe serveur ASUL ne répond pas : lancez l’application en mode « Hôte ».';
+    error = '\n\nLe serveur Pancake Stats ne répond pas : lancez l’application en mode « Hôte ».';
   }
 
   const url = info ? info.url : `http://<adresse-du-PC-hote>:${config.port}`;
@@ -899,8 +900,8 @@ async function showNetworkInfo() {
     title: 'Adresse de connexion',
     message: `Les autres statisticiens se connectent à :\n${url}`,
     detail:
-      'Chaque statisticien ouvre ASUL sur son poste, choisit « Rejoindre un match » et saisit cette adresse ' +
-      '(ou l’ouvre directement dans un navigateur). Chaque statisticien crée son propre compte ASUL.' +
+      'Chaque statisticien ouvre Pancake Stats sur son poste, choisit « Rejoindre un match » et saisit cette adresse ' +
+      '(ou l’ouvre directement dans un navigateur). Chaque statisticien crée son propre compte Pancake Stats.' +
       error,
     buttons: ['Copier l’adresse', 'Ouvrir dans le navigateur', 'Fermer'],
     defaultId: 0,
@@ -925,7 +926,7 @@ async function showServerStatus() {
   if (!status || !health) {
     dialog.showMessageBox(mainWindow || undefined, {
       type: 'warning',
-      title: 'Serveur ASUL',
+      title: 'Serveur Pancake Stats',
       message: 'Le serveur ne répond pas.',
       detail: tailLogs(12),
     });
@@ -934,12 +935,12 @@ async function showServerStatus() {
 
   dialog.showMessageBox(mainWindow || undefined, {
     type: 'info',
-    title: 'Serveur ASUL',
+    title: 'Serveur Pancake Stats',
     message: `Serveur en fonctionnement — version ${status.version}`,
     detail: [
       `Mode            : ${status.mode === 'desktop' ? 'application Windows' : 'serveur'}`,
       `Dossier données : ${status.dataDir}`,
-      `Comptes ASUL    : ${status.users === null ? '?' : status.users}`,
+      `Comptes         : ${status.users === null ? '?' : status.users}`,
       `Pare-feu        : ${firewallRuleExists() ? `match en direct autorisé (port ${loadConfig().port})` : 'règle absente → menu Serveur'}`,
       `FFmpeg          : ${status.ffmpegAvailable ? 'disponible' : 'INDISPONIBLE'} (${status.ffmpegPath})`,
       `Interface       : ${status.clientDist}`,
@@ -956,7 +957,7 @@ function restartServer() {
     buttons: ['Redémarrer', 'Annuler'],
     defaultId: 1,
     cancelId: 1,
-    message: 'Redémarrer le serveur ASUL ?',
+    message: 'Redémarrer le serveur Pancake Stats ?',
     detail: 'Les autres postes connectés perdront brièvement la connexion au match en direct.',
   });
   if (confirm !== 0) return;
@@ -1045,12 +1046,12 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Outils de développement', accelerator: 'F12', click: () => mainWindow && mainWindow.webContents.toggleDevTools() },
         {
-          label: 'À propos d’ASUL',
+          label: 'À propos de Pancake Stats',
           click: () =>
             dialog.showMessageBox(mainWindow || undefined, {
               type: 'info',
               title: 'À propos',
-              message: `ASUL — analyse vidéo de volleyball`,
+              message: `Pancake Stats — analyse vidéo de volleyball`,
               detail:
                 `Version ${app.getVersion()}\n` +
                 `Mode : ${isHost ? 'hôte (serveur local)' : isHost === false && config.mode === 'client' ? 'rejoint un hôte' : 'non défini'}\n` +
@@ -1086,8 +1087,8 @@ ipcMain.handle('asul:test-host', async (event, payload) => {
   const port = Number(payload?.port) || DEFAULT_CONFIG.port;
   if (!host) return { ok: false, message: 'Adresse vide.' };
   const health = await httpJson(`http://${host}:${port}/api/health`, 4000);
-  if (health && health.status === 'ok') return { ok: true, message: `Poste ASUL trouvé sur ${host}:${port}.` };
-  return { ok: false, message: `Aucun poste ASUL ne répond sur ${host}:${port}.` };
+  if (health && health.status === 'ok') return { ok: true, message: `Poste Pancake Stats trouvé sur ${host}:${port}.` };
+  return { ok: false, message: `Aucun poste Pancake Stats ne répond sur ${host}:${port}.` };
 });
 
 /** Choix du mode d'utilisation depuis l'écran de démarrage. */

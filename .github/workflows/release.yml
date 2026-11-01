@@ -4,7 +4,7 @@
 # À chaque push sur `main` (ou via le bouton « Run workflow »), ce workflow :
 #   1. vérifie que la version de version.json n'a pas encore de Release GitHub ;
 #   2. écrit la configuration Supabase pré-remplie (clé issue du secret) ;
-#   3. construit l'installeur `ASUL-Setup-x.y.z.exe` + `latest.yml` ;
+#   3. construit l'installeur `PancakeStats-Setup-x.y.z.exe` + `latest.yml` ;
 #   4. les publie dans une Release GitHub (tag `vx.y.z`).
 #
 # Les applications installées détectent alors la nouvelle version via
@@ -58,7 +58,7 @@ jobs:
           # la mise à jour automatique a besoin : l'installeur ET latest.yml. Une Release
           # créée mais incomplète (envoi interrompu) doit être reconstruite, sinon plus
           # aucune mise à jour n'aboutirait pour cette version, sans aucun signal.
-          $required = @("ASUL-Setup-$v.exe", "latest.yml")
+          $required = @("PancakeStats-Setup-$v.exe", "latest.yml")
           $exists = $false
           try {
             $release = Invoke-RestMethod -Uri $url -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "asul-ci" }
@@ -172,7 +172,7 @@ jobs:
           $url = "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$v"
           $release = Invoke-RestMethod -Uri $url -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "asul-ci" }
           $names = @($release.assets | ForEach-Object { $_.name })
-          $missing = @(@("ASUL-Setup-$v.exe", "latest.yml") | Where-Object { $names -notcontains $_ })
+          $missing = @(@("PancakeStats-Setup-$v.exe", "latest.yml") | Where-Object { $names -notcontains $_ })
           if ($missing.Count -gt 0) {
             Write-Error "Release v$v incomplète : $($missing -join ', ') manquant(s)."
           }

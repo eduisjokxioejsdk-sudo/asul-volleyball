@@ -82,3 +82,4 @@ update-feed/
 
 # Installeur Windows déposé à la racine du projet (envoi manuel, jamais versionné)
 ASUL-Setup-*.exe
+PancakeStats-Setup-*.exe

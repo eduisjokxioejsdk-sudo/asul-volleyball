@@ -1,10 +1,10 @@
 {
   "name": "asul-desktop",
-  "productName": "ASUL",
-  "version": "3.3.8",
-  "description": "ASUL - poste statisticien volleyball (application Windows, usage local ou en reseau)",
+  "productName": "Pancake Stats",
+  "version": "3.3.9",
+  "description": "Pancake Stats - poste statisticien volleyball (application Windows, usage local ou en reseau)",
   "main": "main.js",
-  "author": "ASUL Volleyball",
+  "author": "Pancake Stats",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {

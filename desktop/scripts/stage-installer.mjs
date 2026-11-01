@@ -29,7 +29,7 @@ const MIN_SIZE = 100 * 1024 * 1024; // 100 Mo : un installeur complet pèse ~160
  */
 export function stageInstaller(out = 'dist') {
   const version = JSON.parse(fs.readFileSync(path.join(DESKTOP, 'package.json'), 'utf8')).version;
-  const source = path.join(DESKTOP, out, `ASUL-Setup-${version}.exe`);
+  const source = path.join(DESKTOP, out, `PancakeStats-Setup-${version}.exe`);
 
   if (!fs.existsSync(source) || fs.statSync(source).size <= MIN_SIZE) {
     throw new Error(
@@ -37,14 +37,15 @@ export function stageInstaller(out = 'dist') {
     );
   }
 
-  // Un seul installeur à la racine : on retire les versions précédentes.
+  // Un seul installeur à la racine : on retire les versions précédentes
+  // (y compris celles publiées sous l'ancien nom « ASUL-Setup-… »).
   for (const entry of fs.readdirSync(PROJECT_ROOT, { withFileTypes: true })) {
-    if (entry.isFile() && /^ASUL-Setup-.*\.exe$/i.test(entry.name)) {
+    if (entry.isFile() && /^(PancakeStats|ASUL)-Setup-.*\.exe$/i.test(entry.name)) {
       fs.rmSync(path.join(PROJECT_ROOT, entry.name), { force: true });
     }
   }
 
-  const destination = path.join(PROJECT_ROOT, `ASUL-Setup-${version}.exe`);
+  const destination = path.join(PROJECT_ROOT, `PancakeStats-Setup-${version}.exe`);
   fs.copyFileSync(source, destination);
   const sizeMb = Math.round(fs.statSync(destination).size / 1048576);
   return { destination, sizeMb, version };

@@ -2409,7 +2409,7 @@ function DataVolleyDashboard({ user, onLogout }) {
         };
       }),
     });
-    downloadTextFile(`match_${slug || 'asul'}.dvw`, dvw, 'text/plain;charset=utf-8');
+    downloadTextFile(`match_${slug || 'pancake'}.dvw`, dvw, 'text/plain;charset=utf-8');
   };
 
   const importInputRef = useRef(null);
@@ -2659,7 +2659,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                 </div>
                 <div style={{ fontSize: 11, color: '#a1a1aa', maxWidth: 540, lineHeight: 1.6 }}>
                   {playable.status === 'checking' &&
-                    'La vidéo ne démarre pas. ASUL vérifie pourquoi (conteneur, codec) et lancera la correction si nécessaire.'}
+                    'La vidéo ne démarre pas. Pancake Stats vérifie pourquoi (conteneur, codec) et lancera la correction si nécessaire.'}
                   {playable.status === 'processing' && (
                     <>
                       {playable.reason || 'Le fichier n’est pas lisible tel quel par le lecteur.'}

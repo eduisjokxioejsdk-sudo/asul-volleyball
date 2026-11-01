@@ -1,8 +1,21 @@
 {
-  "version": "3.3.8",
+  "version": "3.3.9",
   "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.9",
+      "date": "2026-11-01",
+      "title": "L’application devient Pancake Stats, avec le logo Pancake",
+      "items": [
+        "Nouveau nom : l’application s’appelle désormais « Pancake Stats » — nom de la fenêtre, du raccourci du bureau et du menu Démarrer, de l’écran de démarrage et des boîtes de dialogue (« À propos de Pancake Stats », menu Serveur, sauvegarde, pare-feu, mises à jour)",
+        "Nouvelle icône : le logo Pancake remplace l’ancienne icône ASUL dans l’exécutable, l’installeur, le raccourci Windows et la fenêtre ; l’écran de démarrage affiche également le pancake",
+        "L’installeur change de nom : il s’appelle maintenant PancakeStats-Setup-x.y.z.exe (les versions publiées restent sinon identiques)",
+        "Vos données sont conservées : matchs, vidéos, équipes et comptes restent dans le même dossier de données (%APPDATA%\\ASUL) — aucune migration, rien à réimporter",
+        "À faire une seule fois : l’application s’installant désormais dans son propre dossier « Pancake Stats », désinstallez l’ancienne entrée « ASUL » depuis Paramètres → Applications (sans supprimer les données), puis lancez Pancake Stats",
+        "Textes et exports suivent le nouveau nom : messages du serveur, sauvegarde « Pancake-Stats-sauvegarde-…zip » et fichiers .dvw exportés"
+      ]
+    },
     {
       "version": "3.3.8",
       "date": "2026-11-01",
