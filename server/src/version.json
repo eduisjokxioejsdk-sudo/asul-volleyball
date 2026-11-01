@@ -1,8 +1,19 @@
 {
-  "version": "3.3.6",
+  "version": "3.3.7",
   "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.7",
+      "date": "2026-11-01",
+      "title": "Raccourcis de navigation entre onglets supprimés",
+      "items": [
+        "Les raccourcis Ctrl+Alt+1 à Ctrl+Alt+7 ne changent plus de module : la navigation entre onglets se fait uniquement à la souris",
+        "Les badges de touches affichés dans la barre du haut et dans les cartes de modules du Hub sont retirés, ainsi que la mention « Navigation rapide au clavier »",
+        "Les infobulles des onglets ne rappellent plus de combinaison de touches",
+        "Les raccourcis de travail du codage restent inchangés : F1 à F5 pour les modes, Alt+1 à Alt+0 pour les macros, Ctrl+A et Ctrl+Shift+C dans le direct"
+      ]
+    },
     {
       "version": "3.3.6",
       "date": "2026-11-01",

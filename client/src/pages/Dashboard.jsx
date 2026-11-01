@@ -18,7 +18,6 @@ const MODES = [
     title: 'Data Volley',
     desc: 'Importez vos vidéos de match, codez en Play-by-Play et générez vos feuilles de statistiques complètes.',
     cta: 'Ouvrir Data Volley',
-    kbd: 'Ctrl+Alt+2',
     accent: '#c8a165',
     path: '/datavolley',
   },
@@ -28,7 +27,6 @@ const MODES = [
     title: 'Multi-Matchs',
     desc: 'Analysez plusieurs matchs d’un coup : synthèse cumulée, comparaison d’équipes et plan de jeu adverse.',
     cta: 'Ouvrir Multi-Matchs',
-    kbd: 'Ctrl+Alt+3',
     accent: '#14b8a6',
     path: '/datavolley/multi',
   },
@@ -38,7 +36,6 @@ const MODES = [
     title: 'Trajectoires & Radar',
     desc: 'Tracez les impacts de service et d’attaque, liez vos fiches aux vidéos et compilez des bilans par équipe.',
     cta: 'Ouvrir Trajectoires',
-    kbd: 'Ctrl+Alt+5',
     accent: '#0ea5e9',
     path: '/trajectories',
   },
@@ -48,7 +45,6 @@ const MODES = [
     title: 'Centre Vidéo',
     desc: 'Consultez toutes les vidéos de match filtrées par équipe, par joueur, par type d’action et par évaluation.',
     cta: 'Ouvrir Centre Vidéo',
-    kbd: 'Ctrl+Alt+6',
     accent: '#10b981',
     path: '/video-center',
   },
@@ -58,7 +54,6 @@ const MODES = [
     title: 'Mode En Direct',
     desc: 'Scouting collaboratif en temps réel au bord du terrain avec synchronisation multi-postes et retour caméra.',
     cta: 'Lancer un Direct',
-    kbd: 'Live',
     accent: '#e11d48',
     path: null,
   },
@@ -68,7 +63,6 @@ const MODES = [
     title: 'Entraînement',
     desc: 'Scouting de séances et ateliers d’entraînement pour travailler la lecture du jeu en équipe.',
     cta: 'Ouvrir Entraînement',
-    kbd: 'Ctrl+Alt+4',
     accent: '#8b5cf6',
     path: '/practice',
   },
@@ -78,7 +72,6 @@ const MODES = [
     title: 'Académie',
     desc: 'Maîtrisez la syntaxe DataVolley grâce aux 11 leçons progressives, QCM, jeux de paires et traductions.',
     cta: 'S’entraîner',
-    kbd: 'Ctrl+Alt+7',
     accent: '#f59e0b',
     path: '/training',
   },
@@ -291,9 +284,6 @@ export default function Dashboard({ user, onLogout }) {
         <section>
           <div className="pk-modes-section-head">
             <h2>Sélectionner un module de travail</h2>
-            <span style={{ fontSize: 12, color: '#a1a1aa' }}>
-              Navigation rapide au clavier : <kbd>Alt+1</kbd> à <kbd>Alt+5</kbd>
-            </span>
           </div>
 
           <div className="pk-modes-grid">
@@ -308,7 +298,6 @@ export default function Dashboard({ user, onLogout }) {
                 <div>
                   <div className="pk-mode-card-top">
                     <span className="pk-mode-num">MODULE {m.num}</span>
-                    <kbd>{m.kbd}</kbd>
                   </div>
                   <div className="pk-mode-title">{m.title}</div>
                   <div className="pk-mode-desc">{m.desc}</div>

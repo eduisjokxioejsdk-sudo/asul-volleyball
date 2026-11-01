@@ -506,7 +506,6 @@ kbd, .pk-kbd {
 .app-global-nav.is-compact .brand-name { display: none; }
 .app-global-nav.is-compact .pk-logo-badge { width: 24px !important; height: 24px !important; }
 .app-global-nav.is-compact .nav-app-btn { padding: 0 11px !important; font-size: 11px; letter-spacing: 0.03em; }
-.app-global-nav.is-compact .nav-app-btn kbd { display: none; }
 .app-global-nav.is-compact .nav-tool-btn,
 .app-global-nav.is-compact .nav-teams-btn { padding: 0 10px !important; font-size: 10.5px !important; }
 .app-global-nav.is-compact .nav-tool-btn kbd { display: none; }

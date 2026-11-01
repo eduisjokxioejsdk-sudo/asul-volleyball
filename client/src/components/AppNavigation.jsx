@@ -1,9 +1,8 @@
 // ============================================================================
 // PANCAKE STATS — barre de navigation globale (36 px).
-// Onglets texte (sans icônes), raccourcis clavier Ctrl+Alt+1…7 affichés en badges.
+// Onglets texte (sans icônes) : aucune touche de raccourci n'est affichée.
 // ============================================================================
 
-import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { LogOut } from './icons';
 import PancakeLogo from './PancakeLogo';
@@ -91,23 +90,6 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
   // expose son propre prédicat d'activité.
   const isActive = (tab) => (tab.isActive ? tab.isActive(pathname) : pathname === tab.path);
 
-  // Ctrl+Alt+1…7 : navigation entre modules.
-  // On n'utilise volontairement PAS Alt seul : les macros de codage
-  // utilisent Alt+1…0 (compoundCodes.js) et quitteraient le match en plein
-  // codage si la barre globale capturait Alt.
-  useEffect(() => {
-    const onKey = (e) => {
-      if (!e.altKey || !e.ctrlKey || e.metaKey) return;
-      const index = Number(e.key) - 1;
-      if (Number.isInteger(index) && TABS[index]) {
-        e.preventDefault();
-        navigate(TABS[index].path);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [navigate]);
-
   return (
     <header className={`app-global-nav ${compact ? 'is-compact' : ''}`}>
       <div className="nav-brand-section" onClick={() => navigate('/dashboard')} title="Accueil">
@@ -116,16 +98,15 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
       </div>
 
       <nav className="nav-apps-menu">
-        {TABS.map((tab, i) => (
+        {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             className={`nav-app-btn ${isActive(tab) ? 'active' : ''}`}
             onClick={() => navigate(tab.path)}
-            title={`${tab.hint} (Ctrl+Alt+${i + 1})`}
+            title={tab.hint}
           >
             {tab.label}
-            <kbd>Ctrl+Alt+{i + 1}</kbd>
           </button>
         ))}
       </nav>

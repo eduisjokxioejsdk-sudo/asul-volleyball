@@ -1963,7 +1963,7 @@ function DataVolleyDashboard({ user, onLogout }) {
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       // Alt seul n'est plus bloqué : les macros clavier utilisent Alt+1…0.
-      // Seule la navigation globale (Ctrl+Alt+N) est réservée à la barre.
+      // Les combinaisons Ctrl+Alt sont réservées au système et ignorées ici.
       if (e.ctrlKey && e.altKey) return;
 
       // F1 / F3 / F4 / F5 : changement de mode (dans tous les modes).
