@@ -9,9 +9,10 @@
 // traduit en sync_uuid).
 // ============================================================================
 
+const crypto = require('crypto');
 const db = require('./database');
-const { planMergeGeneric } = require('./syncCore');
-const { emitCollectionChanged } = require('./socket');
+const { fieldsEqual, planMergeGeneric, isAfter } = require('./syncCore');
+const { emitCollectionChanged, emitToSession } = require('./socket');
 
 const runAsync = (sql, params = []) =>
   new Promise((resolve, reject) => {
@@ -529,6 +530,843 @@ const setupsCollection = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Matchs en direct (live_sessions + live_members + live_actions + live_events + set_setups)
+// Permet de rejoindre un match en direct par son code à 6 caractères depuis
+// n'importe quel PC connecté au même projet Supabase et de synchroniser les
+// actions, membres, événements et positions en temps réel.
+// ---------------------------------------------------------------------------
+
+function parseJsonArray(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+const LIVE_COMPARE_FIELDS = [
+  'name',
+  'team1_name',
+  'team2_name',
+  'home_team_uuid',
+  'away_team_uuid',
+  'owner_origin_id',
+  'owner_user_id',
+  'join_code',
+  'status',
+  'current_point',
+  'point_completed',
+  'video_delay',
+  'deleted_at',
+  'deleted_items',
+  'members',
+  'actions',
+  'events',
+  'setups',
+];
+
+function mergeByKey(localList, remoteList, keyFn, deletedSet, localWins) {
+  const map = new Map();
+  for (const item of remoteList || []) {
+    if (!item) continue;
+    const k = keyFn(item);
+    if (!k || (deletedSet && deletedSet.has(String(k)))) continue;
+    map.set(String(k), item);
+  }
+  for (const item of localList || []) {
+    if (!item) continue;
+    const k = keyFn(item);
+    if (!k || (deletedSet && deletedSet.has(String(k)))) continue;
+    const key = String(k);
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, item);
+    } else {
+      const localTs = item.updated_at || null;
+      const remoteTs = prev.updated_at || null;
+      if (localTs && remoteTs && localTs !== remoteTs) {
+        if (localTs > remoteTs) map.set(key, item);
+      } else if (localWins) {
+        map.set(key, item);
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
+function mergeLiveSession(local, remote, localWins) {
+  const winner = localWins ? local : remote;
+  const loser = localWins ? remote : local;
+  const deletedItems = Array.from(
+    new Set([...parseJsonArray(local.deleted_items), ...parseJsonArray(remote.deleted_items)].map(String))
+  ).sort();
+  const deletedSet = new Set(deletedItems);
+
+  // Déduplication des membres par sync_uuid ET par (origin_id, user_id)
+  const rawMembers = mergeByKey(
+    local.members,
+    remote.members,
+    (m) => m.sync_uuid,
+    deletedSet,
+    localWins
+  );
+  const byOriginUser = new Map();
+  const mergedMembers = [];
+  for (const m of rawMembers) {
+    if (m.origin_id && m.user_id != null) {
+      const ouKey = `${m.origin_id}:${m.user_id}`;
+      const existing = byOriginUser.get(ouKey);
+      if (existing) {
+        if ((m.updated_at || '') > (existing.updated_at || '')) {
+          const idx = mergedMembers.indexOf(existing);
+          if (idx >= 0) mergedMembers[idx] = m;
+          byOriginUser.set(ouKey, m);
+        }
+        continue;
+      }
+      byOriginUser.set(ouKey, m);
+    }
+    mergedMembers.push(m);
+  }
+  mergedMembers.sort((a, b) => String(a.sync_uuid || '').localeCompare(String(b.sync_uuid || '')));
+
+  const mergedActions = mergeByKey(
+    local.actions,
+    remote.actions,
+    (a) => a.sync_uuid,
+    deletedSet,
+    localWins
+  ).sort(
+    (a, b) =>
+      (Number(a.effective_time) || 0) - (Number(b.effective_time) || 0) ||
+      (Number(a.seq) || 0) - (Number(b.seq) || 0) ||
+      String(a.sync_uuid || '').localeCompare(String(b.sync_uuid || ''))
+  );
+
+  const mergedEvents = mergeByKey(
+    local.events,
+    remote.events,
+    (ev) => ev.sync_uuid,
+    deletedSet,
+    localWins
+  ).sort(
+    (a, b) =>
+      (Number(a.set_number) || 1) - (Number(b.set_number) || 1) ||
+      (Number(a.point_number) || 0) - (Number(b.point_number) || 0) ||
+      String(a.sync_uuid || '').localeCompare(String(b.sync_uuid || ''))
+  );
+
+  const mergedSetups = mergeByKey(
+    local.setups,
+    remote.setups,
+    (s) => s.set_number,
+    null,
+    localWins
+  ).sort((a, b) => (Number(a.set_number) || 1) - (Number(b.set_number) || 1));
+
+  return {
+    id: local.id || remote.sync_uuid,
+    sync_uuid: String(remote.sync_uuid || local.sync_uuid || local.id),
+    name: winner.name || loser.name || 'Match en direct',
+    team1_name: winner.team1_name || loser.team1_name || 'Domicile',
+    team2_name: winner.team2_name || loser.team2_name || 'Extérieur',
+    home_team_uuid: winner.home_team_uuid ?? loser.home_team_uuid ?? null,
+    away_team_uuid: winner.away_team_uuid ?? loser.away_team_uuid ?? null,
+    owner_origin_id: remote.owner_origin_id || local.owner_origin_id || null,
+    owner_user_id:
+      remote.owner_user_id != null && Number(remote.owner_user_id) > 0
+        ? Number(remote.owner_user_id)
+        : Number(local.owner_user_id) || 0,
+    join_code: String(winner.join_code || loser.join_code || '').toUpperCase(),
+    status: winner.status || loser.status || 'active',
+    current_point: Math.max(Number(local.current_point) || 1, Number(remote.current_point) || 1),
+    point_completed:
+      typeof winner.point_completed === 'string'
+        ? winner.point_completed
+        : JSON.stringify(parseJsonArray(winner.point_completed)),
+    video_delay: Number.isFinite(Number(winner.video_delay)) ? Number(winner.video_delay) : 8,
+    deleted_at: winner.deleted_at ?? null,
+    created_at: local.created_at || remote.created_at || new Date().toISOString(),
+    deleted_items: deletedItems,
+    members: mergedMembers,
+    actions: mergedActions,
+    events: mergedEvents,
+    setups: mergedSetups,
+    deleted: Boolean(Number(winner.deleted)),
+  };
+}
+
+const liveCollection = {
+  key: 'live',
+  name: 'Matchs en direct',
+  defaultTable: 'asul_live_sessions',
+  envPrefix: 'TEAMS_SYNC',
+
+  loadLocal: async (originId) => {
+    const sessions = await allAsync('SELECT * FROM live_sessions ORDER BY created_at ASC', []);
+    if (!sessions.length) return [];
+
+    const idToTeamUuid = await teamIdToUuid();
+    const members = await allAsync('SELECT * FROM live_members ORDER BY id ASC', []);
+    const actions = await allAsync('SELECT * FROM live_actions ORDER BY effective_time ASC, seq ASC, id ASC', []);
+    const events = await allAsync('SELECT * FROM live_events ORDER BY COALESCE(set_number, 1) ASC, COALESCE(point_number, 0) ASC, id ASC', []);
+    const setups = await allAsync("SELECT * FROM set_setups WHERE match_key LIKE 'session:%' ORDER BY set_number ASC", []);
+
+    const memberIdToUuid = new Map();
+    const membersBySession = new Map();
+    for (const m of members) {
+      if (!m.sync_uuid) {
+        m.sync_uuid = crypto.randomUUID();
+        await runAsync('UPDATE live_members SET sync_uuid = ? WHERE id = ?', [m.sync_uuid, m.id]);
+      }
+      if (!m.origin_id && m.user_id != null && originId) {
+        m.origin_id = originId;
+        await runAsync('UPDATE live_members SET origin_id = ? WHERE id = ?', [originId, m.id]);
+      }
+      memberIdToUuid.set(Number(m.id), m.sync_uuid);
+      const sid = String(m.session_id);
+      if (!membersBySession.has(sid)) membersBySession.set(sid, []);
+      membersBySession.get(sid).push({
+        sync_uuid: m.sync_uuid,
+        origin_id: m.origin_id || originId || null,
+        user_id: m.user_id == null ? null : Number(m.user_id),
+        nickname: m.nickname || 'Membre',
+        role: m.role || 'statistician',
+        assignment: m.assignment || '["S","R","A","B","D"]',
+        updated_at: m.updated_at || null,
+      });
+    }
+
+    const actionsBySession = new Map();
+    for (const a of actions) {
+      if (!a.sync_uuid) {
+        a.sync_uuid = crypto.randomUUID();
+        await runAsync('UPDATE live_actions SET sync_uuid = ? WHERE id = ?', [a.sync_uuid, a.id]);
+      }
+      const sid = String(a.session_id);
+      if (!actionsBySession.has(sid)) actionsBySession.set(sid, []);
+      actionsBySession.get(sid).push({
+        sync_uuid: a.sync_uuid,
+        member_uuid: a.member_id ? memberIdToUuid.get(Number(a.member_id)) || null : null,
+        effective_time: Number(a.effective_time) || 0,
+        seq: Number(a.seq) || 0,
+        assigned: a.assigned == null ? 1 : Number(a.assigned),
+        code: a.code,
+        system_time: a.system_time == null ? null : Number(a.system_time),
+        team: a.team || null,
+        player_number: a.player_number == null ? null : Number(a.player_number),
+        action: a.action || null,
+        evaluation: a.evaluation || null,
+        type: a.type || null,
+        start_zone: a.start_zone || null,
+        end_zone: a.end_zone || null,
+        start_subzone: a.start_subzone || null,
+        end_subzone: a.end_subzone || null,
+        attack_zone: a.attack_zone || null,
+        set_number: Number(a.set_number) > 0 ? Number(a.set_number) : 1,
+        start_x: a.start_x == null ? null : Number(a.start_x),
+        start_y: a.start_y == null ? null : Number(a.start_y),
+        mid_x: a.mid_x == null ? null : Number(a.mid_x),
+        mid_y: a.mid_y == null ? null : Number(a.mid_y),
+        end_x: a.end_x == null ? null : Number(a.end_x),
+        end_y: a.end_y == null ? null : Number(a.end_y),
+        is_auto: a.is_auto ? 1 : 0,
+        updated_at: a.updated_at || null,
+      });
+    }
+
+    const eventsBySession = new Map();
+    for (const ev of events) {
+      if (!ev.sync_uuid) {
+        ev.sync_uuid = crypto.randomUUID();
+        await runAsync('UPDATE live_events SET sync_uuid = ? WHERE id = ?', [ev.sync_uuid, ev.id]);
+      }
+      const sid = String(ev.session_id);
+      if (!eventsBySession.has(sid)) eventsBySession.set(sid, []);
+      eventsBySession.get(sid).push({
+        sync_uuid: ev.sync_uuid,
+        kind: ev.kind,
+        set_number: Number(ev.set_number) > 0 ? Number(ev.set_number) : 1,
+        point_number: Number(ev.point_number) || 0,
+        team: ev.team || null,
+        payload: typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload || {}),
+        updated_at: ev.updated_at || null,
+      });
+    }
+
+    const setupsBySession = new Map();
+    for (const st of setups) {
+      const sid = String(st.match_key).slice('session:'.length);
+      if (!setupsBySession.has(sid)) setupsBySession.set(sid, []);
+      setupsBySession.get(sid).push({
+        set_number: Number(st.set_number) || 1,
+        first_server: st.first_server || null,
+        home_setter_pos: st.home_setter_pos || null,
+        away_setter_pos: st.away_setter_pos || null,
+        home_setter: st.home_setter == null ? null : Number(st.home_setter),
+        away_setter: st.away_setter == null ? null : Number(st.away_setter),
+        home_lineup: st.home_lineup || null,
+        away_lineup: st.away_lineup || null,
+        updated_at: st.local_updated_at || st.updated_at || null,
+      });
+    }
+
+    const out = [];
+    for (const s of sessions) {
+      const sid = String(s.id);
+      const syncUuid = s.sync_uuid || sid;
+      if (!s.sync_uuid) {
+        await runAsync('UPDATE live_sessions SET sync_uuid = ? WHERE id = ?', [syncUuid, sid]);
+      }
+      let ownerOriginId = s.owner_origin_id || null;
+      if (!ownerOriginId && Number(s.owner_user_id) > 0 && originId) {
+        ownerOriginId = originId;
+        await runAsync('UPDATE live_sessions SET owner_origin_id = ? WHERE id = ?', [originId, sid]);
+      }
+      const homeTeamUuid =
+        s.home_team_uuid || (s.home_team_id ? idToTeamUuid.get(Number(s.home_team_id)) || null : null);
+      const awayTeamUuid =
+        s.away_team_uuid || (s.away_team_id ? idToTeamUuid.get(Number(s.away_team_id)) || null : null);
+      const deletedItems = parseJsonArray(s.deleted_items).map(String).sort();
+
+      const sessMembers = (membersBySession.get(sid) || []).sort((a, b) =>
+        String(a.sync_uuid || '').localeCompare(String(b.sync_uuid || ''))
+      );
+      const sessActions = (actionsBySession.get(sid) || []).sort(
+        (a, b) =>
+          (Number(a.effective_time) || 0) - (Number(b.effective_time) || 0) ||
+          (Number(a.seq) || 0) - (Number(b.seq) || 0) ||
+          String(a.sync_uuid || '').localeCompare(String(b.sync_uuid || ''))
+      );
+      const sessEvents = (eventsBySession.get(sid) || []).sort(
+        (a, b) =>
+          (Number(a.set_number) || 1) - (Number(b.set_number) || 1) ||
+          (Number(a.point_number) || 0) - (Number(b.point_number) || 0) ||
+          String(a.sync_uuid || '').localeCompare(String(b.sync_uuid || ''))
+      );
+      const sessSetups = (setupsBySession.get(sid) || []).sort(
+        (a, b) => (Number(a.set_number) || 1) - (Number(b.set_number) || 1)
+      );
+
+      out.push({
+        ...s,
+        id: sid,
+        sync_uuid: syncUuid,
+        home_team_uuid: homeTeamUuid,
+        away_team_uuid: awayTeamUuid,
+        owner_origin_id: ownerOriginId,
+        owner_user_id: Number(s.owner_user_id) || 0,
+        join_code: String(s.join_code || '').toUpperCase(),
+        status: s.status || 'active',
+        current_point: Number(s.current_point) || 1,
+        point_completed:
+          typeof s.point_completed === 'string'
+            ? s.point_completed
+            : JSON.stringify(parseJsonArray(s.point_completed)),
+        video_delay: Number.isFinite(Number(s.video_delay)) ? Number(s.video_delay) : 8,
+        deleted_at: s.deleted_at || null,
+        deleted_items: deletedItems,
+        members: sessMembers,
+        actions: sessActions,
+        events: sessEvents,
+        setups: sessSetups,
+      });
+    }
+    return out;
+  },
+
+  rowToCloud: (row, originId) => ({
+    sync_uuid: row.sync_uuid || row.id,
+    name: row.name || 'Match en direct',
+    team1_name: row.team1_name || 'Domicile',
+    team2_name: row.team2_name || 'Extérieur',
+    home_team_uuid: row.home_team_uuid || null,
+    away_team_uuid: row.away_team_uuid || null,
+    owner_origin_id: row.owner_origin_id || originId || null,
+    owner_user_id: Number(row.owner_user_id) || 0,
+    join_code: String(row.join_code || '').toUpperCase(),
+    status: row.status || 'active',
+    current_point: Number(row.current_point) || 1,
+    point_completed:
+      typeof row.point_completed === 'string'
+        ? row.point_completed
+        : JSON.stringify(parseJsonArray(row.point_completed)),
+    video_delay: Number.isFinite(Number(row.video_delay)) ? Number(row.video_delay) : 8,
+    deleted_at: row.deleted_at || null,
+    created_at: row.created_at || new Date().toISOString(),
+    deleted_items: Array.isArray(row.deleted_items) ? row.deleted_items : parseJsonArray(row.deleted_items),
+    members: Array.isArray(row.members) ? row.members : [],
+    actions: Array.isArray(row.actions) ? row.actions : [],
+    events: Array.isArray(row.events) ? row.events : [],
+    setups: Array.isArray(row.setups) ? row.setups : [],
+    deleted: Boolean(Number(row.deleted)),
+    origin_id: originId,
+  }),
+
+  planMerge: ({ localRows, remoteRows, lastSyncAt }) => {
+    const byUuid = new Map();
+    for (const row of localRows || []) {
+      const uuid = String(row.sync_uuid || row.id);
+      byUuid.set(uuid, row);
+    }
+
+    const usedLocal = new Set();
+    const toPush = [];
+    const toApply = [];
+    const toDelete = [];
+    const toSettle = [];
+    const conflicts = [];
+
+    for (const rawRemote of remoteRows || []) {
+      const uuid = String(rawRemote.sync_uuid);
+      const remote = {
+        ...rawRemote,
+        sync_uuid: uuid,
+        owner_user_id: Number(rawRemote.owner_user_id) || 0,
+        join_code: String(rawRemote.join_code || '').toUpperCase(),
+        status: rawRemote.status || 'active',
+        current_point: Number(rawRemote.current_point) || 1,
+        point_completed:
+          typeof rawRemote.point_completed === 'string'
+            ? rawRemote.point_completed
+            : JSON.stringify(parseJsonArray(rawRemote.point_completed)),
+        video_delay: Number.isFinite(Number(rawRemote.video_delay)) ? Number(rawRemote.video_delay) : 8,
+        deleted_at: rawRemote.deleted_at || null,
+        deleted_items: parseJsonArray(rawRemote.deleted_items).map(String).sort(),
+        members: parseJsonArray(rawRemote.members),
+        actions: parseJsonArray(rawRemote.actions),
+        events: parseJsonArray(rawRemote.events),
+        setups: parseJsonArray(rawRemote.setups),
+      };
+
+      const local = byUuid.get(uuid) || null;
+      if (local) usedLocal.add(local.id);
+
+      const remoteDeleted = Boolean(remote.deleted);
+      if (!local) {
+        if (!remoteDeleted) {
+          toApply.push({
+            localId: null,
+            uuid,
+            deleted: false,
+            cloudUpdatedAt: remote.updated_at || null,
+            ...remote,
+          });
+        }
+        continue;
+      }
+
+      if (remoteDeleted) {
+        toDelete.push(local.id);
+        continue;
+      }
+
+      const localDirty = Boolean(Number(local.dirty));
+      const localWins = localDirty && isAfter(local.local_updated_at, lastSyncAt);
+      const merged = mergeLiveSession(local, remote, localWins);
+
+      const localDiffers = !fieldsEqual(local, merged, LIVE_COMPARE_FIELDS);
+      const remoteDiffers = !fieldsEqual(remote, merged, LIVE_COMPARE_FIELDS);
+
+      if (localDiffers) {
+        toApply.push({
+          localId: local.id,
+          uuid,
+          deleted: false,
+          cloudUpdatedAt: remote.updated_at || null,
+          ...merged,
+        });
+      }
+      if (remoteDiffers) {
+        toPush.push(merged);
+      }
+      if (!localDiffers && !remoteDiffers) {
+        toSettle.push({ localId: local.id, cloudUpdatedAt: remote.updated_at || null });
+      }
+    }
+
+    for (const local of localRows || []) {
+      if (!Number(local.dirty)) continue;
+      if (usedLocal.has(local.id)) continue;
+      toPush.push(local);
+    }
+
+    return { toPush, toApply, toAdopt: [], toDelete, toSettle, conflicts };
+  },
+
+  applyRemote: async (entry, originId) => {
+    const now = new Date().toISOString();
+    const sessionId = String(entry.localId || entry.uuid);
+    const deleted = entry.deleted ? 1 : 0;
+    const uuidToTeamId = await teamUuidToId();
+    const homeTeamId = entry.home_team_uuid ? uuidToTeamId.get(String(entry.home_team_uuid)) || null : null;
+    const awayTeamId = entry.away_team_uuid ? uuidToTeamId.get(String(entry.away_team_uuid)) || null : null;
+
+    const existingSession = await getAsync('SELECT * FROM live_sessions WHERE id = ?', [sessionId]);
+    const isSameOriginOwner =
+      entry.owner_origin_id && originId && String(entry.owner_origin_id) === String(originId);
+    const localOwnerUserId = isSameOriginOwner
+      ? Number(entry.owner_user_id) || (existingSession ? Number(existingSession.owner_user_id) : 0)
+      : existingSession && !entry.owner_origin_id
+      ? Number(existingSession.owner_user_id)
+      : 0;
+
+    const deletedItemsJson = JSON.stringify(
+      Array.isArray(entry.deleted_items) ? entry.deleted_items : parseJsonArray(entry.deleted_items)
+    );
+    const pointCompletedStr =
+      typeof entry.point_completed === 'string'
+        ? entry.point_completed
+        : JSON.stringify(parseJsonArray(entry.point_completed));
+
+    if (existingSession) {
+      await runAsync(
+        `UPDATE live_sessions
+            SET sync_uuid = ?, name = ?, team1_name = ?, team2_name = ?,
+                home_team_id = COALESCE(?, home_team_id), away_team_id = COALESCE(?, away_team_id),
+                home_team_uuid = ?, away_team_uuid = ?,
+                owner_origin_id = ?, owner_user_id = ?,
+                join_code = ?, status = ?, current_point = ?, point_completed = ?,
+                video_delay = ?, deleted_at = ?, deleted_items = ?,
+                deleted = ?, dirty = 0, cloud_updated_at = ?
+          WHERE id = ?`,
+        [
+          entry.uuid,
+          entry.name || 'Match en direct',
+          entry.team1_name || 'Domicile',
+          entry.team2_name || 'Extérieur',
+          homeTeamId,
+          awayTeamId,
+          entry.home_team_uuid || null,
+          entry.away_team_uuid || null,
+          entry.owner_origin_id || null,
+          localOwnerUserId,
+          String(entry.join_code || '').toUpperCase(),
+          entry.status || 'active',
+          Number(entry.current_point) || 1,
+          pointCompletedStr,
+          Number.isFinite(Number(entry.video_delay)) ? Number(entry.video_delay) : 8,
+          entry.deleted_at || null,
+          deletedItemsJson,
+          deleted,
+          entry.cloudUpdatedAt || now,
+          sessionId,
+        ]
+      );
+    } else {
+      await runAsync(
+        `INSERT INTO live_sessions
+            (id, sync_uuid, name, team1_name, team2_name, home_team_id, away_team_id,
+             home_team_uuid, away_team_uuid, owner_origin_id, owner_user_id,
+             join_code, status, current_point, point_completed, video_delay,
+             deleted_at, created_at, deleted_items, deleted, dirty, cloud_updated_at, local_updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        [
+          sessionId,
+          entry.uuid,
+          entry.name || 'Match en direct',
+          entry.team1_name || 'Domicile',
+          entry.team2_name || 'Extérieur',
+          homeTeamId,
+          awayTeamId,
+          entry.home_team_uuid || null,
+          entry.away_team_uuid || null,
+          entry.owner_origin_id || null,
+          localOwnerUserId,
+          String(entry.join_code || '').toUpperCase(),
+          entry.status || 'active',
+          Number(entry.current_point) || 1,
+          pointCompletedStr,
+          Number.isFinite(Number(entry.video_delay)) ? Number(entry.video_delay) : 8,
+          entry.deleted_at || null,
+          entry.created_at || now,
+          deletedItemsJson,
+          deleted,
+          entry.cloudUpdatedAt || now,
+          now,
+        ]
+      );
+    }
+
+    // --- Synchronisation des membres (mise à jour sur place par sync_uuid) ---
+    const existingMembers = await allAsync('SELECT * FROM live_members WHERE session_id = ?', [sessionId]);
+    const memberByUuid = new Map();
+    const memberByOriginUser = new Map();
+    for (const m of existingMembers) {
+      if (m.sync_uuid) memberByUuid.set(String(m.sync_uuid), m);
+      if (m.origin_id && m.user_id != null) {
+        memberByOriginUser.set(`${m.origin_id}:${m.user_id}`, m);
+      }
+    }
+
+    const memberUuidToLocalId = new Map();
+    for (const m of parseJsonArray(entry.members)) {
+      const mUuid = m.sync_uuid || crypto.randomUUID();
+      const isLocalMember = m.origin_id && originId && String(m.origin_id) === String(originId);
+      const localUserId = isLocalMember && m.user_id != null ? Number(m.user_id) : null;
+      const existing =
+        memberByUuid.get(String(mUuid)) ||
+        (m.origin_id && m.user_id != null ? memberByOriginUser.get(`${m.origin_id}:${m.user_id}`) : null);
+
+      if (existing) {
+        await runAsync(
+          `UPDATE live_members
+              SET sync_uuid = ?, origin_id = ?, user_id = COALESCE(?, user_id),
+                  nickname = ?, role = ?, assignment = ?, updated_at = ?
+            WHERE id = ?`,
+          [
+            mUuid,
+            m.origin_id || existing.origin_id || null,
+            localUserId,
+            m.nickname || existing.nickname || 'Membre',
+            m.role || existing.role || 'statistician',
+            m.assignment || existing.assignment || '["S","R","A","B","D"]',
+            m.updated_at || now,
+            existing.id,
+          ]
+        );
+        memberUuidToLocalId.set(String(mUuid), Number(existing.id));
+      } else {
+        const resM = await runAsync(
+          `INSERT INTO live_members (session_id, sync_uuid, origin_id, user_id, nickname, role, assignment, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            sessionId,
+            mUuid,
+            m.origin_id || null,
+            localUserId,
+            m.nickname || 'Membre',
+            m.role || 'statistician',
+            m.assignment || '["S","R","A","B","D"]',
+            m.updated_at || now,
+          ]
+        );
+        memberUuidToLocalId.set(String(mUuid), Number(resM.lastID));
+      }
+    }
+
+    // --- Synchronisation des actions (mise à jour sur place par sync_uuid) ---
+    const existingActions = await allAsync('SELECT * FROM live_actions WHERE session_id = ?', [sessionId]);
+    const actionByUuid = new Map();
+    for (const a of existingActions) {
+      if (a.sync_uuid) actionByUuid.set(String(a.sync_uuid), a);
+    }
+    const remoteActions = parseJsonArray(entry.actions);
+    const keepActionUuids = new Set(remoteActions.map((a) => String(a.sync_uuid)));
+    for (const a of existingActions) {
+      if (a.sync_uuid && !keepActionUuids.has(String(a.sync_uuid))) {
+        await runAsync('DELETE FROM live_actions WHERE id = ?', [a.id]);
+      }
+    }
+    for (const a of remoteActions) {
+      const aUuid = a.sync_uuid || crypto.randomUUID();
+      const memberId = a.member_uuid ? memberUuidToLocalId.get(String(a.member_uuid)) || null : null;
+      const existing = actionByUuid.get(String(aUuid));
+      if (existing) {
+        await runAsync(
+          `UPDATE live_actions
+              SET effective_time = ?, seq = ?, member_id = COALESCE(?, member_id), assigned = ?,
+                  code = ?, system_time = ?, team = ?, player_number = ?, action = ?, evaluation = ?,
+                  type = ?, start_zone = ?, end_zone = ?, start_subzone = ?, end_subzone = ?,
+                  attack_zone = ?, set_number = ?, start_x = ?, start_y = ?, mid_x = ?, mid_y = ?,
+                  end_x = ?, end_y = ?, is_auto = ?, updated_at = ?
+            WHERE id = ?`,
+          [
+            Number(a.effective_time) || 0,
+            Number(a.seq) || 0,
+            memberId,
+            a.assigned == null ? 1 : Number(a.assigned),
+            a.code,
+            a.system_time == null ? null : Number(a.system_time),
+            a.team || null,
+            a.player_number == null ? null : Number(a.player_number),
+            a.action || null,
+            a.evaluation || null,
+            a.type || null,
+            a.start_zone || null,
+            a.end_zone || null,
+            a.start_subzone || null,
+            a.end_subzone || null,
+            a.attack_zone || null,
+            Number(a.set_number) > 0 ? Number(a.set_number) : 1,
+            a.start_x == null ? null : Number(a.start_x),
+            a.start_y == null ? null : Number(a.start_y),
+            a.mid_x == null ? null : Number(a.mid_x),
+            a.mid_y == null ? null : Number(a.mid_y),
+            a.end_x == null ? null : Number(a.end_x),
+            a.end_y == null ? null : Number(a.end_y),
+            a.is_auto ? 1 : 0,
+            a.updated_at || now,
+            existing.id,
+          ]
+        );
+      } else {
+        await runAsync(
+          `INSERT INTO live_actions
+              (session_id, sync_uuid, effective_time, seq, member_id, assigned, code, system_time,
+               team, player_number, action, evaluation, type, start_zone, end_zone, start_subzone,
+               end_subzone, attack_zone, set_number, start_x, start_y, mid_x, mid_y, end_x, end_y,
+               is_auto, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            sessionId,
+            aUuid,
+            Number(a.effective_time) || 0,
+            Number(a.seq) || 0,
+            memberId,
+            a.assigned == null ? 1 : Number(a.assigned),
+            a.code,
+            a.system_time == null ? null : Number(a.system_time),
+            a.team || null,
+            a.player_number == null ? null : Number(a.player_number),
+            a.action || null,
+            a.evaluation || null,
+            a.type || null,
+            a.start_zone || null,
+            a.end_zone || null,
+            a.start_subzone || null,
+            a.end_subzone || null,
+            a.attack_zone || null,
+            Number(a.set_number) > 0 ? Number(a.set_number) : 1,
+            a.start_x == null ? null : Number(a.start_x),
+            a.start_y == null ? null : Number(a.start_y),
+            a.mid_x == null ? null : Number(a.mid_x),
+            a.mid_y == null ? null : Number(a.mid_y),
+            a.end_x == null ? null : Number(a.end_x),
+            a.end_y == null ? null : Number(a.end_y),
+            a.is_auto ? 1 : 0,
+            a.updated_at || now,
+          ]
+        );
+      }
+    }
+
+    // --- Synchronisation des événements (mise à jour sur place par sync_uuid) ---
+    const existingEvents = await allAsync('SELECT * FROM live_events WHERE session_id = ?', [sessionId]);
+    const eventByUuid = new Map();
+    for (const ev of existingEvents) {
+      if (ev.sync_uuid) eventByUuid.set(String(ev.sync_uuid), ev);
+    }
+    const remoteEvents = parseJsonArray(entry.events);
+    const keepEventUuids = new Set(remoteEvents.map((ev) => String(ev.sync_uuid)));
+    for (const ev of existingEvents) {
+      if (ev.sync_uuid && !keepEventUuids.has(String(ev.sync_uuid))) {
+        await runAsync('DELETE FROM live_events WHERE id = ?', [ev.id]);
+      }
+    }
+    for (const ev of remoteEvents) {
+      const evUuid = ev.sync_uuid || crypto.randomUUID();
+      const payloadStr = typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload || {});
+      const existing = eventByUuid.get(String(evUuid));
+      if (existing) {
+        await runAsync(
+          `UPDATE live_events
+              SET kind = ?, set_number = ?, point_number = ?, team = ?, payload = ?, updated_at = ?
+            WHERE id = ?`,
+          [
+            ev.kind,
+            Number(ev.set_number) > 0 ? Number(ev.set_number) : 1,
+            Number(ev.point_number) || 0,
+            ev.team || null,
+            payloadStr,
+            ev.updated_at || now,
+            existing.id,
+          ]
+        );
+      } else {
+        await runAsync(
+          `INSERT INTO live_events (session_id, sync_uuid, kind, set_number, point_number, team, payload, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            sessionId,
+            evUuid,
+            ev.kind,
+            Number(ev.set_number) > 0 ? Number(ev.set_number) : 1,
+            Number(ev.point_number) || 0,
+            ev.team || null,
+            payloadStr,
+            ev.updated_at || now,
+          ]
+        );
+      }
+    }
+
+    // --- Synchronisation des positions de départ (set_setups) ---
+    const matchKey = `session:${sessionId}`;
+    for (const st of parseJsonArray(entry.setups)) {
+      const setNum = Number(st.set_number) || 1;
+      const homeLineup =
+        st.home_lineup == null
+          ? null
+          : typeof st.home_lineup === 'string'
+          ? st.home_lineup
+          : JSON.stringify(st.home_lineup);
+      const awayLineup =
+        st.away_lineup == null
+          ? null
+          : typeof st.away_lineup === 'string'
+          ? st.away_lineup
+          : JSON.stringify(st.away_lineup);
+      await runAsync(
+        `INSERT INTO set_setups
+            (match_key, set_number, first_server, home_setter_pos, away_setter_pos,
+             home_setter, away_setter, home_lineup, away_lineup, local_updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(match_key, set_number) DO UPDATE SET
+           first_server = excluded.first_server,
+           home_setter_pos = excluded.home_setter_pos,
+           away_setter_pos = excluded.away_setter_pos,
+           home_setter = excluded.home_setter,
+           away_setter = excluded.away_setter,
+           home_lineup = excluded.home_lineup,
+           away_lineup = excluded.away_lineup,
+           local_updated_at = excluded.local_updated_at`,
+        [
+          matchKey,
+          setNum,
+          st.first_server || null,
+          st.home_setter_pos || null,
+          st.away_setter_pos || null,
+          st.home_setter == null ? null : Number(st.home_setter),
+          st.away_setter == null ? null : Number(st.away_setter),
+          homeLineup,
+          awayLineup,
+          st.updated_at || now,
+        ]
+      );
+    }
+
+    emitToSession(sessionId, 'session:update', {});
+    emitToSession(sessionId, 'session:setups', {});
+    return sessionId;
+  },
+
+  adoptUuid: (localId, uuid) =>
+    runAsync('UPDATE live_sessions SET sync_uuid = ? WHERE id = ?', [uuid, localId]),
+  deleteLocal: (localId) =>
+    runAsync('UPDATE live_sessions SET deleted = 1, deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP), dirty = 0 WHERE id = ?', [localId]),
+  settleLocal: (localId, cloudUpdatedAt) =>
+    runAsync('UPDATE live_sessions SET dirty = 0, cloud_updated_at = ? WHERE id = ?', [cloudUpdatedAt, localId]),
+  touchPushed: (uuid, cloudUpdatedAt) =>
+    runAsync('UPDATE live_sessions SET dirty = 0, cloud_updated_at = ? WHERE sync_uuid = ? OR id = ?', [cloudUpdatedAt, uuid, uuid]),
+  pendingCount: async () => {
+    const r = await getAsync('SELECT COUNT(*) AS n FROM live_sessions WHERE dirty = 1', []);
+    return r ? r.n : 0;
+  },
+  statusCounts: async () => {
+    const active = await getAsync('SELECT COUNT(*) AS n FROM live_sessions WHERE COALESCE(deleted, 0) = 0 AND deleted_at IS NULL', []);
+    const tombstones = await getAsync('SELECT COUNT(*) AS n FROM live_sessions WHERE COALESCE(deleted, 0) = 1 OR deleted_at IS NOT NULL', []);
+    return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
+  },
+  onChanged: (applied, removed) => {
+    if (applied || removed) emitCollectionChanged('live');
+  },
+};
+
 module.exports = {
   makeFlatCollection,
   trajectoriesCollection,
@@ -538,6 +1376,7 @@ module.exports = {
   claimsCollection,
   matchesCollection,
   setupsCollection,
+  liveCollection,
 };
 
 

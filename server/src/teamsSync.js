@@ -135,6 +135,7 @@ const teamsCollection = {
       .then((relinked) => {
         if (relinked.trajectories) emitCollectionChanged('trajectories');
         if (relinked.matches) emitCollectionChanged('matches');
+        if (relinked.live) emitCollectionChanged('live');
       })
       .catch((err) => console.warn('Re-liaison des équipes :', err.message));
   },

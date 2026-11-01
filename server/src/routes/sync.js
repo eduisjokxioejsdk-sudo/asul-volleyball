@@ -46,7 +46,7 @@ function mountSyncRoutes(router, engine) {
     }
     try {
       engine.saveSyncConfig({ enabled, url: cleanUrl, key, table });
-      engine.restartSyncLoop();
+      require('../syncHub').restartAll();
 
       const cfg = engine.getSyncConfig();
       let check = { ok: false, error: null };

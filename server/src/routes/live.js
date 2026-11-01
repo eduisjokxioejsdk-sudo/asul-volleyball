@@ -9,6 +9,7 @@ const { getSetups, saveSetups } = require('../setups');
 const liveStream = require('../liveStream');
 const liveRecord = require('../liveRecord');
 const syncHub = require('../syncHub');
+const { mountSyncRoutes } = require('./sync');
 const dvCode = require('../datavolleyCode');
 const { generateProxy } = require('../proxy');
 
@@ -58,6 +59,36 @@ function safeParsePayload(raw) {
 
 function withPayload(row) {
   return row ? { ...row, payload: safeParsePayload(row.payload) } : row;
+}
+
+/**
+ * Marque la session live comme modifiée localement et déclenche une
+ * synchronisation Supabase immédiate (en tâche de fond).
+ */
+function touchLiveSession(sessionId, extraDeletedUuids = []) {
+  const now = new Date().toISOString();
+  const cleanDeleted = (extraDeletedUuids || []).filter(Boolean).map(String);
+  if (cleanDeleted.length > 0) {
+    db.get('SELECT deleted_items FROM live_sessions WHERE id = ?', [sessionId], (err, row) => {
+      const prev = safeParse(row?.deleted_items);
+      const merged = Array.from(new Set([...(Array.isArray(prev) ? prev : []), ...cleanDeleted]));
+      db.run(
+        'UPDATE live_sessions SET dirty = 1, local_updated_at = ?, deleted_items = ? WHERE id = ?',
+        [now, JSON.stringify(merged), sessionId],
+        () => {
+          syncHub.live.syncNow({ reason: 'live-api' }).catch(() => {});
+        }
+      );
+    });
+    return;
+  }
+  db.run(
+    'UPDATE live_sessions SET dirty = 1, local_updated_at = ? WHERE id = ?',
+    [now, sessionId],
+    () => {
+      syncHub.live.syncNow({ reason: 'live-api' }).catch(() => {});
+    }
+  );
 }
 
 function loadSession(sessionId, res, callback) {
@@ -129,6 +160,9 @@ router.get('/time', (req, res) => {
   res.json({ serverTime: Date.now() });
 });
 
+// Routes de synchronisation cloud (POST /sync, GET /sync/status, PUT /sync/config)
+mountSyncRoutes(router, syncHub.live);
+
 // --- Sessions ---------------------------------------------------------------
 
 // Créer une session live (le créateur en est propriétaire + membre).
@@ -137,30 +171,48 @@ router.post('/', authenticateToken, (req, res) => {
   const title = (name || 'Match en direct').trim() || 'Match en direct';
   const id = uuidv4();
   const joinCode = generateJoinCode();
+  const now = new Date().toISOString();
 
-  db.run(
-    `INSERT INTO live_sessions (id, name, team1_name, team2_name, home_team_id, away_team_id, owner_user_id, join_code)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      title,
-      (team1_name || '').trim() || 'Domicile',
-      (team2_name || '').trim() || 'Extérieur',
-      home_team_id ? Number(home_team_id) : null,
-      away_team_id ? Number(away_team_id) : null,
-      req.user.id,
-      joinCode,
-    ],
-    function (err) {
-      if (err) return res.status(500).json({ error: 'Failed to create session' });
+  db.all(
+    'SELECT id, sync_uuid FROM teams WHERE id IN (?, ?)',
+    [home_team_id ? Number(home_team_id) : -1, away_team_id ? Number(away_team_id) : -1],
+    (tErr, teamRows) => {
+      const byId = new Map((teamRows || []).map((r) => [Number(r.id), r.sync_uuid]));
+      const homeTeamUuid = home_team_id ? byId.get(Number(home_team_id)) || null : null;
+      const awayTeamUuid = away_team_id ? byId.get(Number(away_team_id)) || null : null;
 
       db.run(
-        `INSERT INTO live_members (session_id, user_id, nickname, role, assignment)
-         VALUES (?, ?, ?, 'statistician', '["S","R","A","B","D"]')`,
-        [id, req.user.id, req.user.name || 'Créateur'],
-        (err2) => {
-          if (err2) return res.status(500).json({ error: 'Failed to add owner as member' });
-          res.status(201).json({ id, join_code: joinCode, name: title });
+        `INSERT INTO live_sessions
+          (id, sync_uuid, name, team1_name, team2_name, home_team_id, away_team_id,
+           home_team_uuid, away_team_uuid, owner_user_id, join_code, dirty, deleted, local_updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
+        [
+          id,
+          id,
+          title,
+          (team1_name || '').trim() || 'Domicile',
+          (team2_name || '').trim() || 'Extérieur',
+          home_team_id ? Number(home_team_id) : null,
+          away_team_id ? Number(away_team_id) : null,
+          homeTeamUuid,
+          awayTeamUuid,
+          req.user.id,
+          joinCode,
+          now,
+        ],
+        function (err) {
+          if (err) return res.status(500).json({ error: 'Failed to create session' });
+
+          db.run(
+            `INSERT INTO live_members (session_id, sync_uuid, user_id, nickname, role, assignment, updated_at)
+             VALUES (?, ?, ?, ?, 'statistician', '["S","R","A","B","D"]', ?)`,
+            [id, uuidv4(), req.user.id, req.user.name || 'Créateur', now],
+            (err2) => {
+              if (err2) return res.status(500).json({ error: 'Failed to add owner as member' });
+              touchLiveSession(id);
+              res.status(201).json({ id, join_code: joinCode, name: title });
+            }
+          );
         }
       );
     }
@@ -175,6 +227,7 @@ router.get('/mine', authenticateToken, (req, res) => {
        LEFT JOIN live_members m ON m.session_id = s.id AND m.user_id = ?
       WHERE (s.owner_user_id = ? OR m.id IS NOT NULL)
         AND s.deleted_at IS NULL
+        AND COALESCE(s.deleted, 0) = 0
       ORDER BY s.created_at DESC`,
     [req.user.id, req.user.id],
     (err, rows) => {
@@ -188,7 +241,7 @@ router.get('/mine', authenticateToken, (req, res) => {
 router.get('/trash', authenticateToken, (req, res) => {
   db.all(
     `SELECT * FROM live_sessions
-      WHERE owner_user_id = ? AND deleted_at IS NOT NULL
+      WHERE owner_user_id = ? AND deleted_at IS NOT NULL AND COALESCE(deleted, 0) = 0
       ORDER BY deleted_at DESC`,
     [req.user.id],
     (err, rows) => {
@@ -217,19 +270,15 @@ router.get('/:sessionId', authenticateToken, (req, res) => {
   });
 });
 
-// Rejoindre une session par code.
+// Rejoindre une session par code (recherche locale puis synchronisation Supabase si absente).
 router.post('/join', authenticateToken, (req, res) => {
-  const { join_code, role, nickname, assignment } = req.body || {};
-  const code = (join_code || '').trim().toUpperCase();
+  const body = typeof req.body === 'string' ? { join_code: req.body } : (req.body || {});
+  const { join_code, code: altCode, role, nickname, assignment } = body;
+  const code = String(join_code || altCode || '').trim().toUpperCase();
 
   if (!code) return res.status(400).json({ error: 'Code requis' });
 
-  db.get('SELECT * FROM live_sessions WHERE join_code = ?', [code], (err, session) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    if (!session) return res.status(404).json({ error: 'Code invalide' });
-
-    // Rôles : statisticien (code), observateur (lecture seule) et caméra
-    // (le téléphone qui filme : ni codage, ni assignation).
+  const proceedWithSession = (session) => {
     const memberRole =
       role === 'viewer' ? 'viewer' : role === 'camera' ? 'camera' : 'statistician';
     const memberNickname = (nickname || req.user.name || 'Membre').trim();
@@ -238,6 +287,7 @@ router.post('/join', authenticateToken, (req, res) => {
       : (Array.isArray(assignment) && assignment.length
         ? JSON.stringify(assignment)
         : '["S","R","A","B","D"]');
+    const now = new Date().toISOString();
 
     db.get(
       'SELECT * FROM live_members WHERE session_id = ? AND user_id = ?',
@@ -247,11 +297,12 @@ router.post('/join', authenticateToken, (req, res) => {
 
         if (existing) {
           db.run(
-            'UPDATE live_members SET role = ?, nickname = ?, assignment = ? WHERE id = ?',
-            [memberRole, memberNickname, memberAssignment, existing.id],
+            'UPDATE live_members SET sync_uuid = COALESCE(sync_uuid, ?), role = ?, nickname = ?, assignment = ?, updated_at = ? WHERE id = ?',
+            [uuidv4(), memberRole, memberNickname, memberAssignment, now, existing.id],
             (err2) => {
               if (err2) return res.status(500).json({ error: 'Database error' });
               emitToSession(session.id, 'member:update', {});
+              touchLiveSession(session.id);
               res.json({ sessionId: session.id, memberId: existing.id });
             }
           );
@@ -259,18 +310,49 @@ router.post('/join', authenticateToken, (req, res) => {
         }
 
         db.run(
-          `INSERT INTO live_members (session_id, user_id, nickname, role, assignment)
-           VALUES (?, ?, ?, ?, ?)`,
-          [session.id, req.user.id, memberNickname, memberRole, memberAssignment],
+          `INSERT INTO live_members (session_id, sync_uuid, user_id, nickname, role, assignment, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [session.id, uuidv4(), req.user.id, memberNickname, memberRole, memberAssignment, now],
           function (err2) {
             if (err2) return res.status(500).json({ error: 'Database error' });
             emitToSession(session.id, 'member:update', {});
+            touchLiveSession(session.id);
             res.json({ sessionId: session.id, memberId: this.lastID });
           }
         );
       }
     );
-  });
+  };
+
+  db.get(
+    'SELECT * FROM live_sessions WHERE join_code = ? AND COALESCE(deleted, 0) = 0',
+    [code],
+    async (err, session) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (session) return proceedWithSession(session);
+
+      // Si le code n'est pas encore présent localement, on synchronise depuis
+      // Supabase (équipes + sessions en direct) puis on revérifie.
+      try {
+        await Promise.all([
+          syncHub.teams.syncNow({ reason: 'live-join' }).catch(() => {}),
+          syncHub.live.syncNow({ reason: 'live-join' }).catch(() => {}),
+        ]);
+      } catch {
+        // Ignoré : la vérification SQLite ci-dessous tranchera.
+      }
+
+      db.get(
+        'SELECT * FROM live_sessions WHERE join_code = ? AND COALESCE(deleted, 0) = 0',
+        [code],
+        (err2, syncedSession) => {
+          if (err2) return res.status(500).json({ error: 'Database error' });
+          if (!syncedSession) return res.status(404).json({ error: 'Code invalide' });
+          proceedWithSession(syncedSession);
+        }
+      );
+    }
+  );
 });
 
 // Mettre à jour nom / équipes (propriétaire uniquement).
@@ -291,6 +373,7 @@ router.patch('/:sessionId', authenticateToken, (req, res) => {
       (err) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         emitToSession(session.id, 'session:update', {});
+        touchLiveSession(session.id);
         res.json({ message: 'Session mise à jour' });
       }
     );
@@ -306,6 +389,7 @@ router.post('/:sessionId/finish', authenticateToken, (req, res) => {
     db.run("UPDATE live_sessions SET status = 'finished' WHERE id = ?", [session.id], (err) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       emitToSession(session.id, 'session:update', {});
+      touchLiveSession(session.id);
       res.json({ message: 'Match terminé' });
     });
   });
@@ -320,6 +404,7 @@ router.post('/:sessionId/reopen', authenticateToken, (req, res) => {
     db.run("UPDATE live_sessions SET status = 'active' WHERE id = ?", [session.id], (err) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       emitToSession(session.id, 'session:update', {});
+      touchLiveSession(session.id);
       res.json({ message: 'Match rouvert' });
     });
   });
@@ -337,6 +422,7 @@ router.post('/:sessionId/trash', authenticateToken, (req, res) => {
       (err) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         emitToSession(session.id, 'session:update', {});
+        touchLiveSession(session.id);
         res.json({ message: 'Match mis à la corbeille' });
       }
     );
@@ -355,6 +441,7 @@ router.post('/:sessionId/restore', authenticateToken, (req, res) => {
       (err) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         emitToSession(session.id, 'session:update', {});
+        touchLiveSession(session.id);
         res.json({ message: 'Match restauré' });
       }
     );
@@ -367,15 +454,21 @@ router.delete('/:sessionId', authenticateToken, (req, res) => {
     if (session.owner_user_id !== req.user.id) {
       return res.status(403).json({ error: 'Réservé au propriétaire' });
     }
+    const now = new Date().toISOString();
     db.serialize(() => {
       db.run('DELETE FROM live_actions WHERE session_id = ?', [session.id]);
       db.run('DELETE FROM live_events WHERE session_id = ?', [session.id]);
       db.run('DELETE FROM live_members WHERE session_id = ?', [session.id]);
       db.run('DELETE FROM set_setups WHERE match_key = ?', ['session:' + session.id]);
-      db.run('DELETE FROM live_sessions WHERE id = ?', [session.id], (err) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        res.json({ message: 'Match supprimé définitivement' });
-      });
+      db.run(
+        'UPDATE live_sessions SET deleted = 1, dirty = 1, deleted_at = COALESCE(deleted_at, ?), local_updated_at = ? WHERE id = ?',
+        [now, now, session.id],
+        (err) => {
+          if (err) return res.status(500).json({ error: 'Database error' });
+          syncHub.live.syncNow({ reason: 'live-delete' }).catch(() => {});
+          res.json({ message: 'Match supprimé définitivement' });
+        }
+      );
     });
   });
 });
@@ -401,6 +494,7 @@ router.post('/:sessionId/invite', authenticateToken, (req, res) => {
 
     let added = 0;
     let pending = normalized.length;
+    const now = new Date().toISOString();
 
     normalized.forEach((email) => {
       db.get('SELECT * FROM users WHERE email = ?', [email], (err, user) => {
@@ -419,9 +513,9 @@ router.post('/:sessionId/invite', authenticateToken, (req, res) => {
               return;
             }
             db.run(
-              `INSERT INTO live_members (session_id, user_id, nickname, role, assignment)
-               VALUES (?, ?, ?, 'statistician', '["S","R","A","B","D"]')`,
-              [session.id, user.id, user.name || email],
+              `INSERT INTO live_members (session_id, sync_uuid, user_id, nickname, role, assignment, updated_at)
+               VALUES (?, ?, ?, ?, 'statistician', '["S","R","A","B","D"]', ?)`,
+              [session.id, uuidv4(), user.id, user.name || email, now],
               function (err2) {
                 if (!err2) added += 1;
                 pending -= 1;
@@ -435,6 +529,7 @@ router.post('/:sessionId/invite', authenticateToken, (req, res) => {
 
     function finish() {
       emitToSession(session.id, 'member:update', {});
+      touchLiveSession(session.id);
       res.json({ message: `${added} invité(s) ajouté(s)` });
     }
   });
@@ -463,13 +558,15 @@ router.put('/:sessionId/members/:memberId', authenticateToken, (req, res) => {
         const newAssignment = Array.isArray(assignment) && assignment.length
           ? JSON.stringify(assignment)
           : member.assignment;
+        const now = new Date().toISOString();
 
         db.run(
-          'UPDATE live_members SET role = ?, nickname = ?, assignment = ? WHERE id = ?',
-          [newRole, newNickname, newAssignment, memberId],
+          'UPDATE live_members SET sync_uuid = COALESCE(sync_uuid, ?), role = ?, nickname = ?, assignment = ?, updated_at = ? WHERE id = ?',
+          [uuidv4(), newRole, newNickname, newAssignment, now, memberId],
           (err2) => {
             if (err2) return res.status(500).json({ error: 'Database error' });
             emitToSession(session.id, 'member:update', {});
+            touchLiveSession(session.id);
             res.json({ message: 'Membre mis à jour' });
           }
         );
@@ -531,23 +628,27 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
             pending -= 1;
             if (pending > 0) return;
             for (const action of created) emitToSession(session.id, 'action:add', { action });
+            touchLiveSession(session.id);
             res.status(201).json({ action: created[0], actions: created });
           };
 
           if (codes.length === 0) return res.status(400).json({ error: 'Code invalide' });
+          const nowIso = new Date().toISOString();
 
           for (const one of codes) {
             const parts = decomposeCode(one);
             const currentSeq = seq;
+            const actionUuid = uuidv4();
             seq += 1;
             db.run(
               `INSERT INTO live_actions
-                (session_id, effective_time, seq, member_id, assigned, code, system_time, team, player_number,
+                (session_id, sync_uuid, effective_time, seq, member_id, assigned, code, system_time, team, player_number,
                  action, evaluation, type, start_zone, end_zone, end_subzone, attack_zone, set_number,
-                 start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 session.id,
+                actionUuid,
                 eff,
                 currentSeq,
                 myMember ? myMember.id : null,
@@ -571,11 +672,13 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
                 end_x ?? null,
                 end_y ?? null,
                 autoFlag,
+                nowIso,
               ],
               function (err2) {
                 if (err2) return res.status(500).json({ error: 'Failed to save action' });
                 created.push({
                   id: this.lastID,
+                  sync_uuid: actionUuid,
                   session_id: session.id,
                   effective_time: eff,
                   seq: currentSeq,
@@ -592,6 +695,7 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
                   end_x: end_x ?? null,
                   end_y: end_y ?? null,
                   is_auto: autoFlag,
+                  updated_at: nowIso,
                   ...parts,
                 });
                 done();
@@ -649,23 +753,29 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
           const newStartSub = start_subzone !== undefined ? start_subzone : existing.start_subzone;
           const newEndSub = end_subzone !== undefined ? end_subzone : (parts.end_subzone || existing.end_subzone);
 
+          const nowIso = new Date().toISOString();
+          const syncUuid = existing.sync_uuid || uuidv4();
+
           db.run(
             `UPDATE live_actions
-                SET code = ?, effective_time = ?, assigned = ?, team = ?, player_number = ?, action = ?,
+                SET sync_uuid = ?, code = ?, effective_time = ?, assigned = ?, team = ?, player_number = ?, action = ?,
                     evaluation = ?, type = ?, start_zone = ?, end_zone = ?, end_subzone = ?, attack_zone = ?,
-                    start_x = ?, start_y = ?, mid_x = ?, mid_y = ?, end_x = ?, end_y = ?
+                    start_x = ?, start_y = ?, mid_x = ?, mid_y = ?, end_x = ?, end_y = ?, updated_at = ?
               WHERE id = ?`,
             [
+              syncUuid,
               newCode, newEff, newAssigned, parts.team, parts.player_number, parts.action,
               parts.evaluation, parts.type || null, parts.start_zone || null, parts.end_zone || null,
               newEndSub || null, newZone ?? parts.start_zone ?? null,
               newStartX ?? null, newStartY ?? null, newMidX ?? null, newMidY ?? null, newEndX ?? null, newEndY ?? null,
+              nowIso,
               actionId,
             ],
             (err2) => {
               if (err2) return res.status(500).json({ error: 'Failed to update action' });
               const action = {
                 ...existing,
+                sync_uuid: syncUuid,
                 code: newCode,
                 effective_time: newEff,
                 assigned: newAssigned,
@@ -677,10 +787,12 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
                 end_x: newEndX ?? null,
                 end_y: newEndY ?? null,
                 start_subzone: newStartSub ?? null,
+                updated_at: nowIso,
                 ...parts,
                 end_subzone: newEndSub || parts.end_subzone || null,
               };
               emitToSession(session.id, 'action:update', { action });
+              touchLiveSession(session.id);
               res.json({ action });
             }
           );
@@ -695,13 +807,21 @@ router.delete('/:sessionId/actions/:actionId', authenticateToken, (req, res) => 
   const actionId = Number(req.params.actionId);
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, () => {
-      db.run(
-        'DELETE FROM live_actions WHERE id = ? AND session_id = ?',
+      db.get(
+        'SELECT sync_uuid FROM live_actions WHERE id = ? AND session_id = ?',
         [actionId, session.id],
-        function (err) {
-          if (err) return res.status(500).json({ error: 'Database error' });
-          emitToSession(session.id, 'action:delete', { actionId });
-          res.json({ message: 'Action supprimée' });
+        (errG, existing) => {
+          if (errG) return res.status(500).json({ error: 'Database error' });
+          db.run(
+            'DELETE FROM live_actions WHERE id = ? AND session_id = ?',
+            [actionId, session.id],
+            function (err) {
+              if (err) return res.status(500).json({ error: 'Database error' });
+              emitToSession(session.id, 'action:delete', { actionId });
+              touchLiveSession(session.id, existing?.sync_uuid ? [existing.sync_uuid] : []);
+              res.json({ message: 'Action supprimée' });
+            }
+          );
         }
       );
     });
@@ -790,16 +910,18 @@ router.post('/:sessionId/events', authenticateToken, (req, res) => {
 
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, () => {
+      const nowIso = new Date().toISOString();
       db.run(
-        `INSERT INTO live_events (session_id, kind, set_number, point_number, team, payload)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [session.id, kind, setNumber, pointNumber, team || null, JSON.stringify(cleanPayload)],
+        `INSERT INTO live_events (session_id, sync_uuid, kind, set_number, point_number, team, payload, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [session.id, uuidv4(), kind, setNumber, pointNumber, team || null, JSON.stringify(cleanPayload), nowIso],
         function (err) {
           if (err) return res.status(500).json({ error: 'Failed to save event' });
           db.get('SELECT * FROM live_events WHERE id = ?', [this.lastID], (err2, row) => {
             if (err2 || !row) return res.status(500).json({ error: 'Database error' });
             const event = withPayload(row);
             emitToSession(session.id, 'event:add', { event });
+            touchLiveSession(session.id);
             res.status(201).json({ event });
           });
         }
@@ -812,13 +934,21 @@ router.delete('/:sessionId/events/:eventId', authenticateToken, (req, res) => {
   const eventId = Number(req.params.eventId);
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, () => {
-      db.run(
-        'DELETE FROM live_events WHERE id = ? AND session_id = ?',
+      db.get(
+        'SELECT sync_uuid FROM live_events WHERE id = ? AND session_id = ?',
         [eventId, session.id],
-        function (err) {
-          if (err) return res.status(500).json({ error: 'Failed to delete event' });
-          emitToSession(session.id, 'event:delete', { eventId });
-          res.json({ message: 'Event deleted', deleted: this.changes });
+        (errG, existing) => {
+          if (errG) return res.status(500).json({ error: 'Database error' });
+          db.run(
+            'DELETE FROM live_events WHERE id = ? AND session_id = ?',
+            [eventId, session.id],
+            function (err) {
+              if (err) return res.status(500).json({ error: 'Failed to delete event' });
+              emitToSession(session.id, 'event:delete', { eventId });
+              touchLiveSession(session.id, existing?.sync_uuid ? [existing.sync_uuid] : []);
+              res.json({ message: 'Event deleted', deleted: this.changes });
+            }
+          );
         }
       );
     });
@@ -860,6 +990,7 @@ router.post('/:sessionId/point/complete', authenticateToken, (req, res) => {
               if (err2) return res.status(500).json({ error: 'Failed to update point' });
               const payload = { current_point: currentPoint, completed, advanced };
               emitToSession(s.id, 'session:point', payload);
+              touchLiveSession(s.id);
               res.json(payload);
             }
           );
@@ -888,6 +1019,7 @@ router.put('/:sessionId/video-delay', authenticateToken, (req, res) => {
       );
       db.run('UPDATE live_sessions SET video_delay = ? WHERE id = ?', [seconds, s.id], (err) => {
         if (err) return res.status(500).json({ error: 'Database error' });
+        touchLiveSession(s.id);
         res.json({ delay: seconds });
       });
     });
@@ -927,16 +1059,26 @@ router.put('/:sessionId/teams', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, () => {
       const { home_team_id, away_team_id } = req.body || {};
-      db.run(
-        'UPDATE live_sessions SET home_team_id = ?, away_team_id = ? WHERE id = ?',
-        [home_team_id ?? null, away_team_id ?? null, session.id],
-        (err) => {
-          if (err) return res.status(500).json({ error: 'Failed to save teams' });
-          emitToSession(session.id, 'session:teams', {
-            home_team_id: home_team_id ?? null,
-            away_team_id: away_team_id ?? null,
-          });
-          res.json({ home_team_id: home_team_id ?? null, away_team_id: away_team_id ?? null });
+      db.all(
+        'SELECT id, sync_uuid FROM teams WHERE id IN (?, ?)',
+        [home_team_id ? Number(home_team_id) : -1, away_team_id ? Number(away_team_id) : -1],
+        (tErr, teamRows) => {
+          const byId = new Map((teamRows || []).map((r) => [Number(r.id), r.sync_uuid]));
+          const homeUuid = home_team_id ? byId.get(Number(home_team_id)) || null : null;
+          const awayUuid = away_team_id ? byId.get(Number(away_team_id)) || null : null;
+          db.run(
+            'UPDATE live_sessions SET home_team_id = ?, away_team_id = ?, home_team_uuid = ?, away_team_uuid = ? WHERE id = ?',
+            [home_team_id ?? null, away_team_id ?? null, homeUuid, awayUuid, session.id],
+            (err) => {
+              if (err) return res.status(500).json({ error: 'Failed to save teams' });
+              emitToSession(session.id, 'session:teams', {
+                home_team_id: home_team_id ?? null,
+                away_team_id: away_team_id ?? null,
+              });
+              touchLiveSession(session.id);
+              res.json({ home_team_id: home_team_id ?? null, away_team_id: away_team_id ?? null });
+            }
+          );
         }
       );
     });
@@ -963,6 +1105,7 @@ router.put('/:sessionId/setups', authenticateToken, (req, res) => {
       saveSetups(`session:${session.id}`, setups, (err) => {
         if (err) return res.status(500).json({ error: 'Failed to save setups' });
         emitToSession(session.id, 'session:setups', {});
+        touchLiveSession(session.id);
         res.json({ message: 'Setups saved' });
       });
     });

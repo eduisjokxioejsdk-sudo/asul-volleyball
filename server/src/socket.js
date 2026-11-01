@@ -135,4 +135,13 @@ function emitCollectionChanged(key) {
   io.emit(`${key}:changed`, { at: Date.now() });
 }
 
-module.exports = { initSocket, emitToSession, emitTeamsChanged, emitCollectionChanged };
+/** Indique si au moins un client observe une session live en cours. */
+function hasActiveLiveWatchers() {
+  if (!io || !io.sockets || !io.sockets.adapter) return false;
+  for (const [room, sockets] of io.sockets.adapter.rooms) {
+    if (String(room).startsWith('live:') && sockets && sockets.size > 0) return true;
+  }
+  return false;
+}
+
+module.exports = { initSocket, emitToSession, emitTeamsChanged, emitCollectionChanged, hasActiveLiveWatchers };

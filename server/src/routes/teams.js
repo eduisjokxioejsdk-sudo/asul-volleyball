@@ -231,7 +231,7 @@ router.put('/sync/config', authenticateToken, async (req, res) => {
   }
   try {
     teamsSync.saveSyncConfig({ enabled, url: cleanUrl, key, table });
-    teamsSync.restartSyncLoop();
+    require('../syncHub').restartAll();
 
     const cfg = teamsSync.getSyncConfig();
     let check = { ok: false, error: null };

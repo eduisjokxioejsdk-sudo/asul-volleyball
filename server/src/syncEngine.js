@@ -78,21 +78,56 @@ function createSyncEngine(collection) {
     clientId: null,
   };
 
+  const DEFAULT_SUPABASE_URL = 'https://fzfryivizuhywfczeqbh.supabase.co';
+  const DEFAULT_SUPABASE_KEY =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6ZnJ5aXZpenVoeXdmY3plcWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0NjcxNzYsImV4cCI6MjEwOTA0MzE3Nn0.euFriFlOGdkxD9nUzVSDaf9AwYHko6hZlQ9aC84uOa0';
+  const LEGACY_SUPABASE_REFS = ['ywxijozqdzmqhbcgkgti'];
+
   function configPath() {
     return path.join(config.dataDir, 'sync.json');
+  }
+
+  function normalizeUrl(url) {
+    const raw = String(url == null ? '' : url).trim().replace(/\/+$/, '');
+    if (!raw) return '';
+    // Accepte aussi l'URL du tableau de bord Supabase
+    // (ex. https://supabase.com/dashboard/project/fzfryivizuhywfczeqbh)
+    // ou directement la référence du projet.
+    const dashMatch = /supabase\.com\/(?:dashboard\/)?project\/([a-z0-9]{15,30})/i.exec(raw);
+    if (dashMatch) return `https://${dashMatch[1].toLowerCase()}.supabase.co`;
+    if (/^[a-z0-9]{20}$/i.test(raw)) return `https://${raw.toLowerCase()}.supabase.co`;
+    return raw;
   }
 
   function readConfigFile() {
     try {
       const parsed = JSON.parse(fs.readFileSync(configPath(), 'utf8'));
-      return parsed && typeof parsed === 'object' ? parsed : {};
+      if (!parsed || typeof parsed !== 'object') return {};
+      const rawUrl = String(parsed.url || '').trim();
+      const isLegacy = LEGACY_SUPABASE_REFS.some((ref) => rawUrl.includes(ref));
+      const normalized = normalizeUrl(rawUrl);
+      if (isLegacy) {
+        const upgraded = {
+          ...parsed,
+          provider: 'supabase',
+          url: DEFAULT_SUPABASE_URL,
+          key: DEFAULT_SUPABASE_KEY,
+          updatedAt: new Date().toISOString(),
+        };
+        try {
+          fs.writeFileSync(configPath(), `${JSON.stringify(upgraded, null, 2)}\n`, 'utf8');
+        } catch (err) {
+          /* lecture seule éventuelle */
+        }
+        return upgraded;
+      }
+      if (normalized && normalized !== rawUrl) {
+        parsed.url = normalized;
+      }
+      return parsed;
     } catch (err) {
       return {};
     }
-  }
-
-  function normalizeUrl(url) {
-    return String(url == null ? '' : url).trim().replace(/\/+$/, '');
   }
 
   const env = (suffix) => process.env[`${collection.envPrefix}_${suffix}`];
@@ -285,6 +320,11 @@ function createSyncEngine(collection) {
     }
 
     if (!response.ok) {
+      if (response.status === 404 && text && text.includes('PGRST205')) {
+        throw new Error(
+          `Table Supabase « ${cfg.table} » absente sur ${hostOf(cfg)} : exécutez le script SQL (server/scripts/supabase-shared.sql) dans Supabase → SQL Editor.`
+        );
+      }
       throw new Error(`Supabase ${response.status} : ${(text || '').slice(0, 200)}`);
     }
     if (!text) return null;
@@ -349,11 +389,24 @@ function createSyncEngine(collection) {
     try {
       const originId = await ensureClientId();
       const previous = await readStateAll();
-      const cursor = previous[stateKey('cursor')] || null;
-      const lastSyncAt = previous[stateKey('last_sync_at')] || null;
+      const previousUrl = previous[stateKey('url')] || null;
+      const urlChanged = previousUrl
+        ? previousUrl !== cfg.url
+        : Boolean(previous[stateKey('cursor')] || previous[stateKey('last_sync_at')]);
+      const cursor = urlChanged ? null : previous[stateKey('cursor')] || null;
+      const lastSyncAt = urlChanged ? null : previous[stateKey('last_sync_at')] || null;
 
       const remoteRows = await pullAll(cfg, cursor);
-      const localRows = await collection.loadLocal();
+      let localRows = await collection.loadLocal(originId);
+      if (urlChanged) {
+        const remoteUuids = new Set((remoteRows || []).map((r) => String(r.sync_uuid)));
+        localRows = (localRows || []).map((row) => {
+          if (!Number(row.deleted) && (!row.sync_uuid || !remoteUuids.has(String(row.sync_uuid)))) {
+            return { ...row, dirty: 1 };
+          }
+          return row;
+        });
+      }
       const plan = collection.planMerge({ localRows, remoteRows, lastSyncAt, originId });
 
       for (const adopt of plan.toAdopt || []) {
@@ -363,7 +416,7 @@ function createSyncEngine(collection) {
       let applied = 0;
       let removed = 0;
       for (const entry of plan.toApply) {
-        await collection.applyRemote(entry);
+        await collection.applyRemote(entry, originId);
         if (entry.deleted) removed += 1;
         else applied += 1;
       }
@@ -415,6 +468,7 @@ function createSyncEngine(collection) {
         durationMs: Date.now() - new Date(startedAt).getTime(),
       };
 
+      writeState(stateKey('url'), cfg.url);
       writeState(stateKey('cursor'), nextCursor);
       writeState(stateKey('last_sync_at'), result.at);
       writeState(stateKey('last_error'), '');

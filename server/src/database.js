@@ -29,7 +29,7 @@ db.run('PRAGMA journal_mode=WAL;');
 // démarrage peut précéder la création des tables (« no such table: users »).
 // `waitReady` attend donc la fin du schéma initial ET des migrations avant que
 // le serveur n'accepte des requêtes (voir server/src/index.js).
-let pendingMigrations = 7; // équipes + trajectoires + vidéos + matchs + actions + événements + setups
+let pendingMigrations = 8; // équipes + trajectoires + vidéos + matchs + actions + événements + setups + live_sessions
 let statementsDrained = false;
 let schemaReady = false;
 const readyQueue = [];
@@ -567,6 +567,18 @@ db.serialize(() => {
     if (names.length > 0 && !names.includes('away_team_id')) {
       db.run('ALTER TABLE live_sessions ADD COLUMN away_team_id INTEGER');
     }
+    if (names.length > 0 && !names.includes('home_team_uuid')) {
+      db.run('ALTER TABLE live_sessions ADD COLUMN home_team_uuid TEXT');
+    }
+    if (names.length > 0 && !names.includes('away_team_uuid')) {
+      db.run('ALTER TABLE live_sessions ADD COLUMN away_team_uuid TEXT');
+    }
+    if (names.length > 0 && !names.includes('owner_origin_id')) {
+      db.run('ALTER TABLE live_sessions ADD COLUMN owner_origin_id TEXT');
+    }
+    if (names.length > 0 && !names.includes('deleted_items')) {
+      db.run("ALTER TABLE live_sessions ADD COLUMN deleted_items TEXT DEFAULT '[]'");
+    }
     if (names.length > 0 && !names.includes('deleted_at')) {
       db.run('ALTER TABLE live_sessions ADD COLUMN deleted_at DATETIME');
     }
@@ -577,6 +589,18 @@ db.serialize(() => {
       db.run('ALTER TABLE live_sessions ADD COLUMN point_completed TEXT');
     }
   });
+
+  // Migrate live_members / live_actions / live_events : identifiants de partage
+  for (const tbl of ['live_members', 'live_actions', 'live_events']) {
+    db.all(`PRAGMA table_info(${tbl})`, (err, columns) => {
+      if (err) return;
+      const names = (columns || []).map((c) => c.name);
+      if (!names.length) return;
+      if (!names.includes('sync_uuid')) db.run(`ALTER TABLE ${tbl} ADD COLUMN sync_uuid TEXT`);
+      if (!names.includes('origin_id')) db.run(`ALTER TABLE ${tbl} ADD COLUMN origin_id TEXT`);
+      if (!names.includes('updated_at')) db.run(`ALTER TABLE ${tbl} ADD COLUMN updated_at TEXT`);
+    });
+  }
 
   // Migrate volley_matches: add team association columns if missing
   db.all("PRAGMA table_info(volley_matches)", (err, columns) => {
@@ -748,12 +772,13 @@ db.serialize(() => {
   // Colonnes de synchronisation cloud pour les trajectoires (partage à distance).
   addSyncColumns('trajectory_matches', migrationDone);
 
-  // Codage DataVolley : vidéos (métadonnées), matchs, actions, événements, setups.
+  // Codage DataVolley : vidéos (métadonnées), matchs, actions, événements, setups, sessions live.
   addSyncColumns('videos', migrationDone);
   addSyncColumns('volley_matches', migrationDone, 'video_id');
   addSyncColumns('volley_actions', migrationDone);
   addSyncColumns('volley_events', migrationDone);
   addSyncColumns('set_setups', migrationDone);
+  addSyncColumns('live_sessions', migrationDone, 'id');
 });
 
 // Toutes les requêtes du bloc ci-dessus ont été soumises : dès qu'elles sont

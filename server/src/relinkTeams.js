@@ -58,11 +58,16 @@ async function relinkTeamReferences() {
   const tAway = await relinkSideByUuid('trajectory_matches', 'away');
   const mHome = await relinkSideByUuid('volley_matches', 'home');
   const mAway = await relinkSideByUuid('volley_matches', 'away');
+  const lHome = await relinkSideByUuid('live_sessions', 'home');
+  const lAway = await relinkSideByUuid('live_sessions', 'away');
   const tHomeName = await relinkSideByName('trajectory_matches', 'home');
   const tAwayName = await relinkSideByName('trajectory_matches', 'away');
+  const lHomeName = await relinkSideByName('live_sessions', 'home');
+  const lAwayName = await relinkSideByName('live_sessions', 'away');
   return {
     trajectories: tHome + tAway + tHomeName + tAwayName,
     matches: mHome + mAway,
+    live: lHome + lAway + lHomeName + lAwayName,
   };
 }
 

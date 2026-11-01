@@ -92,12 +92,24 @@ function saveConfig(config) {
 }
 
 // Copie la configuration Supabase embarquée dans l'installeur vers le dossier
-// de données, UNIQUEMENT si aucune configuration n'existe déjà (jamais écrasé).
+// de données si aucune configuration n'existe déjà, ou si elle pointe encore
+// vers un ancien projet Supabase désactivé.
+const LEGACY_SUPABASE_REFS = ['ywxijozqdzmqhbcgkgti'];
+
 function seedSyncConfig() {
   const target = path.join(DATA_DIR, 'sync.json');
   try {
-    if (fs.existsSync(target)) return;
     if (!fs.existsSync(SEED_SYNC)) return;
+    if (fs.existsSync(target)) {
+      try {
+        const current = JSON.parse(fs.readFileSync(target, 'utf8'));
+        const currentUrl = String(current?.url || '').trim();
+        const isLegacy = LEGACY_SUPABASE_REFS.some((ref) => currentUrl.includes(ref));
+        if (currentUrl && !isLegacy) return;
+      } catch (err) {
+        /* fichier illisible : on le remplace par la configuration embarquée */
+      }
+    }
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.copyFileSync(SEED_SYNC, target);
     appendLog('Configuration Supabase pré-remplie depuis l’installeur.');
@@ -577,9 +589,11 @@ async function boot(options = {}) {
   // Mode hôte : ce PC héberge le serveur et les données du match.
   setSplashState({ screen: 'loading', message: 'Préparation du serveur ASUL…' });
   try {
-    const port = await findFreePort(config.port || DEFAULT_CONFIG.port);
+    const port = await findFreePort(DEFAULT_CONFIG.port);
     if (port !== config.port) {
-      appendLog(`Port ${config.port} occupé : utilisation du port ${port}`);
+      if (port !== DEFAULT_CONFIG.port) {
+        appendLog(`Port ${DEFAULT_CONFIG.port} occupé : utilisation du port ${port}`);
+      }
       config.port = port;
       saveConfig(config);
     }

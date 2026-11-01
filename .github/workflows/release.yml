@@ -79,7 +79,7 @@ jobs:
         shell: pwsh
         run: |
           if ([string]::IsNullOrWhiteSpace("${{ secrets.SUPABASE_ANON_KEY }}")) {
-            Write-Error "Secret SUPABASE_ANON_KEY absent : ajoutez-le dans Settings → Secrets and variables → Actions, puis relancez."
+            Write-Host "Secret SUPABASE_ANON_KEY absent : utilisation de la clé du projet courant."
           }
 
       - name: Écrire la configuration Supabase pré-remplie
@@ -90,18 +90,21 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         run: |
           New-Item -ItemType Directory -Force -Path "desktop/resources" | Out-Null
-          # L'URL suit le secret SUPABASE_URL quand il est défini : si le projet
-          # Supabase est recréé (l'ancien ne répond plus au DNS), on met à jour
-          # le secret sans toucher au workflow. Sinon on garde le projet historique.
+          $defaultUrl = "https://fzfryivizuhywfczeqbh.supabase.co"
+          $defaultKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6ZnJ5aXZpenVoeXdmY3plcWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0NjcxNzYsImV4cCI6MjEwOTA0MzE3Nn0.euFriFlOGdkxD9nUzVSDaf9AwYHko6hZlQ9aC84uOa0"
           $syncUrl = "$env:SUPABASE_URL".Trim()
-          if ([string]::IsNullOrWhiteSpace($syncUrl)) {
-            $syncUrl = "https://ywxijozqdzmqhbcgkgti.supabase.co"
+          if ([string]::IsNullOrWhiteSpace($syncUrl) -or $syncUrl -match "ywxijozqdzmqhbcgkgti") {
+            $syncUrl = $defaultUrl
+          }
+          $syncKey = "$env:SUPABASE_ANON_KEY".Trim()
+          if ([string]::IsNullOrWhiteSpace($syncKey) -or $syncKey -match "ywxijozqdzmqhbcgkgti" -or $syncKey -match "Inl3eGlqb3pxZHptcWhiY2drZ3Rp") {
+            $syncKey = $defaultKey
           }
           $sync = [ordered]@{
             enabled = $true
             provider = "supabase"
             url = $syncUrl
-            key = $env:SUPABASE_ANON_KEY
+            key = $syncKey
             intervalMs = 60000
           }
           $sync | ConvertTo-Json | Set-Content -Path "desktop/resources/sync.json" -Encoding utf8

@@ -1,8 +1,21 @@
 {
-  "version": "3.3.2",
-  "releasedAt": "2026-10-31",
+  "version": "3.3.3",
+  "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.3",
+      "date": "2026-11-01",
+      "title": "Match en direct synchronisé par le cloud et nouveau projet Supabase",
+      "items": [
+        "Match en direct partagé par le cloud : la session (membres, actions, événements, dispositions, équipes) est synchronisée avec Supabase ; un code de session saisi sur un autre PC connecté au même projet retrouve et ouvre le match, même s’il n’a jamais été ouvert sur ce poste",
+        "Nouveau projet Supabase : l’application et l’installeur pointent désormais vers le projet actif ; une configuration locale qui visait encore l’ancien projet (hors service) est remplacée automatiquement au premier démarrage, sans réinstallation",
+        "Synchronisation en temps réel du direct : la session est relue toutes les 2,5 secondes tant qu’un appareil l’observe, et toutes les boucles de synchronisation redémarrent ensemble dès qu’une adresse ou une clé est modifiée",
+        "Équipes et direct reliés : les sessions récupérées du cloud sont rattachées aux équipes par identifiant puis par nom, avec migration automatique des colonnes de partage (identifiant de synchronisation, origine, date de modification, éléments supprimés)",
+        "Propagation immédiate des suppressions : une action ou un événement supprimé sur un appareil disparaît aussitôt chez les autres appareils du match",
+        "Corrections : démarrage garanti sur le port par défaut (un ancien port occupé n’est plus conservé), envoi de certains contenus JSON refusé à tort par le serveur (corrigé), et publication de l’installeur qui n’échoue plus quand le secret Supabase est absent"
+      ]
+    },
     {
       "version": "3.3.2",
       "date": "2026-10-31",
