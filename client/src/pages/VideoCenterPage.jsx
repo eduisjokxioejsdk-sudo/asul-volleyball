@@ -744,6 +744,7 @@ export default function VideoCenterPage({ user, onLogout }) {
                         className="vc-active-player"
                         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                         controls
+                        autoPlay
                         onTimeUpdate={(e) => {
                           setCurrentTime(e.currentTarget.currentTime);
                           syncAngle2(e.currentTarget.currentTime, null);

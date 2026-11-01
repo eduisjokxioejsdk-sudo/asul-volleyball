@@ -28,6 +28,11 @@ app.setName('Pancake Stats');
 // matchs, vidéos et comptes existants soient retrouvés sans migration.
 app.setPath('userData', path.join(app.getPath('appData'), 'ASUL'));
 
+// Lecture automatique avec son : à l'ouverture d'un match, la vidéo (fichier
+// local ou lien YouTube) démarre immédiatement, sans clic préalable sur le
+// lecteur. Sans ce réglage, Chromium impose un geste de l'utilisateur.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 const USER_DIR = app.getPath('userData');
 const DATA_DIR = path.join(USER_DIR, 'data');
 const LOG_DIR = path.join(USER_DIR, 'logs');

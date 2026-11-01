@@ -1,8 +1,20 @@
 {
-  "version": "3.5.0",
+  "version": "3.5.1",
   "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.5.1",
+      "date": "2026-11-01",
+      "title": "La vidéo démarre toute seule à l’ouverture",
+      "items": [
+        "Ouverture d’un match : la vidéo se lance immédiatement, sans cliquer sur Lecture — que ce soit un lien YouTube ou un fichier vidéo local",
+        "Centre Vidéo : la vidéo choisie démarre dès son ouverture ; en Data Volley, la lecture reprend à la position enregistrée puis continue aussitôt",
+        "Application Windows : la lecture démarre avec le son dès l’ouverture (le réglage de lecture automatique du navigateur est levé pour Pancake Stats)",
+        "Si le navigateur refuse le son (version web, aucune interaction préalable avec YouTube), l’image démarre en muet et le son revient au premier clic ou à la première touche du clavier — une pause volontaire n’est jamais annulée",
+        "Playlist de rallies et direct par lien YouTube : les clips enchaînés et le direct se lancent aussi automatiquement"
+      ]
+    },
     {
       "version": "3.5.0",
       "date": "2026-11-01",

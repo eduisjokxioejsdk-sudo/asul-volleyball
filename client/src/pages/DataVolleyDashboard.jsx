@@ -2685,6 +2685,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                 src={playbackUrl}
                 youtubeUrl={youtubeUrl}
                 controls
+                autoPlay
                 preload="auto"
                 className="trimmed-player"
                 onTimeUpdate={(e) => {

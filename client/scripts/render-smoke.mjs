@@ -121,6 +121,29 @@ for (const [file, name, props] of [
   }
 }
 
+// --- Lecteur vidéo : démarrage immédiat --------------------------------------
+console.log('\n== Lecteur vidéo (démarrage immédiat) ==');
+{
+  const mod = await vite.ssrLoadModule('/src/components/SmartVideoPlayer.jsx');
+  const Player = mod.default;
+  const playsItself = (html) => /<video[^>]*\bautoplay\b/.test(html);
+
+  const withAuto = renderToString(
+    React.createElement(Player, { src: 'http://localhost:3001/uploads/video.mp4', autoPlay: true })
+  );
+  check('un fichier local démarre tout seul', playsItself(withAuto), withAuto.slice(0, 200));
+
+  const withoutAuto = renderToString(
+    React.createElement(Player, { src: 'http://localhost:3001/uploads/video.mp4' })
+  );
+  check('sans autoPlay, le fichier reste en pause', !playsItself(withoutAuto), withoutAuto.slice(0, 200));
+
+  const youtube = renderToString(
+    React.createElement(Player, { youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ', autoPlay: true })
+  );
+  check('un lien YouTube se rend sans erreur', youtube.length > 0, youtube.slice(0, 200));
+}
+
 // --- Menu des fenêtres : profils de disposition ------------------------------
 console.log('\n== Profils de fenêtres ==');
 {

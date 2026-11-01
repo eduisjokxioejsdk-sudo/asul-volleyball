@@ -32,6 +32,10 @@ function loadYouTubeIframeApi() {
 
 /**
  * Lecteur vidéo universel compatible HTML5 <video> ET YouTube (public / non répertorié / live).
+ * `autoPlay` lance la vidéo dès qu'elle est prête (fichier local comme lien
+ * YouTube) : la lecture est d'abord tentée avec le son, puis en muet si le
+ * navigateur refuse la lecture automatique — le son revient au premier geste
+ * de l'utilisateur (clic ou touche du clavier).
  * Expose une interface impérative identique à un élément <video> sur sa ref :
  *   - currentTime (lecture / écriture)
  *   - duration (lecture)
@@ -45,6 +49,7 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
     src,
     youtubeUrl,
     controls = true,
+    autoPlay = false,
     preload = 'auto',
     playsInline = true,
     muted = false,
@@ -181,7 +186,16 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
 
     let cancelled = false;
     let pollTimer = null;
+    let autoplayTimer = null;
+    let unmuteOnGesture = null;
     ytReadyRef.current = false;
+
+    const clearUnmuteOnGesture = () => {
+      if (!unmuteOnGesture) return;
+      window.removeEventListener('pointerdown', unmuteOnGesture);
+      window.removeEventListener('keydown', unmuteOnGesture);
+      unmuteOnGesture = null;
+    };
 
     loadYouTubeIframeApi().then((YT) => {
       if (cancelled || !YT || !ytContainerRef.current) return;
@@ -192,6 +206,42 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
       mountEl.style.height = '100%';
       ytContainerRef.current.appendChild(mountEl);
 
+      // Démarrage immédiat (autoPlay) : on demande la lecture avec le son ; si
+      // le navigateur la refuse (aucune interaction préalable avec youtube.com),
+      // la vidéo démarre en muet et le son revient au premier geste de
+      // l'utilisateur — clic ou touche du clavier pendant le codage.
+      function startPlayback() {
+        try {
+          player.playVideo();
+        } catch {
+          // Lecteur pas encore prêt : YouTube démarrera seul (playerVars.autoplay).
+        }
+        if (muted) return;
+        if (autoplayTimer) clearTimeout(autoplayTimer);
+        autoplayTimer = setTimeout(() => {
+          if (cancelled || !ytReadyRef.current) return;
+          const YTState = window.YT?.PlayerState || {};
+          const state = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
+          // Lecture démarrée (ou en tampon) : rien à faire. Mise en pause par
+          // l'utilisateur entre-temps : on ne la relance pas de force.
+          if (state === YTState.PLAYING || state === YTState.BUFFERING || state === YTState.PAUSED) return;
+          if (typeof player.mute === 'function') player.mute();
+          try {
+            player.playVideo();
+          } catch {
+            // ignore
+          }
+          if (unmuteOnGesture) return;
+          unmuteOnGesture = () => {
+            clearUnmuteOnGesture();
+            if (cancelled || !ytReadyRef.current) return;
+            if (typeof player.unMute === 'function') player.unMute();
+          };
+          window.addEventListener('pointerdown', unmuteOnGesture);
+          window.addEventListener('keydown', unmuteOnGesture);
+        }, 1200);
+      }
+
       const player = new YT.Player(mountEl, {
         width: '100%',
         height: '100%',
@@ -201,6 +251,7 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
           rel: 0,
           modestbranding: 1,
           playsinline: playsInline ? 1 : 0,
+          autoplay: autoPlay ? 1 : 0,
           enablejsapi: 1,
           origin: window.location.origin,
         },
@@ -226,6 +277,8 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
             if (callbacksRef.current.onCanPlay) {
               callbacksRef.current.onCanPlay({ target: evtTarget, currentTarget: evtTarget });
             }
+
+            if (autoPlay) startPlayback();
 
             pollTimer = setInterval(() => {
               if (!ytReadyRef.current || typeof player.getCurrentTime !== 'function') return;
@@ -273,6 +326,8 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
       cancelled = true;
       ytReadyRef.current = false;
       if (pollTimer) clearInterval(pollTimer);
+      if (autoplayTimer) clearTimeout(autoplayTimer);
+      clearUnmuteOnGesture();
       if (ytPlayerRef.current && typeof ytPlayerRef.current.destroy === 'function') {
         try {
           ytPlayerRef.current.destroy();
@@ -282,7 +337,50 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
       }
       ytPlayerRef.current = null;
     };
-  }, [useYouTube, youtubeId, controls, playsInline, muted]);
+  }, [useYouTube, youtubeId, controls, playsInline, muted, autoPlay]);
+
+  // Lecture immédiate d'un fichier local : l'attribut `autoPlay` suffit la
+  // plupart du temps, mais un navigateur peut refuser la lecture avec son.
+  // Même repli que YouTube : démarrage en muet, son rendu au premier geste.
+  useEffect(() => {
+    if (!autoPlay || useYouTube) return undefined;
+    const el = nativeVideoRef.current;
+    if (!el) return undefined;
+
+    let mutedByPolicy = false;
+    const restoreSound = () => {
+      if (!mutedByPolicy) return;
+      mutedByPolicy = false;
+      el.muted = muted;
+      window.removeEventListener('pointerdown', restoreSound);
+      window.removeEventListener('keydown', restoreSound);
+    };
+
+    // Chaque essai repart du son demandé (une source précédente a pu être mise
+    // en muet par le repli ci-dessous).
+    el.muted = muted;
+    const attempt = el.play();
+    if (attempt && typeof attempt.catch === 'function') {
+      attempt.catch(() => {
+        // Aucun média chargé : rien à démarrer, on n'arme pas le repli.
+        if (!el.currentSrc && !el.getAttribute('src')) return;
+        mutedByPolicy = true;
+        el.muted = true;
+        try {
+          el.play();
+        } catch {
+          // ignore
+        }
+        window.addEventListener('pointerdown', restoreSound);
+        window.addEventListener('keydown', restoreSound);
+      });
+    }
+
+    return () => {
+      window.removeEventListener('pointerdown', restoreSound);
+      window.removeEventListener('keydown', restoreSound);
+    };
+  }, [autoPlay, useYouTube, src, youtubeUrl, muted]);
 
   if (useYouTube) {
     return (
@@ -307,6 +405,7 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
       ref={nativeVideoRef}
       src={src}
       controls={controls}
+      autoPlay={autoPlay}
       preload={preload}
       playsInline={playsInline}
       muted={muted}
