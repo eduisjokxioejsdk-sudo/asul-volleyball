@@ -414,6 +414,7 @@ const videosCollection = makeFlatCollection({
   fields: [
     'original_name',
     'display_name',
+    'journee',
     'youtube_url',
     'home_team_uuid',
     'away_team_uuid',
@@ -448,6 +449,7 @@ const videosCollection = makeFlatCollection({
     sync_uuid: row.sync_uuid,
     original_name: row.original_name || '',
     display_name: row.display_name || null,
+    journee: row.journee || 'J0',
     youtube_url: row.youtube_url || null,
     home_team_uuid: row.home_team_uuid || null,
     away_team_uuid: row.away_team_uuid || null,
@@ -471,7 +473,8 @@ const videosCollection = makeFlatCollection({
     if (entry.localId) {
       await runAsync(
         `UPDATE videos
-            SET sync_uuid = ?, original_name = ?, display_name = ?, youtube_url = ?,
+            SET sync_uuid = ?, original_name = ?, display_name = ?, journee = COALESCE(?, journee),
+                youtube_url = ?,
                 home_team_id = COALESCE(?, home_team_id), away_team_id = COALESCE(?, away_team_id),
                 home_team_uuid = ?, away_team_uuid = ?,
                 team1_name = ?, team2_name = ?, duration = ?, angle2_offset = ?,
@@ -481,6 +484,7 @@ const videosCollection = makeFlatCollection({
           entry.uuid,
           entry.original_name || '',
           entry.display_name || null,
+          entry.journee || null,
           entry.youtube_url || null,
           homeTeamId,
           awayTeamId,
@@ -501,14 +505,15 @@ const videosCollection = makeFlatCollection({
     }
     const result = await runAsync(
       `INSERT INTO videos
-          (sync_uuid, user_id, filename, original_name, display_name, youtube_url, filepath,
+          (sync_uuid, user_id, filename, original_name, display_name, journee, youtube_url, filepath,
            home_team_id, away_team_id, home_team_uuid, away_team_uuid,
            team1_name, team2_name, duration, angle2_offset, status, color, deleted, dirty, cloud_updated_at, local_updated_at)
-       VALUES (?, 0, '', ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+       VALUES (?, 0, '', ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       [
         entry.uuid,
         entry.original_name || '',
         entry.display_name || null,
+        entry.journee || 'J0',
         entry.youtube_url || null,
         homeTeamId,
         awayTeamId,

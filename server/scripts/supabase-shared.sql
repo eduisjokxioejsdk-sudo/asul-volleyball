@@ -72,6 +72,7 @@ create table if not exists public.asul_videos (
   sync_uuid      uuid primary key,
   original_name  text,
   display_name   text,
+  journee        text default 'J0',
   youtube_url    text,
   home_team_uuid uuid,
   away_team_uuid uuid,
@@ -86,6 +87,7 @@ create table if not exists public.asul_videos (
   updated_at     timestamptz not null default now()
 );
 alter table public.asul_videos add column if not exists youtube_url text;
+alter table public.asul_videos add column if not exists journee text default 'J0';
 alter table public.asul_videos add column if not exists home_team_uuid uuid;
 alter table public.asul_videos add column if not exists away_team_uuid uuid;
 alter table public.asul_videos add column if not exists angle2_offset real default 0;

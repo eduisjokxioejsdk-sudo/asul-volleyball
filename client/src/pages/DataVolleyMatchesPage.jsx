@@ -6,7 +6,7 @@
 // et impose le choix (ou la création) des 2 équipes lors de l'import.
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AppNavigation from '../components/AppNavigation';
 import PancakeLogo from '../components/PancakeLogo';
@@ -19,6 +19,20 @@ const FOLDER_COLORS = [
   '#c8a165', '#0ea5e9', '#10b981', '#f59e0b', '#e11d48',
   '#38bdf8', '#f97316', '#71717a'
 ];
+
+// Journée du championnat affichée devant le nom du match (« J0 » par défaut).
+const DEFAULT_JOURNEE = 'J0';
+
+/** Normalise la saisie : « 3 » ou « j3 » → « J3 », vide → « J0 ». */
+function normalizeJournee(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return DEFAULT_JOURNEE;
+  const digits = raw.match(/^(\d{1,2})$/);
+  if (digits) return `J${digits[1]}`;
+  const prefixed = raw.match(/^j\s*[-_ ]?\s*(\d{1,2})$/i);
+  if (prefixed) return `J${prefixed[1]}`;
+  return raw.slice(0, 24);
+}
 
 export default function DataVolleyMatchesPage({ user, onLogout }) {
   const navigate = useNavigate();
@@ -52,6 +66,11 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTeamFilter, setSelectedTeamFilter] = useState('ALL');
+
+  // Édition en ligne de la journée (double-clic sur le badge « J0 »).
+  const [editingJourneeId, setEditingJourneeId] = useState(null);
+  const [journeeDraft, setJourneeDraft] = useState('');
+  const cancelJourneeEditRef = useRef(false);
 
   useEffect(() => {
     loadAll();
@@ -156,24 +175,31 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
     }
   };
 
-  const handleEditYoutubeUrl = async (e, video) => {
+  const startEditJournee = (e, video) => {
     e.stopPropagation();
-    const current = video.youtube_url || '';
-    const next = window.prompt(
-      'Lien YouTube du match (public ou non répertorié) — laissez vide pour retirer :',
-      current
-    );
-    if (next === null) return;
-    const trimmed = next.trim();
-    if (trimmed && !extractYouTubeId(trimmed)) {
-      alert('Lien YouTube non reconnu. Utilisez une URL youtube.com/watch?v=... ou youtu.be/...');
-      return;
-    }
+    cancelJourneeEditRef.current = false;
+    setEditingJourneeId(video.id);
+    setJourneeDraft(video.journee || DEFAULT_JOURNEE);
+  };
+
+  const cancelEditJournee = () => {
+    setEditingJourneeId(null);
+    setJourneeDraft('');
+  };
+
+  const commitJournee = async (video) => {
+    if (editingJourneeId !== video.id) return;
+    const previous = video.journee || DEFAULT_JOURNEE;
+    const next = normalizeJournee(journeeDraft);
+    setEditingJourneeId(null);
+    setJourneeDraft('');
+    if (next === previous) return;
+    setVideos((prev) => prev.map((v) => (v.id === video.id ? { ...v, journee: next } : v)));
     try {
-      await videosAPI.update(video.id, { youtube_url: trimmed || null });
-      loadAll();
+      await videosAPI.update(video.id, { journee: next });
     } catch (err) {
-      alert(`Erreur mise à jour YouTube : ${err.response?.data?.error || err.message}`);
+      setVideos((prev) => prev.map((v) => (v.id === video.id ? { ...v, journee: previous } : v)));
+      alert(`Erreur mise à jour de la journée : ${err.response?.data?.error || err.message}`);
     }
   };
 
@@ -387,8 +413,49 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                 >
                   <div>
                     <div className="pk-match-item-head">
-                      <div className="pk-match-item-title">
-                        {video.display_name || video.original_name}
+                      <div className="pk-match-item-names">
+                        {editingJourneeId === video.id ? (
+                          <input
+                            className="pk-match-day-input pk-mono"
+                            value={journeeDraft}
+                            autoFocus
+                            maxLength={12}
+                            title="Journée du match (ex. J1) — Entrée pour valider, Échap pour annuler"
+                            onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onChange={(e) => setJourneeDraft(e.target.value)}
+                            onBlur={() => {
+                              if (cancelJourneeEditRef.current) {
+                                cancelJourneeEditRef.current = false;
+                                return;
+                              }
+                              commitJournee(video);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                cancelJourneeEditRef.current = true;
+                                cancelEditJournee();
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span
+                            className="pk-match-day pk-mono"
+                            title="Double-cliquez pour changer la journée"
+                            onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => startEditJournee(e, video)}
+                          >
+                            {video.journee || DEFAULT_JOURNEE}
+                          </span>
+                        )}
+                        <div className="pk-match-item-title">
+                          {video.display_name || video.original_name}
+                        </div>
                       </div>
                       <span
                         className="pk-mono"
@@ -457,14 +524,6 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                     </span>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        title="Ajouter ou modifier le lien YouTube partagé"
-                        onClick={(e) => handleEditYoutubeUrl(e, video)}
-                      >
-                        {hasYt ? '🔗 YouTube' : '+ Lien YouTube'}
-                      </button>
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"

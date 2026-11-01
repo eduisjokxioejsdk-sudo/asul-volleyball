@@ -140,6 +140,7 @@ db.serialize(() => {
     filename TEXT NOT NULL,
     original_name TEXT NOT NULL,
     display_name TEXT,
+    journee TEXT DEFAULT 'J0',
     filepath TEXT NOT NULL,
     youtube_url TEXT,
     color TEXT DEFAULT '#1a73e8',
@@ -531,6 +532,10 @@ db.serialize(() => {
     }
     if (!columnNames.includes('display_name')) {
       db.run('ALTER TABLE videos ADD COLUMN display_name TEXT');
+    }
+    // Journée du championnat affichée devant le nom du match (J0, J1, J2…).
+    if (!columnNames.includes('journee')) {
+      db.run("ALTER TABLE videos ADD COLUMN journee TEXT DEFAULT 'J0'");
     }
     if (!columnNames.includes('color')) {
       db.run('ALTER TABLE videos ADD COLUMN color TEXT DEFAULT \'#1a73e8\'');
