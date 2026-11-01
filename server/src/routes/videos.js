@@ -205,6 +205,9 @@ router.post('/upload', authenticateToken, (req, res) => {
     const display_name = req.body.display_name || `${team1_name} vs ${team2_name}`;
     const journee = normalizeJournee(req.body.journee);
     const youtube_url = req.body.youtube_url ? String(req.body.youtube_url).trim() || null : null;
+    const youtube_url_angle2 = req.body.youtube_url_angle2
+      ? String(req.body.youtube_url_angle2).trim() || null
+      : null;
     const home_team_id = req.body.home_team_id ? Number(req.body.home_team_id) : null;
     const away_team_id = req.body.away_team_id ? Number(req.body.away_team_id) : null;
     const angle2_offset = req.body.angle2_offset ? Number(req.body.angle2_offset) : 0;
@@ -238,11 +241,11 @@ router.post('/upload', authenticateToken, (req, res) => {
     loadTeamUuids((home_team_uuid, away_team_uuid) => {
       db.run(
         `INSERT INTO videos (
-          user_id, filename, original_name, display_name, journee, youtube_url, filepath,
+          user_id, filename, original_name, display_name, journee, youtube_url, youtube_url_angle2, filepath,
           filename_angle2, filepath_angle2, angle2_offset,
           team1_name, team2_name, home_team_id, away_team_id, home_team_uuid, away_team_uuid,
           status, sync_uuid, dirty, deleted, local_updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
         [
           req.user.id,
           filename,
@@ -250,6 +253,7 @@ router.post('/upload', authenticateToken, (req, res) => {
           display_name,
           journee,
           youtube_url,
+          youtube_url_angle2,
           filepath,
           filename_angle2,
           filepath_angle2,
@@ -301,6 +305,7 @@ router.post('/upload', authenticateToken, (req, res) => {
             display_name,
             journee,
             youtube_url,
+            youtube_url_angle2,
             filepath,
             filename_angle2,
             filepath_angle2,
@@ -542,7 +547,7 @@ router.get('/proxy/:filename', (req, res) => {
 
 // Update video (rename, color, angle2_offset, youtube_url, teams, duration, journee)
 router.patch('/:id', authenticateToken, (req, res) => {
-  const { display_name, color, angle2_offset, youtube_url, team1_name, team2_name, duration, status, journee } = req.body || {};
+  const { display_name, color, angle2_offset, youtube_url, youtube_url_angle2, team1_name, team2_name, duration, status, journee } = req.body || {};
 
   db.get(
     'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
@@ -577,6 +582,10 @@ router.patch('/:id', authenticateToken, (req, res) => {
         if (cleanYt && video.status === 'pending_video' && status === undefined) {
           updates.push("status = 'uploaded'");
         }
+      }
+      if (youtube_url_angle2 !== undefined) {
+        updates.push('youtube_url_angle2 = ?');
+        values.push(youtube_url_angle2 ? String(youtube_url_angle2).trim() || null : null);
       }
       if (team1_name !== undefined) {
         updates.push('team1_name = ?');

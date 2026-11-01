@@ -104,6 +104,17 @@ const BUILTIN_SETTERS = new Set([
   'queueMicrotask', 'localeCompare', 'toISOString', 'toUpperCase', 'toLowerCase',
 ]);
 
+/** Neutralise « / * » et « * / » à l'intérieur des chaînes de caractères : sans
+ *  cela, `accept="video/*"` ouvre un faux commentaire de bloc qui avale une
+ *  grande partie du fichier et fait apparaître des dizaines de faux positifs
+ *  (les setters déclarés plus bas ne sont plus vus). */
+function protectSlashesInStrings(src) {
+  return src.replace(
+    /(['"`])((?:[^'"`\\\n]|\\.)*)\1/g,
+    (match, quote, body) => quote + body.replace(/\/\*/g, '/ *').replace(/\*\//g, '* /') + quote
+  );
+}
+
 /** Retire commentaires de bloc et de ligne (l'analyse doit voir du code, pas
  *  de la prose : sinon les mots des commentaires passent pour des appels). */
 function stripComments(src) {
@@ -142,7 +153,7 @@ for (const file of walk(SRC)) {
   const raw = fs.readFileSync(file, 'utf8');
   // Les déclarations sont cherchées dans le code complet (les chemins d'import
   // sont entre guillemets) ; les références, dans le code expurgé.
-  const code = stripComments(raw);
+  const code = stripComments(protectSlashesInStrings(raw));
   const src = stripStrings(code);
   const declared = new Set([...declaredNames(code), ...declaredNames(src)]);
   const refs = new Map([...riskyReferences(src), ...(STRICT ? strictReferences(src) : [])]);

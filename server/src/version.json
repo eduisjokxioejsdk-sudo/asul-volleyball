@@ -1,8 +1,20 @@
 {
-  "version": "3.5.1",
+  "version": "3.6.0",
   "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.6.0",
+      "date": "2026-11-01",
+      "title": "Import vidéo : deux menus CAM 1 et CAM 2, chacun YouTube ou fichier MP4",
+      "items": [
+        "Nouveau match : l’import vidéo ne propose plus que deux menus — CAM 1 et CAM 2 — et chacun offre deux options : « ▶ YouTube » (lien partagé, aucun fichier à transférer) ou « 📁 Fichier MP4 » (fichier vidéo du PC)",
+        "La CAM 2 accepte désormais un lien YouTube : il est enregistré avec le match, synchronisé entre les postes et lu dans le lecteur universel, en vue Cam 2 comme en vue 2 Angles",
+        "Fenêtre « Vidéos du match — CAM 1 & CAM 2 » (bouton « Gérer CAM 1 / CAM 2 » du codage) : même présentation en deux menus, avec l’état de chaque caméra (✓ lien YouTube ou fichier présent) et le décalage CAM 2 vs CAM 1 toujours disponible",
+        "Le bouton « Redéfinir coins » de l’en-tête du panneau vidéo est retiré : la calibration se fait avec « Recalibrer 4 coins », déjà présent sous la vidéo",
+        "Liste des matchs : le badge distingue « CAM 2 CLOUD », « CAM 1 + CAM 2 » et « 2 CAMÉRAS LOCALES » selon la source de la seconde caméra"
+      ]
+    },
     {
       "version": "3.5.1",
       "date": "2026-11-01",

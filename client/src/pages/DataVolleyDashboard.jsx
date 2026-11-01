@@ -329,6 +329,10 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [angleUploadProgress, setAngleUploadProgress] = useState(0);
   const [angleOffsetInput, setAngleOffsetInput] = useState(0);
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
+  const [youtubeUrlAngle2Input, setYoutubeUrlAngle2Input] = useState('');
+  // Choix d'import par caméra dans la modale : « youtube » (lien) ou « file » (fichier local).
+  const [cam1UploadMode, setCam1UploadMode] = useState('youtube');
+  const [cam2UploadMode, setCam2UploadMode] = useState('youtube');
 
   useEffect(() => {
     const saved = loadCourtCalibration(id);
@@ -555,6 +559,10 @@ function DataVolleyDashboard({ user, onLogout }) {
   const youtubeId = extractYouTubeId(youtubeUrl);
   const hasPrimaryVideo = Boolean(playbackUrl || youtubeId);
   const angle2Url = video?.filename_angle2 ? videosAPI.getFileUrl(video.filename_angle2) : null;
+  const angle2YoutubeUrl = video?.youtube_url_angle2 || null;
+  const angle2YoutubeId = extractYouTubeId(angle2YoutubeUrl);
+  // La CAM 2 existe dès qu'un fichier local ou un lien YouTube est enregistré.
+  const hasAngle2 = Boolean(angle2Url || angle2YoutubeId);
   const angle2Offset = Number(video?.angle2_offset || 0);
 
   useEffect(() => {
@@ -565,10 +573,14 @@ function DataVolleyDashboard({ user, onLogout }) {
     setYoutubeUrlInput(video?.youtube_url || '');
   }, [video?.youtube_url]);
 
+  useEffect(() => {
+    setYoutubeUrlAngle2Input(video?.youtube_url_angle2 || '');
+  }, [video?.youtube_url_angle2]);
+
   const syncAngle2Video = useCallback(
     (mainTime, shouldPlay = null) => {
       const v2 = videoAngle2Ref.current;
-      if (!v2 || !angle2Url) return;
+      if (!v2 || !hasAngle2) return;
       const target = Math.max(0, (Number(mainTime) || 0) + angle2Offset);
       if (Math.abs((v2.currentTime || 0) - target) > 0.25) {
         try {
@@ -580,7 +592,7 @@ function DataVolleyDashboard({ user, onLogout }) {
       if (shouldPlay === true && v2.paused) v2.play().catch(() => {});
       if (shouldPlay === false && !v2.paused) v2.pause();
     },
-    [angle2Url, angle2Offset]
+    [hasAngle2, angle2Offset]
   );
 
   // Nouvelle vidéo (premier chargement ou changement de match) : la position
@@ -1404,6 +1416,26 @@ function DataVolleyDashboard({ user, onLogout }) {
       notifyEvent(true, trimmed ? 'Lien YouTube enregistré et synchronisé.' : 'Lien YouTube retiré.');
     } catch (err) {
       notifyEvent(false, err?.response?.data?.error || 'Impossible d’enregistrer le lien YouTube.');
+    }
+  };
+
+  const handleSaveYoutubeUrlAngle2 = async () => {
+    const trimmed = String(youtubeUrlAngle2Input || '').trim();
+    if (trimmed && !extractYouTubeId(trimmed)) {
+      notifyEvent(false, 'Lien YouTube CAM 2 invalide.');
+      return;
+    }
+    try {
+      const res = await videosAPI.update(id, { youtube_url_angle2: trimmed || null });
+      if (res.data?.video) setVideo(res.data.video);
+      if (trimmed && cameraView === '1') setCameraView('split');
+      syncAngle2Video(currentTime, null);
+      notifyEvent(
+        true,
+        trimmed ? 'Lien YouTube CAM 2 enregistré et synchronisé.' : 'Lien YouTube CAM 2 retiré.'
+      );
+    } catch (err) {
+      notifyEvent(false, err?.response?.data?.error || 'Impossible d’enregistrer le lien YouTube CAM 2.');
     }
   };
 
@@ -2589,9 +2621,9 @@ function DataVolleyDashboard({ user, onLogout }) {
         className="video-player-wrapper"
         style={{
           position: 'relative',
-          display: cameraView === 'split' && angle2Url ? 'grid' : 'block',
-          gridTemplateColumns: cameraView === 'split' && angle2Url ? '1fr 1fr' : undefined,
-          gap: cameraView === 'split' && angle2Url ? 4 : 0,
+          display: cameraView === 'split' && hasAngle2 ? 'grid' : 'block',
+          gridTemplateColumns: cameraView === 'split' && hasAngle2 ? '1fr 1fr' : undefined,
+          gap: cameraView === 'split' && hasAngle2 ? 4 : 0,
         }}
       >
         {!hasPrimaryVideo && cameraView !== '2' ? (
@@ -2622,7 +2654,7 @@ function DataVolleyDashboard({ user, onLogout }) {
               className="btn btn-primary btn-sm"
               onClick={() => setShowAngleModal(true)}
             >
-              <Upload size={12} /> Lien YouTube / Uploader Caméra 1 & 2
+              <Upload size={12} /> Gérer CAM 1 / CAM 2
             </button>
           </div>
         ) : null}
@@ -2759,11 +2791,13 @@ function DataVolleyDashboard({ user, onLogout }) {
           </div>
         )}
 
-        {angle2Url && (cameraView === '2' || cameraView === 'split') && (
+        {hasAngle2 && (cameraView === '2' || cameraView === 'split') && (
           <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-            <video
+            {/* CAM 2 : fichier local ou lien YouTube, même lecteur que la CAM 1. */}
+            <SmartVideoPlayer
               ref={videoAngle2Ref}
               src={angle2Url}
+              youtubeUrl={angle2YoutubeUrl}
               controls={cameraView === '2'}
               muted={cameraView === 'split'}
               preload="auto"
@@ -2848,7 +2882,7 @@ function DataVolleyDashboard({ user, onLogout }) {
         >
           <RotateCcw size={11} /> {calibMode === 'calibrating' ? 'Annuler 4 coins' : 'Recalibrer 4 coins'}
         </button>
-        {angle2Url && (
+        {hasAngle2 && (
           <div className="btn-group-horizontal" style={{ marginLeft: 2 }}>
             <button
               type="button"
@@ -2879,7 +2913,7 @@ function DataVolleyDashboard({ user, onLogout }) {
           onClick={() => setShowAngleModal(true)}
           title="Uploader Caméra 1 et/ou Caméra 2 après coup et régler la synchro multi-angles"
         >
-          <Camera size={11} /> {angle2Url ? 'Cam 1/2' : '+ Cam 1/2'}
+          <Camera size={11} /> {hasAngle2 ? 'Cam 1/2' : '+ Cam 1/2'}
         </button>
         <button
           type="button"
@@ -3059,23 +3093,6 @@ function DataVolleyDashboard({ user, onLogout }) {
                   closable={false}
                   headerExtra={
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <button
-                        type="button"
-                        className={`btn btn-xs ${calibMode === 'calibrating' ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (calibMode === 'calibrating') {
-                            setCalibMode(courtCorners?.length === 4 ? 'active' : false);
-                          } else {
-                            setCalibMode('calibrating');
-                          }
-                        }}
-                        title={calibMode === 'calibrating' ? 'Annuler la calibration' : 'Redéfinir les 4 coins du terrain sur la vidéo si la caméra a bougé'}
-                        style={{ padding: '2px 7px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                      >
-                        <Crosshair size={12} />
-                        {calibMode === 'calibrating' ? 'Annuler calibration' : 'Redéfinir coins'}
-                      </button>
                       <span className="dv-speed-badge" title="Vitesse de lecture (touches Ralentir / Accélérer)">
                         {playbackRate}×
                       </span>
@@ -4139,76 +4156,162 @@ function DataVolleyDashboard({ user, onLogout }) {
               initial={{ opacity: 0, scale: 0.97 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.97 }}
-              style={{ maxWidth: 520 }}
+              style={{ maxWidth: 560 }}
             >
               <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Camera size={18} className="text-amber-500" /> Gestion Vidéo (Lien YouTube & Multi-Angles)
+                <Camera size={18} className="text-amber-500" /> Vidéos du match — CAM 1 & CAM 2
               </h2>
               <p className="dv-hint">
-                Partagez gratuitement la vidéo avec tous les postes via un <strong>lien YouTube (répertorié ou non répertorié)</strong>, ou importez un fichier local <strong>Caméra 1 / Caméra 2</strong>.
+                Une caméra = un menu. Pour chacune, choisissez <strong>soit un lien YouTube</strong> (visible sur tous
+                les postes, aucun fichier à transférer), <strong>soit un fichier vidéo local</strong>.
               </p>
 
               <div className="form-group" style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}>
-                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Lien YouTube partagé (Cloud)</span>
-                  <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: youtubeId ? '#ef4444' : '#71717a' }}>
-                    {youtubeId ? `✓ YouTube (${youtubeId})` : 'Aucun lien'}
-                  </span>
-                </label>
-                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                  <input
-                    type="url"
-                    placeholder="https://youtu.be/... ou https://www.youtube.com/watch?v=..."
-                    value={youtubeUrlInput}
-                    onChange={(e) => setYoutubeUrlInput(e.target.value)}
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={handleSaveYoutubeUrl}
-                  >
-                    Enregistrer
-                  </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700 }}>CAM 1 — Vue principale</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${cam1UploadMode === 'youtube' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setCam1UploadMode('youtube')}
+                    >
+                      ▶ YouTube
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${cam1UploadMode === 'file' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setCam1UploadMode('file')}
+                    >
+                      📁 Fichier MP4
+                    </button>
+                  </div>
                 </div>
+
+                {cam1UploadMode === 'youtube' ? (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                      <input
+                        type="url"
+                        placeholder="https://youtu.be/... ou https://www.youtube.com/watch?v=..."
+                        value={youtubeUrlInput}
+                        onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveYoutubeUrl}>
+                        Enregistrer
+                      </button>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: youtubeId ? '#ef4444' : '#71717a',
+                        display: 'block',
+                        marginTop: 6,
+                      }}
+                    >
+                      {youtubeId ? `✓ Lien YouTube (${youtubeId})` : 'Aucun lien YouTube'}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      disabled={uploadingAngle}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleUploadAngleFile(1, f);
+                      }}
+                      style={{ marginTop: 6 }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: video?.filename ? '#10b981' : '#f59e0b',
+                        display: 'block',
+                        marginTop: 6,
+                      }}
+                    >
+                      {video?.filename ? '✓ Fichier vidéo présent' : 'Aucun fichier importé'}
+                    </span>
+                  </>
+                )}
               </div>
 
               <div className="form-group" style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}>
-                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Caméra 1 — Vue Principale (Fichier local)</span>
-                  <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: video?.filename ? '#10b981' : '#f59e0b' }}>
-                    {video?.filename ? '✓ Vidéo présente' : 'Non importée'}
-                  </span>
-                </label>
-                <input
-                  type="file"
-                  accept="video/*"
-                  disabled={uploadingAngle}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleUploadAngleFile(1, f);
-                  }}
-                  style={{ marginTop: 6 }}
-                />
-              </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, color: '#38bdf8' }}>CAM 2 — Second angle synchronisé</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${cam2UploadMode === 'youtube' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setCam2UploadMode('youtube')}
+                    >
+                      ▶ YouTube
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${cam2UploadMode === 'file' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setCam2UploadMode('file')}
+                    >
+                      📁 Fichier MP4
+                    </button>
+                  </div>
+                </div>
 
-              <div className="form-group" style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}>
-                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Caméra 2 — Second Angle synchronisé</span>
-                  <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: video?.filename_angle2 ? '#38bdf8' : '#71717a' }}>
-                    {video?.filename_angle2 ? '✓ Caméra 2 présente' : 'Optionnelle / Non importée'}
-                  </span>
-                </label>
-                <input
-                  type="file"
-                  accept="video/*"
-                  disabled={uploadingAngle}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleUploadAngleFile(2, f);
-                  }}
-                  style={{ marginTop: 6 }}
-                />
+                {cam2UploadMode === 'youtube' ? (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                      <input
+                        type="url"
+                        placeholder="https://youtu.be/... ou https://www.youtube.com/watch?v=..."
+                        value={youtubeUrlAngle2Input}
+                        onChange={(e) => setYoutubeUrlAngle2Input(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveYoutubeUrlAngle2}>
+                        Enregistrer
+                      </button>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: angle2YoutubeId ? '#38bdf8' : '#71717a',
+                        display: 'block',
+                        marginTop: 6,
+                      }}
+                    >
+                      {angle2YoutubeId ? `✓ Lien YouTube (${angle2YoutubeId})` : 'Aucun lien YouTube'}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      disabled={uploadingAngle}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleUploadAngleFile(2, f);
+                      }}
+                      style={{ marginTop: 6 }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: video?.filename_angle2 ? '#38bdf8' : '#71717a',
+                        display: 'block',
+                        marginTop: 6,
+                      }}
+                    >
+                      {video?.filename_angle2 ? '✓ Fichier vidéo présent' : 'Aucun fichier importé'}
+                    </span>
+                  </>
+                )}
 
                 <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, color: '#a1a1aa' }}>Décalage Cam 2 vs Cam 1 (s) :</span>

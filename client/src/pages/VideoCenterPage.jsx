@@ -368,11 +368,14 @@ export default function VideoCenterPage({ user, onLogout }) {
   const hasPrimaryVideo = Boolean(playbackUrl || extractYouTubeId(youtubeUrl));
 
   const angle2Url = selectedVideo?.filename_angle2 ? videosAPI.getFileUrl(selectedVideo.filename_angle2) : null;
+  const angle2YoutubeUrl = selectedVideo?.youtube_url_angle2 || null;
+  // La CAM 2 existe dès qu'un fichier local ou un lien YouTube est enregistré.
+  const hasAngle2 = Boolean(angle2Url || extractYouTubeId(angle2YoutubeUrl));
   const angle2Offset = Number(selectedVideo?.angle2_offset || 0);
 
   const syncAngle2 = (t, shouldPlay = null) => {
     const v2 = videoAngle2Ref.current;
-    if (!v2 || !angle2Url) return;
+    if (!v2 || !hasAngle2) return;
     const target = Math.max(0, (Number(t) || 0) + angle2Offset);
     if (Math.abs((v2.currentTime || 0) - target) > 0.25) {
       try {
@@ -730,9 +733,9 @@ export default function VideoCenterPage({ user, onLogout }) {
                   className="vc-video-frame"
                   style={{
                     position: 'relative',
-                    display: cameraView === 'split' && angle2Url ? 'grid' : 'block',
-                    gridTemplateColumns: cameraView === 'split' && angle2Url ? '1fr 1fr' : undefined,
-                    gap: cameraView === 'split' && angle2Url ? 4 : 0,
+                    display: cameraView === 'split' && hasAngle2 ? 'grid' : 'block',
+                    gridTemplateColumns: cameraView === 'split' && hasAngle2 ? '1fr 1fr' : undefined,
+                    gap: cameraView === 'split' && hasAngle2 ? 4 : 0,
                   }}
                 >
                   {cameraView !== '2' && (
@@ -775,15 +778,25 @@ export default function VideoCenterPage({ user, onLogout }) {
                     </div>
                   )}
 
-                  {angle2Url && (cameraView === '2' || cameraView === 'split') && (
+                  {hasAngle2 && (cameraView === '2' || cameraView === 'split') && (
                     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                      <video
+                      {/* CAM 2 : fichier local ou lien YouTube, même lecteur que la CAM 1. */}
+                      <SmartVideoPlayer
                         ref={videoAngle2Ref}
                         src={angle2Url}
+                        youtubeUrl={angle2YoutubeUrl}
                         className="vc-active-player"
                         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                         controls={cameraView === '2'}
                         muted={cameraView === 'split'}
+                        onLoadedMetadata={(e) => {
+                          const target = Math.max(0, (Number(currentTime) || 0) + angle2Offset);
+                          try {
+                            e.currentTarget.currentTime = target;
+                          } catch {
+                            // ignore
+                          }
+                        }}
                       />
                       <span
                         style={{
@@ -847,7 +860,7 @@ export default function VideoCenterPage({ user, onLogout }) {
                     >
                       <Tv size={12} /> TV Score
                     </button>
-                    {angle2Url && (
+                    {hasAngle2 && (
                       <div className="btn-group-horizontal">
                         <button
                           type="button"

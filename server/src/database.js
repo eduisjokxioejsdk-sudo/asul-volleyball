@@ -143,6 +143,7 @@ db.serialize(() => {
     journee TEXT DEFAULT 'J0',
     filepath TEXT NOT NULL,
     youtube_url TEXT,
+    youtube_url_angle2 TEXT,
     color TEXT DEFAULT '#1a73e8',
     team1_name TEXT DEFAULT 'Équipe 1',
     team2_name TEXT DEFAULT 'Équipe 2',
@@ -545,6 +546,10 @@ db.serialize(() => {
     }
     if (!columnNames.includes('youtube_url')) {
       db.run('ALTER TABLE videos ADD COLUMN youtube_url TEXT');
+    }
+    // Second angle fourni sous forme de lien YouTube (au lieu d'un fichier).
+    if (!columnNames.includes('youtube_url_angle2')) {
+      db.run('ALTER TABLE videos ADD COLUMN youtube_url_angle2 TEXT');
     }
     if (!columnNames.includes('home_team_id')) {
       db.run('ALTER TABLE videos ADD COLUMN home_team_id INTEGER');

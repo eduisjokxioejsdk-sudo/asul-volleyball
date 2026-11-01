@@ -416,6 +416,7 @@ const videosCollection = makeFlatCollection({
     'display_name',
     'journee',
     'youtube_url',
+    'youtube_url_angle2',
     'home_team_uuid',
     'away_team_uuid',
     'team1_name',
@@ -438,6 +439,7 @@ const videosCollection = makeFlatCollection({
       out.push({
         ...r,
         youtube_url: r.youtube_url || null,
+        youtube_url_angle2: r.youtube_url_angle2 || null,
         home_team_uuid: r.home_team_uuid || (r.home_team_id ? teamMap.get(Number(r.home_team_id)) || null : null),
         away_team_uuid: r.away_team_uuid || (r.away_team_id ? teamMap.get(Number(r.away_team_id)) || null : null),
         angle2_offset: Number(r.angle2_offset) || 0,
@@ -451,6 +453,7 @@ const videosCollection = makeFlatCollection({
     display_name: row.display_name || null,
     journee: row.journee || 'J0',
     youtube_url: row.youtube_url || null,
+    youtube_url_angle2: row.youtube_url_angle2 || null,
     home_team_uuid: row.home_team_uuid || null,
     away_team_uuid: row.away_team_uuid || null,
     team1_name: row.team1_name || null,
@@ -474,7 +477,7 @@ const videosCollection = makeFlatCollection({
       await runAsync(
         `UPDATE videos
             SET sync_uuid = ?, original_name = ?, display_name = ?, journee = COALESCE(?, journee),
-                youtube_url = ?,
+                youtube_url = ?, youtube_url_angle2 = ?,
                 home_team_id = COALESCE(?, home_team_id), away_team_id = COALESCE(?, away_team_id),
                 home_team_uuid = ?, away_team_uuid = ?,
                 team1_name = ?, team2_name = ?, duration = ?, angle2_offset = ?,
@@ -486,6 +489,7 @@ const videosCollection = makeFlatCollection({
           entry.display_name || null,
           entry.journee || null,
           entry.youtube_url || null,
+          entry.youtube_url_angle2 || null,
           homeTeamId,
           awayTeamId,
           entry.home_team_uuid || null,
@@ -505,16 +509,17 @@ const videosCollection = makeFlatCollection({
     }
     const result = await runAsync(
       `INSERT INTO videos
-          (sync_uuid, user_id, filename, original_name, display_name, journee, youtube_url, filepath,
+          (sync_uuid, user_id, filename, original_name, display_name, journee, youtube_url, youtube_url_angle2, filepath,
            home_team_id, away_team_id, home_team_uuid, away_team_uuid,
            team1_name, team2_name, duration, angle2_offset, status, color, deleted, dirty, cloud_updated_at, local_updated_at)
-       VALUES (?, 0, '', ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+       VALUES (?, 0, '', ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       [
         entry.uuid,
         entry.original_name || '',
         entry.display_name || null,
         entry.journee || 'J0',
         entry.youtube_url || null,
+        entry.youtube_url_angle2 || null,
         homeTeamId,
         awayTeamId,
         entry.home_team_uuid || null,

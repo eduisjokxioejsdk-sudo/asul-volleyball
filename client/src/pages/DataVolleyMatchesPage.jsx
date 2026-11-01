@@ -34,6 +34,89 @@ function normalizeJournee(value) {
   return raw.slice(0, 24);
 }
 
+/**
+ * Bloc d'import d'une caméra : un seul menu par caméra, avec deux options —
+ * lien YouTube partagé (aucun transfert de fichier) ou fichier vidéo local.
+ */
+export function CameraUploadBlock({
+  title,
+  accent,
+  hint,
+  mode,
+  onMode,
+  youtubeUrl,
+  onYoutubeUrl,
+  youtubePlaceholder,
+  file,
+  onFile,
+  extra,
+}) {
+  return (
+    <div
+      className="form-group"
+      style={{ marginBottom: 14, padding: 12, background: '#09090b', border: '1px solid #27272a' }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+          marginBottom: 8,
+        }}
+      >
+        <span style={{ fontWeight: 700, color: accent }}>{title}</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${mode === 'youtube' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => onMode('youtube')}
+            title="Coller un lien YouTube (public ou non répertorié)"
+          >
+            ▶ YouTube
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${mode === 'file' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => onMode('file')}
+            title="Importer un fichier vidéo depuis ce PC"
+          >
+            📁 Fichier MP4
+          </button>
+        </div>
+      </div>
+
+      {mode === 'youtube' ? (
+        <>
+          <input
+            type="url"
+            className="form-control"
+            placeholder={youtubePlaceholder || 'https://www.youtube.com/watch?v=... ou https://youtu.be/...'}
+            value={youtubeUrl}
+            onChange={(e) => onYoutubeUrl(e.target.value)}
+          />
+          <span style={{ fontSize: 11, color: '#a1a1aa', display: 'block', marginTop: 4 }}>{hint}</span>
+        </>
+      ) : (
+        <>
+          <input
+            type="file"
+            accept="video/*"
+            className="form-control"
+            onChange={(e) => onFile(e.target.files[0] || null)}
+          />
+          <span style={{ fontSize: 11, color: '#a1a1aa', display: 'block', marginTop: 4 }}>
+            {file ? `Fichier sélectionné : ${file.name}` : 'Aucun fichier sélectionné (MP4, MOV, MKV).'}
+          </span>
+        </>
+      )}
+
+      {extra}
+    </div>
+  );
+}
+
 export default function DataVolleyMatchesPage({ user, onLogout }) {
   const navigate = useNavigate();
   const [videos, setVideos] = useState([]);
@@ -52,6 +135,10 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadFileAngle2, setUploadFileAngle2] = useState(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [youtubeUrlAngle2, setYoutubeUrlAngle2] = useState('');
+  // Mode d'import par caméra : « youtube » (lien partagé) ou « file » (fichier local).
+  const [cam1Mode, setCam1Mode] = useState('youtube');
+  const [cam2Mode, setCam2Mode] = useState('youtube');
   const [angle2Offset, setAngle2Offset] = useState(0);
   const [homeTeamId, setHomeTeamId] = useState('');
   const [awayTeamId, setAwayTeamId] = useState('');
@@ -139,8 +226,16 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
       setUploadError('Les deux équipes du match doivent être différentes.');
       return;
     }
-    if (youtubeUrl.trim() && !extractYouTubeId(youtubeUrl)) {
-      setUploadError('Lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...');
+    if (cam1Mode === 'youtube' && youtubeUrl.trim() && !extractYouTubeId(youtubeUrl)) {
+      setUploadError(
+        'CAM 1 : lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...'
+      );
+      return;
+    }
+    if (cam2Mode === 'youtube' && youtubeUrlAngle2.trim() && !extractYouTubeId(youtubeUrlAngle2)) {
+      setUploadError(
+        'CAM 2 : lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...'
+      );
       return;
     }
 
@@ -152,9 +247,14 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
 
     try {
       const formData = new FormData();
-      if (uploadFile) formData.append('video', uploadFile);
-      if (uploadFileAngle2) formData.append('video_angle2', uploadFileAngle2);
-      if (youtubeUrl.trim()) formData.append('youtube_url', youtubeUrl.trim());
+      // CAM 1 : soit un fichier vidéo local, soit un lien YouTube partagé.
+      if (cam1Mode === 'file' && uploadFile) formData.append('video', uploadFile);
+      if (cam1Mode === 'youtube' && youtubeUrl.trim()) formData.append('youtube_url', youtubeUrl.trim());
+      // CAM 2 : même choix, indépendant de la CAM 1.
+      if (cam2Mode === 'file' && uploadFileAngle2) formData.append('video_angle2', uploadFileAngle2);
+      if (cam2Mode === 'youtube' && youtubeUrlAngle2.trim()) {
+        formData.append('youtube_url_angle2', youtubeUrlAngle2.trim());
+      }
       formData.append('angle2_offset', String(Number(angle2Offset) || 0));
       formData.append('home_team_id', homeTeamId);
       formData.append('away_team_id', awayTeamId);
@@ -166,7 +266,10 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
       setUploadFile(null);
       setUploadFileAngle2(null);
       setYoutubeUrl('');
+      setYoutubeUrlAngle2('');
       setAngle2Offset(0);
+      setCam1Mode('youtube');
+      setCam2Mode('youtube');
       loadAll();
     } catch (err) {
       setUploadError(err.response?.data?.error || `Erreur upload : ${err.message}`);
@@ -405,6 +508,8 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
               const isFinished = finishedMatches.some((m) => m.id === video.id);
               const hasYt = Boolean(extractYouTubeId(video.youtube_url));
               const hasLocal = Boolean(video.filename);
+              // CAM 2 peut être un fichier local ou un lien YouTube (stocké à part).
+              const hasCam2 = Boolean(video.filename_angle2 || extractYouTubeId(video.youtube_url_angle2));
               return (
                 <div
                   key={video.id}
@@ -504,7 +609,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                           fontSize: 10,
                           border: '1px solid #3f3f46',
                           color:
-                            hasLocal && video.filename_angle2
+                            hasCam2
                               ? '#38bdf8'
                               : hasLocal
                               ? '#10b981'
@@ -513,8 +618,12 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                               : '#f59e0b',
                         }}
                       >
-                        {hasLocal && video.filename_angle2
+                        {hasLocal && hasCam2
                           ? '2 CAMÉRAS LOCALES'
+                          : hasCam2
+                          ? video.filename_angle2
+                            ? 'CAM 1 + CAM 2'
+                            : 'CAM 2 CLOUD'
                           : hasLocal
                           ? '1 CAMÉRA LOCALE'
                           : hasYt
@@ -567,68 +676,50 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                   </div>
                 )}
 
-                <div className="form-group" style={{ marginBottom: 14, padding: 12, background: '#09090b', border: '1px solid #ef444466' }}>
-                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <span style={{ color: '#f87171', fontWeight: 700 }}>
-                      ▶ Lien YouTube partagé (public ou non répertorié)
-                    </span>
-                    <span style={{ fontSize: 10, color: '#10b981' }}>Recommandé — visible sur tous les PC</span>
-                  </label>
-                  <input
-                    type="url"
-                    className="form-control"
-                    placeholder="https://www.youtube.com/watch?v=... ou https://youtu.be/..."
-                    value={youtubeUrl}
-                    onChange={(e) => setYoutubeUrl(e.target.value)}
-                  />
-                  <span style={{ fontSize: 11, color: '#a1a1aa', display: 'block', marginTop: 4 }}>
-                    Hébergez gratuitement votre vidéo sur YouTube en mode « Non répertorié » : tous les utilisateurs verront la vidéo et les timecodes sans transfert de fichier.
-                  </span>
-                </div>
+                <CameraUploadBlock
+                  title="1. CAM 1 — Vue principale"
+                  accent="#c8a165"
+                  hint="Hébergez la vidéo sur YouTube en mode « Non répertorié » : tous les postes la voient, sans transfert de fichier."
+                  mode={cam1Mode}
+                  onMode={setCam1Mode}
+                  youtubeUrl={youtubeUrl}
+                  onYoutubeUrl={setYoutubeUrl}
+                  file={uploadFile}
+                  onFile={setUploadFile}
+                />
 
-                <div className="form-group" style={{ marginBottom: 14, padding: 10, background: '#09090b', border: '1px solid #27272a' }}>
-                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>1a. Fichier vidéo local Caméra 1 (MP4, MOV, MKV)</span>
-                    <span style={{ fontSize: 10, color: '#a1a1aa' }}>Optionnel</span>
-                  </label>
-                  <input
-                    type="file"
-                    accept="video/*"
-                    className="form-control"
-                    onChange={(e) => setUploadFile(e.target.files[0] || null)}
-                  />
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 18, padding: 10, background: '#09090b', border: '1px solid #27272a' }}>
-                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>1b. Fichier vidéo local Caméra 2 — Second Angle synchronisé</span>
-                    <span style={{ fontSize: 10, color: '#38bdf8' }}>Optionnel</span>
-                  </label>
-                  <input
-                    type="file"
-                    accept="video/*"
-                    className="form-control"
-                    onChange={(e) => setUploadFileAngle2(e.target.files[0] || null)}
-                  />
-                  {uploadFileAngle2 && (
-                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 11, color: '#a1a1aa' }}>Décalage Cam 2 vs Cam 1 (en secondes) :</span>
-                      <input
-                        type="number"
-                        step="0.1"
-                        className="form-control"
-                        style={{ width: 90 }}
-                        value={angle2Offset}
-                        onChange={(e) => setAngle2Offset(e.target.value)}
-                      />
-                    </div>
-                  )}
-                </div>
+                <CameraUploadBlock
+                  title="2. CAM 2 — Second angle synchronisé"
+                  accent="#38bdf8"
+                  hint="Même choix pour le second angle : lien YouTube (public ou non répertorié) ou fichier vidéo local."
+                  mode={cam2Mode}
+                  onMode={setCam2Mode}
+                  youtubeUrl={youtubeUrlAngle2}
+                  onYoutubeUrl={setYoutubeUrlAngle2}
+                  file={uploadFileAngle2}
+                  onFile={setUploadFileAngle2}
+                  extra={
+                    (cam2Mode === 'file' && uploadFileAngle2) ||
+                    (cam2Mode === 'youtube' && youtubeUrlAngle2.trim()) ? (
+                      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 11, color: '#a1a1aa' }}>Décalage CAM 2 vs CAM 1 (en secondes) :</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="form-control"
+                          style={{ width: 90 }}
+                          value={angle2Offset}
+                          onChange={(e) => setAngle2Offset(e.target.value)}
+                        />
+                      </div>
+                    ) : null
+                  }
+                />
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
                   <div className="form-group">
                     <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>2. Équipe Domicile *</span>
+                      <span>3. Équipe Domicile *</span>
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -657,7 +748,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
 
                   <div className="form-group">
                     <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>3. Équipe Extérieur *</span>
+                      <span>4. Équipe Extérieur *</span>
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -734,7 +825,10 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                   <button type="submit" className="btn btn-primary" disabled={uploading || !homeTeamId || !awayTeamId}>
                     {uploading
                       ? 'Enregistrement...'
-                      : uploadFile || uploadFileAngle2 || youtubeUrl.trim()
+                      : (cam1Mode === 'file' && uploadFile) ||
+                        (cam2Mode === 'file' && uploadFileAngle2) ||
+                        (cam1Mode === 'youtube' && youtubeUrl.trim()) ||
+                        (cam2Mode === 'youtube' && youtubeUrlAngle2.trim())
                       ? 'Créer et partager le match'
                       : 'Créer le match (vidéos après coup)'}
                   </button>

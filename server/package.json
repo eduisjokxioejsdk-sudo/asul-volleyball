@@ -1,6 +1,6 @@
 {
   "name": "asul-server",
-  "version": "3.5.1",
+  "version": "3.6.0",
   "scripts": {
     "dev": "node src/index.js",
     "start": "node src/index.js"
