@@ -6,12 +6,12 @@
 --
 -- Ce script est idempotent (peut être relancé sans perte de données) et crée :
 --   1. public.asul_teams          (Équipes & effectifs)
---   2. public.asul_trajectories   (Fiches de trajectoires)
---   3. public.asul_videos         (Métadonnées des vidéos)
---   4. public.asul_matches        (État des matchs DataVolley)
+--   2. public.asul_trajectories   (Fiches de trajectoires & lien vidéo)
+--   3. public.asul_videos         (Métadonnées des vidéos & liens YouTube)
+--   4. public.asul_matches        (État des matchs DataVolley & synchronisation timecode)
 --   5. public.asul_actions        (Actions codées DataVolley)
 --   6. public.asul_events         (Événements : temps morts, remplacements…)
---   7. public.asul_setups         (Six de départ par set)
+--   7. public.asul_setups         (Six de départ & passeurs par set)
 --   8. public.asul_set_claims     (Attribution collaborative des sets)
 --   9. public.asul_live_sessions  (Matchs en direct : code d'accès, membres, actions, événements, positions)
 -- ============================================================================
@@ -49,6 +49,7 @@ create table if not exists public.asul_trajectories (
   name           text not null,
   home_team_uuid uuid,
   away_team_uuid uuid,
+  video_uuid     uuid,
   team1_name     text,
   team2_name     text,
   status         text default 'open',
@@ -59,32 +60,41 @@ create table if not exists public.asul_trajectories (
   updated_at     timestamptz not null default now()
 );
 alter table public.asul_trajectories add column if not exists created_by text;
+alter table public.asul_trajectories add column if not exists video_uuid uuid;
 drop trigger if exists asul_trajectories_touch on public.asul_trajectories;
 create trigger asul_trajectories_touch before insert or update on public.asul_trajectories
   for each row execute procedure public.asul_touch();
 
 -- ---------------------------------------------------------------------------
--- 3. Vidéos — métadonnées seules (asul_videos)
+-- 3. Vidéos — métadonnées & liens YouTube (asul_videos)
 -- ---------------------------------------------------------------------------
 create table if not exists public.asul_videos (
-  sync_uuid     uuid primary key,
-  original_name text,
-  display_name  text,
-  team1_name    text,
-  team2_name    text,
-  duration      real,
-  status        text default 'uploaded',
-  color         text default '#1a73e8',
-  deleted       boolean not null default false,
-  origin_id     text,
-  updated_at    timestamptz not null default now()
+  sync_uuid      uuid primary key,
+  original_name  text,
+  display_name   text,
+  youtube_url    text,
+  home_team_uuid uuid,
+  away_team_uuid uuid,
+  team1_name     text,
+  team2_name     text,
+  duration       real,
+  angle2_offset  real default 0,
+  status         text default 'uploaded',
+  color          text default '#1a73e8',
+  deleted        boolean not null default false,
+  origin_id      text,
+  updated_at     timestamptz not null default now()
 );
+alter table public.asul_videos add column if not exists youtube_url text;
+alter table public.asul_videos add column if not exists home_team_uuid uuid;
+alter table public.asul_videos add column if not exists away_team_uuid uuid;
+alter table public.asul_videos add column if not exists angle2_offset real default 0;
 drop trigger if exists asul_videos_touch on public.asul_videos;
 create trigger asul_videos_touch before insert or update on public.asul_videos
   for each row execute procedure public.asul_touch();
 
 -- ---------------------------------------------------------------------------
--- 4. Matchs DataVolley (asul_matches)
+-- 4. Matchs DataVolley & calibration vidéo (asul_matches)
 -- ---------------------------------------------------------------------------
 create table if not exists public.asul_matches (
   sync_uuid      uuid primary key,
@@ -93,10 +103,18 @@ create table if not exists public.asul_matches (
   finished_at    timestamptz,
   home_team_uuid uuid,
   away_team_uuid uuid,
+  sync_offset    real default 0,
+  set_offsets    text default '{}',
+  lead_in        real default 4,
+  lead_out       real default 3,
   deleted        boolean not null default false,
   origin_id      text,
   updated_at     timestamptz not null default now()
 );
+alter table public.asul_matches add column if not exists sync_offset real default 0;
+alter table public.asul_matches add column if not exists set_offsets text default '{}';
+alter table public.asul_matches add column if not exists lead_in real default 4;
+alter table public.asul_matches add column if not exists lead_out real default 3;
 drop trigger if exists asul_matches_touch on public.asul_matches;
 create trigger asul_matches_touch before insert or update on public.asul_matches
   for each row execute procedure public.asul_touch();
@@ -169,16 +187,24 @@ create trigger asul_events_touch before insert or update on public.asul_events
 -- 7. Six de départ par set (asul_setups)
 -- ---------------------------------------------------------------------------
 create table if not exists public.asul_setups (
-  sync_uuid     uuid primary key,
-  video_uuid    uuid,
-  set_number    integer,
-  first_server  text,
-  home_lineup   text,
-  away_lineup   text,
-  deleted       boolean not null default false,
-  origin_id     text,
-  updated_at    timestamptz not null default now()
+  sync_uuid       uuid primary key,
+  video_uuid      uuid,
+  set_number      integer,
+  first_server    text,
+  home_setter_pos text,
+  away_setter_pos text,
+  home_setter     integer,
+  away_setter     integer,
+  home_lineup     text,
+  away_lineup     text,
+  deleted         boolean not null default false,
+  origin_id       text,
+  updated_at      timestamptz not null default now()
 );
+alter table public.asul_setups add column if not exists home_setter_pos text;
+alter table public.asul_setups add column if not exists away_setter_pos text;
+alter table public.asul_setups add column if not exists home_setter integer;
+alter table public.asul_setups add column if not exists away_setter integer;
 drop trigger if exists asul_setups_touch on public.asul_setups;
 create trigger asul_setups_touch before insert or update on public.asul_setups
   for each row execute procedure public.asul_touch();

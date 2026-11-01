@@ -1,8 +1,5 @@
 // ============================================================================
 // ROUTES MODE ENTRAÎNEMENT (DataVolley 4 Pro — Point 13)
-// Permet de scouter des séances d'entraînement et ateliers (Service/Réception,
-// Attaque, Block/Défense, 6v6 libre) sans contrainte de rotation ni de score,
-// avec suivi individuel par joueur sur une ou plusieurs séances.
 // ============================================================================
 
 const express = require('express');
@@ -19,9 +16,8 @@ router.get('/sessions', authenticateToken, (req, res) => {
             ps.name AS title,
             (SELECT COUNT(*) FROM practice_actions pa WHERE pa.session_id = ps.id) AS action_count
        FROM practice_sessions ps
-      WHERE ps.user_id = ?
       ORDER BY ps.session_date DESC, ps.created_at DESC, ps.id DESC`,
-    [req.user.id],
+    [],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       res.json({ sessions: rows || [] });
@@ -33,8 +29,8 @@ router.get('/sessions', authenticateToken, (req, res) => {
 router.get('/sessions/:id', authenticateToken, (req, res) => {
   const sessionId = Number(req.params.id);
   db.get(
-    'SELECT ps.*, ps.name AS title FROM practice_sessions ps WHERE ps.id = ? AND ps.user_id = ?',
-    [sessionId, req.user.id],
+    'SELECT ps.*, ps.name AS title FROM practice_sessions ps WHERE ps.id = ?',
+    [sessionId],
     (err, session) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!session) return res.status(404).json({ error: 'Séance introuvable' });
@@ -107,8 +103,8 @@ router.post('/sessions/:id/actions', authenticateToken, (req, res) => {
   }
 
   db.get(
-    'SELECT * FROM practice_sessions WHERE id = ? AND user_id = ?',
-    [sessionId, req.user.id],
+    'SELECT * FROM practice_sessions WHERE id = ?',
+    [sessionId],
     (err, session) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!session) return res.status(404).json({ error: 'Séance introuvable' });
@@ -162,7 +158,7 @@ router.post('/sessions/:id/actions', authenticateToken, (req, res) => {
   );
 });
 
-// Cumul multi-séances d'entraînement (pour suivre l'évolution d'une équipe / d'un joueur)
+// Cumul multi-séances d'entraînement
 router.post('/multi-session-data', authenticateToken, (req, res) => {
   const ids = (Array.isArray(req.body?.sessionIds) ? req.body.sessionIds : [])
     .map((id) => Number(id))
@@ -171,8 +167,8 @@ router.post('/multi-session-data', authenticateToken, (req, res) => {
 
   const placeholders = ids.map(() => '?').join(',');
   db.all(
-    `SELECT * FROM practice_sessions WHERE id IN (${placeholders}) AND user_id = ? ORDER BY created_at ASC`,
-    [...ids, req.user.id],
+    `SELECT * FROM practice_sessions WHERE id IN (${placeholders}) ORDER BY created_at ASC`,
+    ids,
     (err, sessions) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       db.all(
@@ -187,13 +183,13 @@ router.post('/multi-session-data', authenticateToken, (req, res) => {
   );
 });
 
-// Met à jour une séance (ex: association vidéo, notes, etc.)
+// Met à jour une séance
 router.put('/sessions/:id', authenticateToken, (req, res) => {
   const sessionId = Number(req.params.id);
   const { name, title, video_id, notes, session_date, team_id, team_name } = req.body || {};
   db.get(
-    'SELECT * FROM practice_sessions WHERE id = ? AND user_id = ?',
-    [sessionId, req.user.id],
+    'SELECT * FROM practice_sessions WHERE id = ?',
+    [sessionId],
     (err, session) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!session) return res.status(404).json({ error: 'Séance introuvable' });
@@ -208,8 +204,8 @@ router.put('/sessions/:id', authenticateToken, (req, res) => {
       db.run(
         `UPDATE practice_sessions
             SET name = ?, video_id = ?, notes = ?, session_date = ?, team_id = ?, team_name = ?
-          WHERE id = ? AND user_id = ?`,
-        [newName, newVideoId, newNotes, newDate, newTeamId, newTeamName, sessionId, req.user.id],
+          WHERE id = ?`,
+        [newName, newVideoId, newNotes, newDate, newTeamId, newTeamName, sessionId],
         function (err2) {
           if (err2) return res.status(500).json({ error: 'Database error' });
           db.get('SELECT ps.*, ps.name AS title FROM practice_sessions ps WHERE ps.id = ?', [sessionId], (err3, updated) => {
@@ -226,8 +222,8 @@ router.put('/sessions/:id', authenticateToken, (req, res) => {
 router.delete('/sessions/:id', authenticateToken, (req, res) => {
   const sessionId = Number(req.params.id);
   db.run(
-    'DELETE FROM practice_sessions WHERE id = ? AND user_id = ?',
-    [sessionId, req.user.id],
+    'DELETE FROM practice_sessions WHERE id = ?',
+    [sessionId],
     function (err) {
       if (err) return res.status(500).json({ error: 'Database error' });
       res.json({ message: 'Séance supprimée' });

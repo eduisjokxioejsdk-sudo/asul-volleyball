@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
@@ -103,12 +104,13 @@ router.get('/', authenticateToken, (req, res) => {
     `SELECT m.*,
             (SELECT COUNT(*) FROM trajectory_shots s WHERE s.match_id = m.id) AS shot_count,
             (SELECT COUNT(*) FROM trajectory_shots s
-              WHERE s.match_id = m.id AND s.result IN ('faute', 'out')) AS error_count
-       v.original_name as video_original_name,
-            v.display_name as video_display_name,
-            v.filename as video_filename
+              WHERE s.match_id = m.id AND s.result IN ('faute', 'out')) AS error_count,
+            v.original_name AS video_original_name,
+            v.display_name AS video_display_name,
+            v.filename AS video_filename,
+            v.youtube_url AS video_youtube_url
        FROM trajectory_matches m
-       LEFT JOIN videos v ON v.id = m.video_id
+       LEFT JOIN videos v ON v.id = m.video_id AND COALESCE(v.deleted, 0) = 0
       WHERE COALESCE(m.deleted, 0) = 0
       ORDER BY m.created_at DESC, m.id DESC`,
     (err, rows) => {
@@ -140,21 +142,49 @@ router.post('/', authenticateToken, (req, res) => {
     const pairName = [home?.name, away?.name].filter(Boolean).join(' vs ');
     const finalName = (name || '').trim() || `${pairName} — ${new Date().toLocaleDateString('fr-FR')}`;
 
-    db.run(
-      `INSERT INTO trajectory_matches (user_id, name, home_team_id, away_team_id, video_id, team1_name, team2_name, created_by, dirty, local_updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-      [req.user.id, finalName, homeId, awayId, videoId, home?.name || null, away?.name || null, req.user.email || null, new Date().toISOString()],
-      function (err2) {
-        if (err2) return res.status(500).json({ error: 'Database error' });
-        const insertedId = this.lastID;
-        db.get('SELECT * FROM trajectory_matches WHERE id = ?', [insertedId], (err3, row) => {
-          if (err3) return res.status(500).json({ error: 'Database error' });
-          emitChanged();
-          triggerSync();
-          res.status(201).json({ match: decorateMatch(row, teamsMap) });
-        });
-      }
-    );
+    const insertWithVideoUuid = (videoUuid) => {
+      const syncUuid = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.run(
+        `INSERT INTO trajectory_matches
+          (sync_uuid, user_id, name, home_team_id, away_team_id, home_team_uuid, away_team_uuid,
+           video_id, video_uuid, team1_name, team2_name, created_by, dirty, local_updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+        [
+          syncUuid,
+          req.user.id,
+          finalName,
+          homeId,
+          awayId,
+          home?.sync_uuid || null,
+          away?.sync_uuid || null,
+          videoId,
+          videoUuid || null,
+          home?.name || null,
+          away?.name || null,
+          req.user.email || null,
+          now,
+        ],
+        function (err2) {
+          if (err2) return res.status(500).json({ error: 'Database error' });
+          const insertedId = this.lastID;
+          db.get('SELECT * FROM trajectory_matches WHERE id = ?', [insertedId], (err3, row) => {
+            if (err3) return res.status(500).json({ error: 'Database error' });
+            emitChanged();
+            triggerSync();
+            res.status(201).json({ match: decorateMatch(row, teamsMap) });
+          });
+        }
+      );
+    };
+
+    if (videoId) {
+      db.get('SELECT sync_uuid FROM videos WHERE id = ?', [videoId], (errV, vRow) => {
+        insertWithVideoUuid(vRow?.sync_uuid || null);
+      });
+    } else {
+      insertWithVideoUuid(null);
+    }
   });
 });
 
@@ -193,7 +223,8 @@ router.get('/team/:teamId', authenticateToken, (req, res) => {
                 WHERE s.match_id = m.id
                   AND s.team_side = CASE WHEN m.home_team_id = ? THEN 'home' ELSE 'away' END) AS shot_count
          FROM trajectory_matches m
-        WHERE m.home_team_id = ? OR m.away_team_id = ?
+        WHERE (m.home_team_id = ? OR m.away_team_id = ?)
+          AND COALESCE(m.deleted, 0) = 0
         ORDER BY m.created_at ASC, m.id ASC`,
       [teamId, teamId, teamId, teamId],
       (err2, matches) => {
@@ -232,7 +263,7 @@ router.get('/team/:teamId', authenticateToken, (req, res) => {
 // Détail d'une fiche : match (avec équipes + joueurs) et flèches marquées.
 router.get('/:id', authenticateToken, (req, res) => {
   const matchId = Number(req.params.id);
-  db.get('SELECT * FROM trajectory_matches WHERE id = ?', [matchId], (err, match) => {
+  db.get('SELECT * FROM trajectory_matches WHERE id = ? AND COALESCE(deleted, 0) = 0', [matchId], (err, match) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (!match) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
 
@@ -274,15 +305,14 @@ router.patch('/:id', authenticateToken, (req, res) => {
   );
 });
 
-// Supprime une fiche (et ses flèches) — réservé à son créateur.
+// Supprime une fiche (et ses flèches) — réservé à son créateur (ou ouvert si fiche importée sans auteur).
 router.delete('/:id', authenticateToken, (req, res) => {
   const matchId = Number(req.params.id);
   db.get('SELECT * FROM trajectory_matches WHERE id = ?', [matchId], (err, match) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (!match) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
-    // Le créateur est reconnu par son email (stable entre postes) quand la fiche
-    // vient du cloud, ou par l'id local pour les fiches créées sur ce poste.
     const isCreator =
+      (!match.created_by && (!match.user_id || Number(match.user_id) === 0)) ||
       (match.created_by && match.created_by === req.user.email) ||
       Number(match.user_id) === Number(req.user.id);
     if (!isCreator) {
@@ -375,21 +405,31 @@ router.post('/:id/shots', authenticateToken, (req, res) => {
   });
 });
 
-
 // Associe ou dissocie une vidéo DataVolley à une fiche de trajectoire
 router.put('/:id/link-video', authenticateToken, (req, res) => {
   const matchId = req.params.id;
   const videoId = req.body.video_id ? Number(req.body.video_id) : null;
-  db.run(
-    'UPDATE trajectory_matches SET video_id = ?, dirty = 1, local_updated_at = ? WHERE id = ?',
-    [videoId, new Date().toISOString(), matchId],
-    function (err) {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      emitChanged();
-      res.json({ ok: true, video_id: videoId });
-    }
-  );
+
+  const applyLink = (videoUuid) => {
+    db.run(
+      'UPDATE trajectory_matches SET video_id = ?, video_uuid = ?, dirty = 1, local_updated_at = ? WHERE id = ?',
+      [videoId, videoUuid || null, new Date().toISOString(), matchId],
+      function (err) {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        emitChanged();
+        triggerSync();
+        res.json({ ok: true, video_id: videoId, video_uuid: videoUuid || null });
+      }
+    );
+  };
+
+  if (videoId) {
+    db.get('SELECT sync_uuid FROM videos WHERE id = ?', [videoId], (err, row) => {
+      applyLink(row?.sync_uuid || null);
+    });
+  } else {
+    applyLink(null);
+  }
 });
 
 module.exports = router;
-

@@ -16,7 +16,9 @@ import VideoTvOverlay from '../components/VideoTvOverlay';
 import PlaylistManagerModal from '../components/PlaylistManagerModal';
 import useDualScreenVideo from '../hooks/useDualScreenVideo';
 import { videosAPI, datavolleyAPI, teamsAPI, montageAPI } from '../services/api';
-import useCollectionChanged from '../hooks/useCollectionChanged';
+import useCollectionChanged, { useOnCollectionsChanged } from '../hooks/useCollectionChanged';
+import SmartVideoPlayer from '../components/SmartVideoPlayer';
+import { extractYouTubeId } from '../utils/youtube';
 import { formatTimecode, groupActionsIntoRallies, buildPointSegments } from '../utils/datavolley';
 import { computeMatchState } from '../utils/rotation';
 import { Play, Pause, Clock, ArrowLeft, ChevronLeft, ChevronRight, Trash, FileDown, Tv, Camera, MonitorPlay, Upload } from '../components/icons';
@@ -145,6 +147,14 @@ export default function VideoCenterPage({ user, onLogout }) {
 
   useCollectionChanged('videos', loadData);
   useCollectionChanged('teams', loadData);
+  useOnCollectionsChanged(['actions', 'matches'], () => {
+    if (selectedVideo?.id) {
+      datavolleyAPI
+        .getActions(selectedVideo.id)
+        .then((res) => setActions(res.data?.actions || []))
+        .catch(() => {});
+    }
+  });
 
   const videoHasTeam = (v, teamId) => {
     const targetTeam = teams.find((t) => String(t.id) === String(teamId));
@@ -354,6 +364,8 @@ export default function VideoCenterPage({ user, onLogout }) {
   const proxyFilename = selectedVideo?.filepath_proxy ? selectedVideo.filepath_proxy.split(/[\\/]/).pop() : null;
   const proxyUrl = proxyFilename ? videosAPI.getProxyUrl(proxyFilename) : null;
   const playbackUrl = proxyUrl || videoUrl;
+  const youtubeUrl = selectedVideo?.youtube_url || null;
+  const hasPrimaryVideo = Boolean(playbackUrl || extractYouTubeId(youtubeUrl));
 
   const angle2Url = selectedVideo?.filename_angle2 ? videosAPI.getFileUrl(selectedVideo.filename_angle2) : null;
   const angle2Offset = Number(selectedVideo?.angle2_offset || 0);
@@ -408,11 +420,11 @@ export default function VideoCenterPage({ user, onLogout }) {
   // 2e écran, on ne renvoie pas la position en écho (le popout y est déjà), ce
   // qui évite les allers-retours de SEEK pendant la lecture.
   useEffect(() => {
-    if (!popoutActive || !playbackUrl || !selectedVideo) return;
+    if (!popoutActive || !hasPrimaryVideo || !selectedVideo) return;
     const fromRemote = Date.now() - remoteCmdAtRef.current < 150;
     broadcastSync({
       videoId: selectedVideo.id,
-      src: playbackUrl,
+      src: playbackUrl || youtubeUrl,
       currentTime: fromRemote ? undefined : currentTime,
       playing: isPlaying,
       playbackRate: playbackSpeed,
@@ -422,7 +434,7 @@ export default function VideoCenterPage({ user, onLogout }) {
         lastCode: overlayState.activeAction?.code || '',
       },
     });
-  }, [popoutActive, playbackUrl, selectedVideo, currentTime, isPlaying, playbackSpeed, overlayState, broadcastSync]);
+  }, [popoutActive, hasPrimaryVideo, playbackUrl, youtubeUrl, selectedVideo, currentTime, isPlaying, playbackSpeed, overlayState, broadcastSync]);
 
   // Export MP4 de la sélection filtrée via FFmpeg (Feature 11)
   const handleExportFilteredMp4 = async () => {
@@ -725,9 +737,10 @@ export default function VideoCenterPage({ user, onLogout }) {
                 >
                   {cameraView !== '2' && (
                     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                      <video
+                      <SmartVideoPlayer
                         ref={videoRef}
                         src={playbackUrl}
+                        youtubeUrl={youtubeUrl}
                         className="vc-active-player"
                         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                         controls
@@ -875,7 +888,7 @@ export default function VideoCenterPage({ user, onLogout }) {
                       onClick={() =>
                         openSecondScreen({
                           videoId: selectedVideo.id,
-                          src: playbackUrl,
+                          src: playbackUrl || youtubeUrl,
                           currentTime,
                           playing: isPlaying,
                           playbackRate: playbackSpeed,

@@ -3,6 +3,8 @@ import PancakeLogo from '../components/PancakeLogo';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { liveAPI } from '../services/api';
+import useCollectionChanged from '../hooks/useCollectionChanged';
+import { extractYouTubeId } from '../utils/youtube';
 import { createSocket, estimateClockOffset, syncedTimeMs } from '../services/liveSocket';
 import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS } from '../utils/rotation';
 import { computeSetterDistributionByRotation, attackZoneOf, normalizeAttackZone } from '../utils/distribution';
@@ -573,6 +575,29 @@ function LiveDashboard({ user, onLogout }) {
     loadEvents();
   }, [loadState, loadRotation, loadEvents]);
 
+  // Synchronisation Cloud Supabase multi-postes : rafraîchit dès qu'un autre PC pousse des actions / rotations
+  const refreshFromCloud = useCallback(() => {
+    loadState();
+    if (!rotSaveTimer.current) loadRotation();
+    loadEvents();
+  }, [loadState, loadRotation, loadEvents]);
+
+  useCollectionChanged('live', refreshFromCloud);
+
+  // Polling Cloud rapide pendant un match en direct ouvert (toutes les 4 s) pour relier plusieurs PCs distants
+  useEffect(() => {
+    if (!sessionId) return undefined;
+    const t = setInterval(async () => {
+      try {
+        await liveAPI.sync();
+      } catch {
+        // ignore offline/transient error
+      }
+      refreshFromCloud();
+    }, 4000);
+    return () => clearInterval(t);
+  }, [sessionId, refreshFromCloud]);
+
   // Synchronisation d'horloge (NTP-like) : offset estimé puis rafraîchi.
   useEffect(() => {
     estimateClockOffset().then((off) => { clockOffsetRef.current = off; });
@@ -812,14 +837,28 @@ function LiveDashboard({ user, onLogout }) {
     }
   };
 
-  /** Finalise l'enregistrement du direct en vidéo de replay ancrée. */
+  /** Finalise l'enregistrement du direct en vidéo/match DataVolley partagé (avec lien YouTube optionnel). */
   const finalizeRecording = async () => {
     if (!sessionId || finalizing) return;
+    const currentStreamUrl = typeof window !== 'undefined' ? localStorage.getItem(`live.stream_url.${sessionId}`) || '' : '';
+    const defaultYt = extractYouTubeId(currentStreamUrl) ? currentStreamUrl : '';
+    const ytPrompt = window.prompt(
+      'Optionnel : Collez un lien YouTube (répertorié ou non répertorié) à associer à ce match DataVolley, ou laissez vide :',
+      defaultYt
+    );
+    if (ytPrompt === null) return;
     setFinalizing(true);
     try {
-      const res = await liveAPI.finalizeRecording(sessionId);
+      const res = await liveAPI.finalizeRecording(sessionId, {
+        youtube_url: ytPrompt.trim() || null,
+      });
       setReplayVideoId(res.data.videoId ? Number(res.data.videoId) : null);
-      setFlash({ ok: true, text: `Vidéo de replay créée (${res.data.actionCount || 0} action(s) ancrée(s)).` });
+      setFlash({
+        ok: true,
+        text: res.data.withoutVideoFile
+          ? `Match transféré dans DataVolley (${res.data.actionCount || 0} action(s) conservée(s)).`
+          : `Vidéo de replay créée (${res.data.actionCount || 0} action(s) ancrée(s)).`,
+      });
     } catch (err) {
       setFlash({ ok: false, text: err?.response?.data?.error || 'Échec de la finalisation.' });
     } finally {
@@ -1960,6 +1999,7 @@ function LiveDashboard({ user, onLogout }) {
         <div className="dv-fullpage-body">
           <LiveCameraPanel
             compact
+            sessionId={sessionId}
             bindVideo={bindCameraVideo}
             active={camera.active}
             delay={camera.delay}
@@ -2121,23 +2161,23 @@ function LiveDashboard({ user, onLogout }) {
           >
             {modeAide ? <EyeOff size={14} /> : <Eye size={14} />} Mode Aide
           </button>
-          {isOwner && (
+          {!isViewer && (
             <>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={finalizeRecording}
                 disabled={finalizing}
-                title="Finaliser l'enregistrement du direct en une vidéo de replay ancrée (les actions, six et événements seront liés à la vidéo)"
+                title="Transférer ce match en direct vers DataVolley (avec vidéo caméra ou lien YouTube optionnel) — toutes les actions, six et événements sont conservés"
               >
-                <Save size={13} /> {finalizing ? 'Finalisation…' : 'Finaliser'}
+                <Save size={13} /> {finalizing ? 'Finalisation…' : 'Vers DataVolley'}
               </button>
               {replayVideoId && (
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
                   onClick={() => navigate(`/datavolley/${replayVideoId}`)}
-                  title="Ouvrir la vidéo de replay finalisée dans Data Volley (codage, séquences, rapports)"
+                  title="Ouvrir le match finalisé dans Data Volley (codage, séquences, rapports)"
                 >
                   <ArrowRight size={13} /> Data Volley
                 </button>
@@ -2220,6 +2260,7 @@ function LiveDashboard({ user, onLogout }) {
                         }
                       >
                         <LiveCameraPanel
+                          sessionId={sessionId}
                           bindVideo={bindCameraVideo}
                           active={camera.active}
                           delay={camera.delay}
@@ -2596,6 +2637,7 @@ function LiveDashboard({ user, onLogout }) {
                       videoSlot={
                         <LiveCameraPanel
                           compact
+                          sessionId={sessionId}
                           bindVideo={bindCameraVideo}
                           active={camera.active}
                           delay={camera.delay}

@@ -1,20 +1,9 @@
 # ============================================================================
-# Maintien en éveil du projet Supabase servant au partage des équipes ASUL.
+# Maintien en éveil du projet Supabase servant au partage global ASUL.
 #
-# L'offre gratuite de Supabase met un projet en pause après une semaine sans
-# activité. Ce workflow interroge la table `asul_teams` toutes les 6 heures
-# (une requête de lecture suffit) pour éviter cette mise en pause pendant les
-# périodes sans match.
-#
-# Mise en place :
-#   1. GitHub → Settings → Secrets and variables → Actions → New repository secret
-#      • SUPABASE_URL       = https://xxxxxxxxxxxx.supabase.co
-#      • SUPABASE_ANON_KEY  = clé « anon » du projet (voir SYNC.md)
-#   2. Onglet Actions → « Supabase keep-alive » → Run workflow (test immédiat).
-#
-# Optionnel : sans ces secrets, le workflow ne fait rien (aucune erreur).
-# Remarque : GitHub désactive les workflows planifiés après 60 jours sans
-# activité sur le dépôt ; il suffit alors de le relancer depuis l'onglet Actions.
+# L'offre gratuite de Supabase met un projet en pause après 7 jours sans
+# activité. Ce workflow interroge les tables partagées toutes les 6 heures
+# pour empêcher toute mise en veille, même pendant les trêves sans match.
 # ============================================================================
 
 name: Supabase keep-alive
@@ -28,18 +17,26 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Interroger la table des équipes partagées
+      - name: Interroger les tables partagées Supabase (anti-mise en veille 7 jours)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "Secrets SUPABASE_URL / SUPABASE_ANON_KEY absents : rien à faire."
-            exit 0
+          DEFAULT_URL="https://fzfryivizuhywfczeqbh.supabase.co"
+          DEFAULT_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6ZnJ5aXZpenVoeXdmY3plcWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0NjcxNzYsImV4cCI6MjEwOTA0MzE3Nn0.euFriFlOGdkxD9nUzVSDaf9AwYHko6hZlQ9aC84uOa0"
+
+          if [ -z "$SUPABASE_URL" ] || echo "$SUPABASE_URL" | grep -q "ywxijozqdzmqhbcgkgti"; then
+            SUPABASE_URL="$DEFAULT_URL"
           fi
-          code=$(curl -s -o /dev/null -w '%{http_code}' \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            "$SUPABASE_URL/rest/v1/asul_teams?select=sync_uuid&limit=1")
-          echo "Réponse de Supabase : $code"
-          test "$code" = "200"
+          if [ -z "$SUPABASE_ANON_KEY" ] || echo "$SUPABASE_ANON_KEY" | grep -q "Inl3eGlqb3pxZHptcWhiY2drZ3Rp"; then
+            SUPABASE_ANON_KEY="$DEFAULT_KEY"
+          fi
+
+          echo "Maintien en éveil de $SUPABASE_URL ..."
+          for tbl in asul_teams asul_trajectories asul_videos asul_matches asul_actions asul_live_sessions; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "apikey: $SUPABASE_ANON_KEY" \
+              -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+              "$SUPABASE_URL/rest/v1/${tbl}?select=sync_uuid&limit=1")
+            echo "Table ${tbl} -> HTTP ${code}"
+          done

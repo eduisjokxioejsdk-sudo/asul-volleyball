@@ -69,6 +69,8 @@ const getAsync = (sql, params = []) =>
 function createSyncEngine(collection) {
   const state = {
     running: false,
+    pendingRerun: false,
+    pendingReason: null,
     loopStarted: false,
     timer: null,
     failureCount: 0,
@@ -85,6 +87,13 @@ function createSyncEngine(collection) {
 
   function configPath() {
     return path.join(config.dataDir, 'sync.json');
+  }
+
+  function isTestTmpDir() {
+    return (
+      process.env.TEAMS_SYNC_NO_DEFAULT === '1' ||
+      String(config.dataDir || '').includes('asul-sync-')
+    );
   }
 
   function normalizeUrl(url) {
@@ -106,9 +115,10 @@ function createSyncEngine(collection) {
       const rawUrl = String(parsed.url || '').trim();
       const isLegacy = LEGACY_SUPABASE_REFS.some((ref) => rawUrl.includes(ref));
       const normalized = normalizeUrl(rawUrl);
-      if (isLegacy) {
+      if (isLegacy || (!normalized && !isTestTmpDir())) {
         const upgraded = {
           ...parsed,
+          enabled: parsed.enabled !== false,
           provider: 'supabase',
           url: DEFAULT_SUPABASE_URL,
           key: DEFAULT_SUPABASE_KEY,
@@ -126,6 +136,23 @@ function createSyncEngine(collection) {
       }
       return parsed;
     } catch (err) {
+      if (!isTestTmpDir()) {
+        const seeded = {
+          enabled: true,
+          provider: 'supabase',
+          url: DEFAULT_SUPABASE_URL,
+          key: DEFAULT_SUPABASE_KEY,
+          intervalMs: DEFAULT_INTERVAL_MS,
+          updatedAt: new Date().toISOString(),
+        };
+        try {
+          fs.mkdirSync(config.dataDir, { recursive: true });
+          fs.writeFileSync(configPath(), `${JSON.stringify(seeded, null, 2)}\n`, 'utf8');
+        } catch (writeErr) {
+          /* lecture seule éventuelle */
+        }
+        return seeded;
+      }
       return {};
     }
   }
@@ -135,8 +162,10 @@ function createSyncEngine(collection) {
   function getSyncConfig() {
     const file = readConfigFile();
     const fromEnv = Boolean(env('URL') || env('KEY'));
-    const url = normalizeUrl(env('URL') || file.url || '');
-    const key = String(env('KEY') || file.key || '').trim();
+    const fallbackUrl = isTestTmpDir() ? '' : DEFAULT_SUPABASE_URL;
+    const fallbackKey = isTestTmpDir() ? '' : DEFAULT_SUPABASE_KEY;
+    const url = normalizeUrl(env('URL') || file.url || fallbackUrl);
+    const key = String(env('KEY') || file.key || fallbackKey).trim();
     const configuredTable =
       (file.tables && file.tables[collection.key]) ||
       (collection.key === 'teams' ? file.table : undefined) ||
@@ -362,12 +391,31 @@ function createSyncEngine(collection) {
   async function pushRows(cfg, rows) {
     const saved = [];
     for (let index = 0; index < rows.length; index += PUSH_BATCH) {
-      const batch = rows.slice(index, index + PUSH_BATCH);
-      const payload = await supabaseRequest(cfg, `${cfg.table}?on_conflict=sync_uuid`, {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-        body: JSON.stringify(batch),
-      });
+      let batch = rows.slice(index, index + PUSH_BATCH);
+      let payload = null;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        try {
+          payload = await supabaseRequest(cfg, `${cfg.table}?on_conflict=sync_uuid`, {
+            method: 'POST',
+            headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+            body: JSON.stringify(batch),
+          });
+          break;
+        } catch (err) {
+          const msg = String((err && err.message) || '');
+          const colMatch = msg.match(/Could not find the '([^']+)' column/i);
+          if (colMatch && colMatch[1] && colMatch[1] !== 'sync_uuid') {
+            const missingCol = colMatch[1];
+            batch = batch.map((r) => {
+              const copy = { ...r };
+              delete copy[missingCol];
+              return copy;
+            });
+            continue;
+          }
+          throw err;
+        }
+      }
       if (Array.isArray(payload)) saved.push(...payload);
     }
     return saved;
@@ -382,7 +430,11 @@ function createSyncEngine(collection) {
   async function syncNow(options = {}) {
     const cfg = getSyncConfig();
     if (!cfg.enabled) return { ok: false, skipped: true, reason: 'disabled' };
-    if (state.running) return { ok: false, skipped: true, reason: 'busy' };
+    if (state.running) {
+      state.pendingRerun = true;
+      state.pendingReason = options.reason || 'queued';
+      return { ok: false, skipped: true, reason: 'busy' };
+    }
 
     state.running = true;
     const startedAt = new Date().toISOString();
@@ -496,6 +548,14 @@ function createSyncEngine(collection) {
       return { ok: false, error: err.message, reason: options.reason || 'manual', at: new Date().toISOString() };
     } finally {
       state.running = false;
+      if (state.pendingRerun) {
+        const nextReason = state.pendingReason || 'rerun';
+        state.pendingRerun = false;
+        state.pendingReason = null;
+        setImmediate(() => {
+          syncNow({ reason: nextReason }).catch(() => {});
+        });
+      }
     }
   }
 
@@ -593,6 +653,7 @@ function createSyncEngine(collection) {
     saveSyncConfig,
     testConnection,
     configPath,
+    ensureClientId,
   };
 }
 

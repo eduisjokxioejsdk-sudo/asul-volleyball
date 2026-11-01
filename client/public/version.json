@@ -1,8 +1,23 @@
 {
-  "version": "3.3.4",
+  "version": "3.3.5",
   "releasedAt": "2026-11-01",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.3.5",
+      "date": "2026-11-01",
+      "title": "Lecteur vidéo universel (YouTube), direct finalisé en DataVolley et connexion durable",
+      "items": [
+        "Lecteur vidéo universel : le même lecteur ouvre un fichier local ou un lien YouTube (vidéo publique, non répertoriée, direct, shorts, youtu.be) ; si le fichier local ne se lit pas, la source YouTube de secours prend le relais automatiquement",
+        "Vidéos sans fichier : un match peut être créé avec un simple lien YouTube, sans aucun envoi de fichier ; le lien reste modifiable et se partage entre les postes (les fichiers vidéo, eux, ne quittent jamais le PC)",
+        "Fin de direct enrichie : le match en direct peut être finalisé en match DataVolley, avec ou sans caméra locale (un lien YouTube suffit), et les statistiques remontent dans le cloud",
+        "Direct partagé : lorsqu’une session vient du cloud, le statisticien est inscrit automatiquement comme membre (plus de blocage à l’ouverture) ; liste des sessions, corbeille, restauration et suppression définitive",
+        "Connexion durable : le jeton est valable 30 jours au lieu de 24 heures, et un refus d’accès ponctuel ne renvoie plus vers l’écran de connexion",
+        "Rattachement automatique : une fiche de trajectoire, un match ou une vidéo arrivés avant leur équipe sont reliés dès que l’entité est présente, par identifiant puis par nom",
+        "Six de départ par set : la mise à jour des positions préserve les identifiants de synchronisation et marque en suppression les sets retirés, sans créer de doublons entre postes",
+        "Maintien en éveil du projet Supabase : les tables partagées sont interrogées toutes les 6 heures pour éviter la mise en pause du service"
+      ]
+    },
     {
       "version": "3.3.4",
       "date": "2026-11-01",

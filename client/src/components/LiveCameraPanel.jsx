@@ -14,6 +14,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { DELAY_CHOICES, cameraSupported, listCameraDevices } from '../services/liveCamera';
 import { Camera, RefreshCw, RotateCcw, StopCircle, Video } from './icons';
+import SmartVideoPlayer from './SmartVideoPlayer';
+import { extractYouTubeId } from '../utils/youtube';
 
 /**
  * @param {Object} props
@@ -55,13 +57,43 @@ export default function LiveCameraPanel({
   onJumpToLive = null,
   onTogglePause = null,
   overlaySlot = null,
+  sessionId = null,
 }) {
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [paused, setPaused] = useState(false);
-  const [ipStreamUrl, setIpStreamUrl] = useState('');
-  const [activeIpUrl, setActiveIpUrl] = useState('');
+  const streamStorageKey = sessionId ? `live.stream_url.${sessionId}` : null;
+  const [ipStreamUrl, setIpStreamUrl] = useState(() => {
+    if (!streamStorageKey || typeof window === 'undefined') return '';
+    try {
+      return localStorage.getItem(streamStorageKey) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [activeIpUrl, setActiveIpUrl] = useState(() => {
+    if (!streamStorageKey || typeof window === 'undefined') return '';
+    try {
+      return localStorage.getItem(streamStorageKey) || '';
+    } catch {
+      return '';
+    }
+  });
   const [showSourceConfig, setShowSourceConfig] = useState(false);
+
+  const handleApplyStreamUrl = (url) => {
+    const trimmed = String(url || '').trim();
+    setActiveIpUrl(trimmed);
+    setIpStreamUrl(trimmed);
+    if (streamStorageKey && typeof window !== 'undefined') {
+      try {
+        if (trimmed) localStorage.setItem(streamStorageKey, trimmed);
+        else localStorage.removeItem(streamStorageKey);
+      } catch {
+        // ignore storage error
+      }
+    }
+  };
 
   const supported = cameraSupported();
 
@@ -89,16 +121,30 @@ export default function LiveCameraPanel({
     if (onJumpToLive) onJumpToLive();
   };
 
+  const youtubeLiveId = extractYouTubeId(activeIpUrl);
   const isStreaming = active || !!activeIpUrl;
 
   return (
     <div className={`live-camera${compact ? ' compact' : ''}`} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="live-camera-head" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-        <span className={`live-camera-dot${isStreaming ? ' on' : ''}`} aria-hidden="true" />
+        <span
+          className={`live-camera-dot${isStreaming ? ' on' : ''}`}
+          style={{ background: youtubeLiveId ? '#ef4444' : undefined }}
+          aria-hidden="true"
+        />
         <strong>Caméra du match</strong>
-        <span className={`live-camera-tag${isStreaming ? ' on' : ''}`}>
+        <span
+          className={`live-camera-tag${isStreaming ? ' on' : ''}`}
+          style={{
+            color: youtubeLiveId ? '#f87171' : undefined,
+            borderColor: youtubeLiveId ? '#ef444466' : undefined,
+            background: youtubeLiveId ? 'rgba(239, 68, 68, 0.12)' : undefined,
+          }}
+        >
           {active
             ? `en direct · retard ${delay} s`
+            : youtubeLiveId
+            ? '▶ YouTube Live direct'
             : activeIpUrl
             ? 'flux IP direct'
             : 'hors ligne'}
@@ -255,31 +301,31 @@ export default function LiveCameraPanel({
             <RefreshCw size={11} />
           </button>
 
-          <span style={{ marginLeft: 6, fontWeight: 700 }}>ou URL IP/HTTP :</span>
+          <span style={{ marginLeft: 6, fontWeight: 700 }}>ou YouTube (Live / Replay) / Caméra IP :</span>
           <input
             type="url"
             className="dvx-input"
-            placeholder="http://192.168.1.50:8080/video"
+            placeholder="https://youtube.com/live/... ou http://..."
             value={ipStreamUrl}
             onChange={(e) => setIpStreamUrl(e.target.value)}
-            style={{ fontSize: 11, padding: '2px 6px', width: 190 }}
+            style={{ fontSize: 11, padding: '2px 6px', width: 230 }}
           />
           <button
             type="button"
             className="btn btn-secondary btn-xs"
-            onClick={() => setActiveIpUrl(ipStreamUrl.trim())}
+            onClick={() => handleApplyStreamUrl(ipStreamUrl)}
             style={{ padding: '2px 7px', fontSize: 11 }}
           >
-            Lire URL
+            Lancer le flux
           </button>
           {activeIpUrl && (
             <button
               type="button"
               className="btn btn-danger btn-xs"
-              onClick={() => { setActiveIpUrl(''); setIpStreamUrl(''); }}
+              onClick={() => handleApplyStreamUrl('')}
               style={{ padding: '2px 7px', fontSize: 11 }}
             >
-              Couper URL
+              Couper le flux
             </button>
           )}
         </div>
@@ -288,7 +334,16 @@ export default function LiveCameraPanel({
       {/* Conteneur vidéo + incrustation TV Score / Calibration 4 coins */}
       <div style={{ position: 'relative', flex: 1, minHeight: compact ? 140 : 180, background: '#09090b', overflow: 'hidden', borderRadius: 4 }}>
         {activeIpUrl && !active ? (
-          activeIpUrl.includes('/video') || activeIpUrl.includes('mjpg') || activeIpUrl.includes('mjpeg') ? (
+          youtubeLiveId ? (
+            <SmartVideoPlayer
+              youtubeUrl={activeIpUrl}
+              className="live-camera-video"
+              style={{ width: '100%', height: '100%' }}
+              controls
+              playsInline
+              autoPlay
+            />
+          ) : activeIpUrl.includes('/video') || activeIpUrl.includes('mjpg') || activeIpUrl.includes('mjpeg') ? (
             <img
               src={activeIpUrl}
               alt="Flux caméra IP"

@@ -141,9 +141,14 @@ db.serialize(() => {
     original_name TEXT NOT NULL,
     display_name TEXT,
     filepath TEXT NOT NULL,
+    youtube_url TEXT,
     color TEXT DEFAULT '#1a73e8',
     team1_name TEXT DEFAULT 'Équipe 1',
     team2_name TEXT DEFAULT 'Équipe 2',
+    home_team_id INTEGER,
+    away_team_id INTEGER,
+    home_team_uuid TEXT,
+    away_team_uuid TEXT,
     duration REAL,
     status TEXT DEFAULT 'uploaded',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -362,6 +367,8 @@ db.serialize(() => {
     away_team_id INTEGER,
     home_team_uuid TEXT,
     away_team_uuid TEXT,
+    video_id INTEGER,
+    video_uuid TEXT,
     team1_name TEXT,
     team2_name TEXT,
     status TEXT DEFAULT 'open',
@@ -492,8 +499,7 @@ db.serialize(() => {
   db.run('CREATE INDEX IF NOT EXISTS idx_practice_actions_session ON practice_actions (session_id, action_index)');
 
   // Colonnes de partage des trajectoires : `created_by` (email du créateur) et
-  // les UUID d'équipe (pour re-lier l'effectif quand l'équipe arrive après la
-  // fiche — voir syncCollections.js et relinkTeams.js).
+  // les UUID d'équipe/vidéo (pour re-lier quand l'entité arrive après la fiche).
   db.all('PRAGMA table_info(trajectory_matches)', (err, columns) => {
     if (err) return;
     const names = (columns || []).map((c) => c.name);
@@ -502,6 +508,7 @@ db.serialize(() => {
     if (!names.includes('home_team_uuid')) db.run('ALTER TABLE trajectory_matches ADD COLUMN home_team_uuid TEXT');
     if (!names.includes('away_team_uuid')) db.run('ALTER TABLE trajectory_matches ADD COLUMN away_team_uuid TEXT');
     if (!names.includes('video_id')) db.run('ALTER TABLE trajectory_matches ADD COLUMN video_id INTEGER');
+    if (!names.includes('video_uuid')) db.run('ALTER TABLE trajectory_matches ADD COLUMN video_uuid TEXT');
   });
 
   // Colonnes d'UUID d'équipe sur les matchs (codage DataVolley), pour la même
@@ -531,11 +538,20 @@ db.serialize(() => {
     if (!columnNames.includes('filepath_proxy')) {
       db.run('ALTER TABLE videos ADD COLUMN filepath_proxy TEXT');
     }
+    if (!columnNames.includes('youtube_url')) {
+      db.run('ALTER TABLE videos ADD COLUMN youtube_url TEXT');
+    }
     if (!columnNames.includes('home_team_id')) {
       db.run('ALTER TABLE videos ADD COLUMN home_team_id INTEGER');
     }
     if (!columnNames.includes('away_team_id')) {
       db.run('ALTER TABLE videos ADD COLUMN away_team_id INTEGER');
+    }
+    if (!columnNames.includes('home_team_uuid')) {
+      db.run('ALTER TABLE videos ADD COLUMN home_team_uuid TEXT');
+    }
+    if (!columnNames.includes('away_team_uuid')) {
+      db.run('ALTER TABLE videos ADD COLUMN away_team_uuid TEXT');
     }
     if (!columnNames.includes('filename_angle2')) {
       db.run('ALTER TABLE videos ADD COLUMN filename_angle2 TEXT');

@@ -4,7 +4,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { videosAPI, datavolleyAPI } from '../services/api';
-import useCollectionChanged from '../hooks/useCollectionChanged';
+import useCollectionChanged, { useOnCollectionsChanged } from '../hooks/useCollectionChanged';
+import SmartVideoPlayer from '../components/SmartVideoPlayer';
+import { extractYouTubeId } from '../utils/youtube';
 import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS } from '../utils/rotation';
 import {
   computeSetterDistributionByRotation,
@@ -326,6 +328,7 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [uploadingAngle, setUploadingAngle] = useState(false);
   const [angleUploadProgress, setAngleUploadProgress] = useState(0);
   const [angleOffsetInput, setAngleOffsetInput] = useState(0);
+  const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
 
   useEffect(() => {
     const saved = loadCourtCalibration(id);
@@ -548,12 +551,19 @@ function DataVolleyDashboard({ user, onLogout }) {
   const proxyFilename = video?.filepath_proxy ? video.filepath_proxy.split(/[\\/]/).pop() : null;
   const proxyUrl = proxyFilename ? videosAPI.getProxyUrl(proxyFilename) : null;
   const playbackUrl = proxyUrl || videoUrl;
+  const youtubeUrl = video?.youtube_url || null;
+  const youtubeId = extractYouTubeId(youtubeUrl);
+  const hasPrimaryVideo = Boolean(playbackUrl || youtubeId);
   const angle2Url = video?.filename_angle2 ? videosAPI.getFileUrl(video.filename_angle2) : null;
   const angle2Offset = Number(video?.angle2_offset || 0);
 
   useEffect(() => {
     setAngleOffsetInput(Number(video?.angle2_offset || 0));
   }, [video?.angle2_offset]);
+
+  useEffect(() => {
+    setYoutubeUrlInput(video?.youtube_url || '');
+  }, [video?.youtube_url]);
 
   const syncAngle2Video = useCallback(
     (mainTime, shouldPlay = null) => {
@@ -794,17 +804,17 @@ function DataVolleyDashboard({ user, onLogout }) {
   });
 
   useEffect(() => {
-    if (!popoutActive || !playbackUrl) return;
+    if (!popoutActive || !hasPrimaryVideo) return;
     const fromRemote = Date.now() - remoteCmdAtRef.current < 150;
     broadcastSync({
       videoId: id,
-      src: playbackUrl,
+      src: playbackUrl || youtubeUrl,
       currentTime: fromRemote ? undefined : currentTime,
       playing,
       playbackRate,
       title: `${team1} vs ${team2}`,
     });
-  }, [popoutActive, playbackUrl, id, currentTime, playing, playbackRate, team1, team2, broadcastSync]);
+  }, [popoutActive, hasPrimaryVideo, playbackUrl, youtubeUrl, id, currentTime, playing, playbackRate, team1, team2, broadcastSync]);
 
   // Joueur correspondant au bloc en cours de frappe → mis en avant sur le terrain.
   const bufferPlayer = useMemo(() => {
@@ -1382,6 +1392,21 @@ function DataVolleyDashboard({ user, onLogout }) {
     }
   };
 
+  const handleSaveYoutubeUrl = async () => {
+    const trimmed = String(youtubeUrlInput || '').trim();
+    if (trimmed && !extractYouTubeId(trimmed)) {
+      notifyEvent(false, 'Lien YouTube invalide.');
+      return;
+    }
+    try {
+      const res = await videosAPI.update(id, { youtube_url: trimmed || null });
+      if (res.data?.video) setVideo(res.data.video);
+      notifyEvent(true, trimmed ? 'Lien YouTube enregistré et synchronisé.' : 'Lien YouTube retiré.');
+    } catch (err) {
+      notifyEvent(false, err?.response?.data?.error || 'Impossible d’enregistrer le lien YouTube.');
+    }
+  };
+
   /** Nom d'un joueur d'après les fiches d'équipe (roster du set en cours). */
   const playerNameOf = useCallback(
     (team, number) =>
@@ -1455,6 +1480,42 @@ function DataVolleyDashboard({ user, onLogout }) {
     })();
     return () => { cancelled = true; };
   }, [id]);
+
+  // Rafraîchit les données partagées quand une synchronisation Supabase apporte des changements d'un autre poste
+  const refreshRemoteMatchData = useCallback(async () => {
+    if (!id || saving || saveTimer.current || bufferRef.current) return;
+    try {
+      const [vRes, actRes, syncRes, matchRes, setupsRes, eventsRes] = await Promise.all([
+        videosAPI.getOne(id).catch(() => null),
+        datavolleyAPI.getActions(id).catch(() => null),
+        datavolleyAPI.getSync(id).catch(() => null),
+        datavolleyAPI.getMatch(id).catch(() => null),
+        datavolleyAPI.getSetups(id).catch(() => null),
+        datavolleyAPI.getEvents(id).catch(() => null),
+      ]);
+      if (vRes?.data?.video) setVideo(vRes.data.video);
+      if (actRes?.data?.actions && !saveTimer.current && !bufferRef.current) {
+        const remoteActions = ensureUids(actRes.data.actions);
+        // Ne remplace que si le contenu diffère réellement pour ne pas relancer l'auto-save inutilement
+        const currSig = JSON.stringify((actionsRef.current || []).map((a) => `${a.code}:${a.timecode}:${a.set_number}`));
+        const nextSig = JSON.stringify(remoteActions.map((a) => `${a.code}:${a.timecode}:${a.set_number}`));
+        if (currSig !== nextSig) {
+          loadedRef.current = false;
+          actionsRef.current = remoteActions;
+          setActions(remoteActions);
+          setTimeout(() => { loadedRef.current = true; }, 50);
+        }
+      }
+      if (syncRes?.data?.sync) setSync(syncRes.data.sync);
+      if (matchRes?.data?.match) setMatch(matchRes.data.match);
+      if (setupsRes?.data?.setups && !rotSaveTimer.current) setSetups(setupsRes.data.setups);
+      if (eventsRes?.data?.events) setEvents(eventsRes.data.events);
+    } catch {
+      // ignore transient error
+    }
+  }, [id, saving]);
+
+  useOnCollectionsChanged(['videos', 'actions', 'events', 'setups', 'matches'], refreshRemoteMatchData);
 
   // Auto-save débouncé des actions
   useEffect(() => {
@@ -2533,7 +2594,7 @@ function DataVolleyDashboard({ user, onLogout }) {
           gap: cameraView === 'split' && angle2Url ? 4 : 0,
         }}
       >
-        {!playbackUrl && cameraView !== '2' ? (
+        {!hasPrimaryVideo && cameraView !== '2' ? (
           <div
             style={{
               height: '100%',
@@ -2551,26 +2612,26 @@ function DataVolleyDashboard({ user, onLogout }) {
           >
             <Camera size={24} className="text-amber-500" />
             <div style={{ fontSize: 12, fontWeight: 700, color: '#e4e4e7' }}>
-              Aucune vidéo Caméra 1 associée à ce match
+              Aucune vidéo ou lien YouTube associé à ce match
             </div>
             <div style={{ fontSize: 11, color: '#a1a1aa', maxWidth: 340 }}>
-              Vous pouvez coder ce match dès maintenant et importer la vidéo Caméra 1 et/ou Caméra 2 après coup.
+              Vous pouvez coder ce match dès maintenant et coller un lien YouTube (répertorié ou non) ou importer un fichier MP4 après coup.
             </div>
             <button
               type="button"
               className="btn btn-primary btn-sm"
               onClick={() => setShowAngleModal(true)}
             >
-              <Upload size={12} /> Uploader Caméra 1 / Caméra 2
+              <Upload size={12} /> Lien YouTube / Uploader Caméra 1 & 2
             </button>
           </div>
         ) : null}
 
-        {playbackUrl && cameraView !== '2' && (
+        {hasPrimaryVideo && cameraView !== '2' && (
           <div style={{ position: 'relative', width: '100%', height: '100%', isolation: 'isolate' }}>
             {/* Fichier illisible dans le navigateur : au lieu d'un chargement
                 infini, on explique ce qui est détecté et ce qui est entrepris. */}
-            {!mediaReady && playable.status !== 'idle' && (
+            {playbackUrl && !mediaReady && playable.status !== 'idle' && (
               <div
                 style={{
                   position: 'absolute',
@@ -2619,9 +2680,10 @@ function DataVolleyDashboard({ user, onLogout }) {
             )}
 
             <VideoAnnotationLayer enabled={annotOn} onAnnotationsChange={setAnnotations}>
-              <video
+              <SmartVideoPlayer
                 ref={videoRef}
                 src={playbackUrl}
+                youtubeUrl={youtubeUrl}
                 controls
                 preload="auto"
                 className="trimmed-player"
@@ -2653,10 +2715,11 @@ function DataVolleyDashboard({ user, onLogout }) {
                   if (wasPlayingRef.current) el.play().catch(() => {});
                 }}
                 onError={(e) => {
+                  if (!playbackUrl) return;
                   const el = e.currentTarget;
                   // Repli sur le fichier d'origine quand la version préparée
                   // (proxy) ne se charge pas.
-                  if (el.dataset.fb !== '1' && videoUrl) {
+                  if (el?.dataset && el.dataset.fb !== '1' && videoUrl) {
                     el.dataset.fb = '1';
                     el.src = videoUrl;
                     return;
@@ -2854,7 +2917,7 @@ function DataVolleyDashboard({ user, onLogout }) {
           onClick={() =>
             openSecondScreen({
               videoId: id,
-              src: playbackUrl,
+              src: playbackUrl || youtubeUrl,
               currentTime,
               playing,
               playbackRate,
@@ -4078,15 +4141,40 @@ function DataVolleyDashboard({ user, onLogout }) {
               style={{ maxWidth: 520 }}
             >
               <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Camera size={18} className="text-amber-500" /> Gestion Vidéo Multi-Angles (Cam 1 & Cam 2)
+                <Camera size={18} className="text-amber-500" /> Gestion Vidéo (Lien YouTube & Multi-Angles)
               </h2>
               <p className="dv-hint">
-                Importez ou remplacez la vidéo <strong>Caméra 1 (Principale)</strong> et/ou la <strong>Caméra 2 (Second angle : latéral, fond de terrain…)</strong> à tout moment, même après le codage du match.
+                Partagez gratuitement la vidéo avec tous les postes via un <strong>lien YouTube (répertorié ou non répertorié)</strong>, ou importez un fichier local <strong>Caméra 1 / Caméra 2</strong>.
               </p>
 
               <div className="form-group" style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}>
                 <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Caméra 1 — Vue Principale</span>
+                  <span>Lien YouTube partagé (Cloud)</span>
+                  <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: youtubeId ? '#ef4444' : '#71717a' }}>
+                    {youtubeId ? `✓ YouTube (${youtubeId})` : 'Aucun lien'}
+                  </span>
+                </label>
+                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                  <input
+                    type="url"
+                    placeholder="https://youtu.be/... ou https://www.youtube.com/watch?v=..."
+                    value={youtubeUrlInput}
+                    onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSaveYoutubeUrl}
+                  >
+                    Enregistrer
+                  </button>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Caméra 1 — Vue Principale (Fichier local)</span>
                   <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: video?.filename ? '#10b981' : '#f59e0b' }}>
                     {video?.filename ? '✓ Vidéo présente' : 'Non importée'}
                   </span>

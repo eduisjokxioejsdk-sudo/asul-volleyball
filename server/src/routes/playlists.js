@@ -1,7 +1,5 @@
 // ============================================================================
 // ROUTES PLAYLISTS VIDÉO PERSISTANTES MULTI-MATCHS (DataVolley 4 Pro — Point 19)
-// Permet de sauvegarder des sélections de clips provenant d'un ou plusieurs
-// matchs, avec notes, marges lead_in / lead_out et réordonnancement.
 // ============================================================================
 
 const express = require('express');
@@ -10,10 +8,10 @@ const db = require('../database');
 
 const router = express.Router();
 
-function loadPlaylistsForUser(userId, callback) {
+function loadAllPlaylists(callback) {
   db.all(
-    'SELECT * FROM dv_playlists WHERE user_id = ? ORDER BY updated_at DESC, id DESC',
-    [userId],
+    'SELECT * FROM dv_playlists ORDER BY updated_at DESC, id DESC',
+    [],
     (err, playlists) => {
       if (err) return callback(err);
       if (!playlists || playlists.length === 0) return callback(null, []);
@@ -21,7 +19,7 @@ function loadPlaylistsForUser(userId, callback) {
       const plIds = playlists.map((p) => p.id);
       const placeholders = plIds.map(() => '?').join(',');
       db.all(
-        `SELECT pi.*, pi.code AS action_code, v.filename, v.filepath_proxy, v.display_name, v.original_name,
+        `SELECT pi.*, pi.code AS action_code, v.filename, v.filepath_proxy, v.youtube_url, v.display_name, v.original_name,
                 COALESCE(v.display_name, v.original_name) AS video_title,
                 COALESCE(pi.team1_name, v.team1_name) AS resolved_team1,
                 COALESCE(pi.team2_name, v.team2_name) AS resolved_team2
@@ -52,9 +50,9 @@ function loadPlaylistsForUser(userId, callback) {
   );
 }
 
-// Liste toutes les playlists de l'utilisateur avec leurs clips
+// Liste toutes les playlists avec leurs clips
 router.get('/', authenticateToken, (req, res) => {
-  loadPlaylistsForUser(req.user.id, (err, playlists) => {
+  loadAllPlaylists((err, playlists) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     res.json({ playlists });
   });
@@ -74,7 +72,7 @@ router.post('/', authenticateToken, (req, res) => {
       const playlistId = this.lastID;
 
       if (!Array.isArray(items) || items.length === 0) {
-        return loadPlaylistsForUser(req.user.id, (err2, playlists) => {
+        return loadAllPlaylists((err2, playlists) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
           res.status(201).json({
             playlist: playlists.find((p) => p.id === playlistId),
@@ -105,7 +103,7 @@ router.post('/', authenticateToken, (req, res) => {
         );
       });
       stmt.finalize(() => {
-        loadPlaylistsForUser(req.user.id, (err2, playlists) => {
+        loadAllPlaylists((err2, playlists) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
           res.status(201).json({
             playlist: playlists.find((p) => p.id === playlistId),
@@ -131,8 +129,8 @@ router.post('/:id/items', authenticateToken, (req, res) => {
   }
 
   db.get(
-    'SELECT * FROM dv_playlists WHERE id = ? AND user_id = ?',
-    [playlistId, req.user.id],
+    'SELECT * FROM dv_playlists WHERE id = ?',
+    [playlistId],
     (err, pl) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!pl) return res.status(404).json({ error: 'Playlist introuvable' });
@@ -165,7 +163,7 @@ router.post('/:id/items', authenticateToken, (req, res) => {
           });
           stmt.finalize(() => {
             db.run('UPDATE dv_playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [playlistId], () => {
-              loadPlaylistsForUser(req.user.id, (err3, playlists) => {
+              loadAllPlaylists((err3, playlists) => {
                 if (err3) return res.status(500).json({ error: 'Database error' });
                 res.json({
                   playlist: playlists.find((p) => p.id === playlistId),
@@ -180,14 +178,14 @@ router.post('/:id/items', authenticateToken, (req, res) => {
   );
 });
 
-// Met à jour une playlist (nom, description ou ordre/notes des items)
+// Met à jour une playlist
 router.put('/:id', authenticateToken, (req, res) => {
   const playlistId = Number(req.params.id);
   const { name, description, items } = req.body || {};
 
   db.get(
-    'SELECT * FROM dv_playlists WHERE id = ? AND user_id = ?',
-    [playlistId, req.user.id],
+    'SELECT * FROM dv_playlists WHERE id = ?',
+    [playlistId],
     (err, pl) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!pl) return res.status(404).json({ error: 'Playlist introuvable' });
@@ -202,7 +200,7 @@ router.put('/:id', authenticateToken, (req, res) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
 
           if (!Array.isArray(items)) {
-            return loadPlaylistsForUser(req.user.id, (err3, playlists) => {
+            return loadAllPlaylists((err3, playlists) => {
               if (err3) return res.status(500).json({ error: 'Database error' });
               res.json({
                 playlist: playlists.find((p) => p.id === playlistId),
@@ -214,7 +212,7 @@ router.put('/:id', authenticateToken, (req, res) => {
           db.run('DELETE FROM dv_playlist_items WHERE playlist_id = ?', [playlistId], (err3) => {
             if (err3) return res.status(500).json({ error: 'Database error' });
             if (items.length === 0) {
-              return loadPlaylistsForUser(req.user.id, (err4, playlists) => {
+              return loadAllPlaylists((err4, playlists) => {
                 if (err4) return res.status(500).json({ error: 'Database error' });
                 res.json({
                   playlist: playlists.find((p) => p.id === playlistId),
@@ -244,7 +242,7 @@ router.put('/:id', authenticateToken, (req, res) => {
               );
             });
             stmt.finalize(() => {
-              loadPlaylistsForUser(req.user.id, (err4, playlists) => {
+              loadAllPlaylists((err4, playlists) => {
                 if (err4) return res.status(500).json({ error: 'Database error' });
                 res.json({
                   playlist: playlists.find((p) => p.id === playlistId),
@@ -268,7 +266,7 @@ router.delete('/:id/items/:itemId', authenticateToken, (req, res) => {
     [itemId, playlistId],
     function (err) {
       if (err) return res.status(500).json({ error: 'Database error' });
-      loadPlaylistsForUser(req.user.id, (err2, playlists) => {
+      loadAllPlaylists((err2, playlists) => {
         if (err2) return res.status(500).json({ error: 'Database error' });
         res.json({
           playlist: playlists.find((p) => p.id === playlistId),
@@ -283,11 +281,11 @@ router.delete('/:id/items/:itemId', authenticateToken, (req, res) => {
 router.delete('/:id', authenticateToken, (req, res) => {
   const playlistId = Number(req.params.id);
   db.run(
-    'DELETE FROM dv_playlists WHERE id = ? AND user_id = ?',
-    [playlistId, req.user.id],
+    'DELETE FROM dv_playlists WHERE id = ?',
+    [playlistId],
     function (err) {
       if (err) return res.status(500).json({ error: 'Database error' });
-      loadPlaylistsForUser(req.user.id, (err2, playlists) => {
+      loadAllPlaylists((err2, playlists) => {
         if (err2) return res.status(500).json({ error: 'Database error' });
         res.json({ playlists });
       });

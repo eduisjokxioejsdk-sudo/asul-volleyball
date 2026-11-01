@@ -25,7 +25,9 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    const status = error.response?.status;
+    const msg = error.response?.data?.error || '';
+    if (status === 401 || (status === 403 && msg === 'Invalid or expired token')) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
@@ -229,8 +231,10 @@ export const liveAPI = {
   getEvents: (sessionId) => api.get(`/live/${sessionId}/events`),
   saveEvent: (sessionId, event) => api.post(`/live/${sessionId}/events`, event),
   deleteEvent: (sessionId, eventId) => api.delete(`/live/${sessionId}/events/${eventId}`),
-  // Enregistrement du direct : finalise la piste en une vidéo de replay ancrée.
-  finalizeRecording: (sessionId) => api.post(`/live/${sessionId}/finalize-recording`, {}, { timeout: 0 }),
+  // Enregistrement du direct : finalise la piste en une vidéo de replay ancrée (ou convertit le match vers DataVolley).
+  finalizeRecording: (sessionId, body = {}) => api.post(`/live/${sessionId}/finalize-recording`, body, { timeout: 0 }),
+  // Partage à distance (synchronisation cloud du match en direct).
+  sync: () => api.post('/live/sync'),
 };
 
 // Montages vidéo (Chantier 5 : export compilations d'actions / rallies)

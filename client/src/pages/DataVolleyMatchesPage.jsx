@@ -1,7 +1,7 @@
 // ============================================================================
 // APPLICATION 1 : DATA VOLLEY — SÉLECTION ET GESTION DES MATCHS
 //
-// Affiche la liste des vidéos uploadées pour le codage Data Volley,
+// Affiche la liste des vidéos et liens YouTube partagés pour le codage Data Volley,
 // permet d'en ouvrir une pour coder, de filtrer par équipe,
 // et impose le choix (ou la création) des 2 équipes lors de l'import.
 // ============================================================================
@@ -11,7 +11,8 @@ import { useNavigate } from 'react-router-dom';
 import AppNavigation from '../components/AppNavigation';
 import PancakeLogo from '../components/PancakeLogo';
 import { videosAPI, foldersAPI, datavolleyAPI, teamsAPI } from '../services/api';
-import useCollectionChanged from '../hooks/useCollectionChanged';
+import { useOnCollectionsChanged } from '../hooks/useCollectionChanged';
+import { extractYouTubeId } from '../utils/youtube';
 import { Check, Plus, Trash, X } from '../components/icons';
 
 const FOLDER_COLORS = [
@@ -36,6 +37,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
   const [showUpload, setShowUpload] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadFileAngle2, setUploadFileAngle2] = useState(null);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
   const [angle2Offset, setAngle2Offset] = useState(0);
   const [homeTeamId, setHomeTeamId] = useState('');
   const [awayTeamId, setAwayTeamId] = useState('');
@@ -79,8 +81,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
     }
   };
 
-  useCollectionChanged('videos', loadAll);
-  useCollectionChanged('teams', loadAll);
+  useOnCollectionsChanged(['videos', 'teams', 'matches'], loadAll);
 
   const handleQuickCreateTeam = async () => {
     if (!newTeamName.trim()) return;
@@ -119,6 +120,10 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
       setUploadError('Les deux équipes du match doivent être différentes.');
       return;
     }
+    if (youtubeUrl.trim() && !extractYouTubeId(youtubeUrl)) {
+      setUploadError('Lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...');
+      return;
+    }
 
     const homeTeam = teams.find((t) => String(t.id) === String(homeTeamId));
     const awayTeam = teams.find((t) => String(t.id) === String(awayTeamId));
@@ -130,6 +135,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
       const formData = new FormData();
       if (uploadFile) formData.append('video', uploadFile);
       if (uploadFileAngle2) formData.append('video_angle2', uploadFileAngle2);
+      if (youtubeUrl.trim()) formData.append('youtube_url', youtubeUrl.trim());
       formData.append('angle2_offset', String(Number(angle2Offset) || 0));
       formData.append('home_team_id', homeTeamId);
       formData.append('away_team_id', awayTeamId);
@@ -140,12 +146,34 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
       setShowUpload(false);
       setUploadFile(null);
       setUploadFileAngle2(null);
+      setYoutubeUrl('');
       setAngle2Offset(0);
       loadAll();
     } catch (err) {
       setUploadError(err.response?.data?.error || `Erreur upload : ${err.message}`);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleEditYoutubeUrl = async (e, video) => {
+    e.stopPropagation();
+    const current = video.youtube_url || '';
+    const next = window.prompt(
+      'Lien YouTube du match (public ou non répertorié) — laissez vide pour retirer :',
+      current
+    );
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (trimmed && !extractYouTubeId(trimmed)) {
+      alert('Lien YouTube non reconnu. Utilisez une URL youtube.com/watch?v=... ou youtu.be/...');
+      return;
+    }
+    try {
+      await videosAPI.update(video.id, { youtube_url: trimmed || null });
+      loadAll();
+    } catch (err) {
+      alert(`Erreur mise à jour YouTube : ${err.response?.data?.error || err.message}`);
     }
   };
 
@@ -228,7 +256,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
             <div>
               <h1 className="pk-mode-header-title">Data Volley · Matchs & Codage Vidéo</h1>
               <p className="pk-mode-header-sub">
-                Importez vos vidéos de match en renseignant les deux équipes, puis ouvrez le poste de saisie Play-by-Play.
+                Partagez vos matchs via un lien YouTube (public ou non répertorié) ou un fichier MP4 local, puis codez et consultez les stats sur tous les postes.
               </p>
             </div>
           </div>
@@ -245,7 +273,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                 setShowUpload(true);
               }}
             >
-              <Plus size={15} /> Importer une vidéo de match
+              <Plus size={15} /> Nouveau match (YouTube ou fichier vidéo)
             </button>
           </div>
         </header>
@@ -285,7 +313,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
               style={{ minWidth: 260 }}
             />
             <span className="pk-mono" style={{ fontSize: 12, color: '#a1a1aa', padding: '0 6px' }}>
-              {displayedVideos.length} / {videos.length} vidéo(s)
+              {displayedVideos.length} / {videos.length} match(s)
             </span>
           </div>
         </div>
@@ -336,19 +364,21 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
             <p style={{ fontSize: 15, fontWeight: 700, color: '#f4f4f5', marginBottom: 8 }}>
               {selectedTeamFilter !== 'ALL'
                 ? 'Aucune vidéo trouvée pour cette équipe.'
-                : 'Aucune vidéo de match importée.'}
+                : 'Aucun match enregistré.'}
             </p>
             <p style={{ marginBottom: 16 }}>
-              Importez une vidéo de match pour commencer le codage DataVolley et alimenter automatiquement le Centre Vidéo.
+              Créez un match avec un lien YouTube (public ou non répertorié) ou un fichier MP4 pour commencer le codage DataVolley et partager automatiquement les statistiques avec tous les postes.
             </p>
             <button type="button" className="btn btn-primary" onClick={() => setShowUpload(true)}>
-              + Importer une vidéo de match
+              + Nouveau match (YouTube ou vidéo)
             </button>
           </div>
         ) : (
           <div className="pk-cards-list">
             {displayedVideos.map((video) => {
               const isFinished = finishedMatches.some((m) => m.id === video.id);
+              const hasYt = Boolean(extractYouTubeId(video.youtube_url));
+              const hasLocal = Boolean(video.filename);
               return (
                 <div
                   key={video.id}
@@ -385,25 +415,56 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                   </div>
 
                   <div className="pk-match-item-foot" onClick={(e) => e.stopPropagation()}>
-                    <span className="pk-mono" style={{ fontSize: 11.5, color: '#71717a', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span className="pk-mono" style={{ fontSize: 11.5, color: '#71717a', display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <span>{video.created_at ? new Date(video.created_at).toLocaleDateString('fr-FR') : '—'}</span>
+                      {hasYt && (
+                        <span
+                          style={{
+                            padding: '1px 6px',
+                            fontSize: 10,
+                            border: '1px solid #ef4444',
+                            color: '#f87171',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            fontWeight: 700,
+                          }}
+                        >
+                          ▶ YOUTUBE PARTAGÉ
+                        </span>
+                      )}
                       <span
                         style={{
                           padding: '1px 5px',
                           fontSize: 10,
                           border: '1px solid #3f3f46',
-                          color: video.filename && video.filename_angle2 ? '#38bdf8' : video.filename ? '#10b981' : '#f59e0b',
+                          color:
+                            hasLocal && video.filename_angle2
+                              ? '#38bdf8'
+                              : hasLocal
+                              ? '#10b981'
+                              : hasYt
+                              ? '#a1a1aa'
+                              : '#f59e0b',
                         }}
                       >
-                        {video.filename && video.filename_angle2
-                          ? '2 CAMÉRAS'
-                          : video.filename
-                          ? '1 CAMÉRA'
-                          : 'VIDÉO APRÈS COUP'}
+                        {hasLocal && video.filename_angle2
+                          ? '2 CAMÉRAS LOCALES'
+                          : hasLocal
+                          ? '1 CAMÉRA LOCALE'
+                          : hasYt
+                          ? 'CLOUD PRÊT'
+                          : 'SANS VIDÉO'}
                       </span>
                     </span>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        title="Ajouter ou modifier le lien YouTube partagé"
+                        onClick={(e) => handleEditYoutubeUrl(e, video)}
+                      >
+                        {hasYt ? '🔗 YouTube' : '+ Lien YouTube'}
+                      </button>
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
@@ -414,10 +475,10 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                       <button
                         type="button"
                         className="btn btn-danger btn-sm"
-                        title="Supprimer cette vidéo"
+                        title="Supprimer ce match"
                         onClick={(e) => handleDeleteVideo(e, video.id)}
                       >
-                        <Trash size={13} /> Supprimer
+                        <Trash size={13} />
                       </button>
                     </div>
                   </div>
@@ -427,13 +488,13 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
           </div>
         )}
 
-        {/* Modal d'import de match avec choix / création obligatoire des 2 équipes */}
+        {/* Modal d'import de match avec lien YouTube et/ou fichiers vidéo */}
         {showUpload && (
           <div className="modal-backdrop" onClick={() => setShowUpload(false)}>
-            <div className="modal-card modal-dark-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="modal-card modal-dark-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
               <div className="modal-header" style={{ padding: '14px 20px', borderBottom: '1px solid #27272a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <PancakeLogo size={20} /> Importer une vidéo pour Data Volley
+                  <PancakeLogo size={20} /> Nouveau match Data Volley
                 </h3>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowUpload(false)}>
                   <X size={14} />
@@ -447,10 +508,29 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                   </div>
                 )}
 
+                <div className="form-group" style={{ marginBottom: 14, padding: 12, background: '#09090b', border: '1px solid #ef444466' }}>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ color: '#f87171', fontWeight: 700 }}>
+                      ▶ Lien YouTube partagé (public ou non répertorié)
+                    </span>
+                    <span style={{ fontSize: 10, color: '#10b981' }}>Recommandé — visible sur tous les PC</span>
+                  </label>
+                  <input
+                    type="url"
+                    className="form-control"
+                    placeholder="https://www.youtube.com/watch?v=... ou https://youtu.be/..."
+                    value={youtubeUrl}
+                    onChange={(e) => setYoutubeUrl(e.target.value)}
+                  />
+                  <span style={{ fontSize: 11, color: '#a1a1aa', display: 'block', marginTop: 4 }}>
+                    Hébergez gratuitement votre vidéo sur YouTube en mode « Non répertorié » : tous les utilisateurs verront la vidéo et les timecodes sans transfert de fichier.
+                  </span>
+                </div>
+
                 <div className="form-group" style={{ marginBottom: 14, padding: 10, background: '#09090b', border: '1px solid #27272a' }}>
                   <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>1a. Vidéo Caméra 1 — Vue Principale (MP4, MOV, MKV)</span>
-                    <span style={{ fontSize: 10, color: '#a1a1aa' }}>Optionnel : importable après coup</span>
+                    <span>1a. Fichier vidéo local Caméra 1 (MP4, MOV, MKV)</span>
+                    <span style={{ fontSize: 10, color: '#a1a1aa' }}>Optionnel</span>
                   </label>
                   <input
                     type="file"
@@ -462,8 +542,8 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
 
                 <div className="form-group" style={{ marginBottom: 18, padding: 10, background: '#09090b', border: '1px solid #27272a' }}>
                   <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>1b. Vidéo Caméra 2 — Second Angle synchronisé</span>
-                    <span style={{ fontSize: 10, color: '#38bdf8' }}>Optionnel : importable maintenant ou après coup</span>
+                    <span>1b. Fichier vidéo local Caméra 2 — Second Angle synchronisé</span>
+                    <span style={{ fontSize: 10, color: '#38bdf8' }}>Optionnel</span>
                   </label>
                   <input
                     type="file"
@@ -583,7 +663,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                       <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#c8a165' }} />
                     </div>
                     <span className="pk-mono" style={{ fontSize: 12, color: '#a1a1aa', marginTop: 4, display: 'block' }}>
-                      Téléversement en cours : {uploadProgress}%
+                      Enregistrement en cours : {uploadProgress}%
                     </span>
                   </div>
                 )}
@@ -594,9 +674,9 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                   </button>
                   <button type="submit" className="btn btn-primary" disabled={uploading || !homeTeamId || !awayTeamId}>
                     {uploading
-                      ? 'Téléversement...'
-                      : uploadFile || uploadFileAngle2
-                      ? 'Importer le match'
+                      ? 'Enregistrement...'
+                      : uploadFile || uploadFileAngle2 || youtubeUrl.trim()
+                      ? 'Créer et partager le match'
                       : 'Créer le match (vidéos après coup)'}
                   </button>
                 </div>

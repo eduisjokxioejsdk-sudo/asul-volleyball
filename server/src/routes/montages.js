@@ -3,12 +3,10 @@
 // ============================================================================
 
 const express = require('express');
-const path = require('path');
 const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
-const config = require('../config');
 const montageEngine = require('../montageEngine');
 const { emitCollectionChanged } = require('../socket');
 
@@ -16,7 +14,7 @@ const router = express.Router({ mergeParams: true });
 
 function verifyVideoOwnership(req, res, callback) {
   const videoId = req.params.videoId || req.body.videoId;
-  db.get('SELECT * FROM videos WHERE id = ? AND user_id = ?', [videoId, req.user.id], (err, video) => {
+  db.get('SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0', [videoId], (err, video) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (!video) return res.status(404).json({ error: 'Video not found' });
     callback(video);
@@ -26,15 +24,15 @@ function verifyVideoOwnership(req, res, callback) {
 // 1. Lister tous les montages d'une vidéo
 router.get('/:videoId/montages', authenticateToken, (req, res) => {
   const { videoId } = req.params;
-  verifyVideoOwnership(req, res, (video) => {
+  verifyVideoOwnership(req, res, () => {
     db.all(
       `SELECT * FROM video_montages 
-        WHERE video_id = ? AND user_id = ? 
+        WHERE video_id = ? 
         ORDER BY created_at DESC`,
-      [videoId, req.user.id],
+      [videoId],
       (err, rows) => {
         if (err) return res.status(500).json({ error: 'Database error' });
-        res.json({ montages: rows });
+        res.json({ montages: rows || [] });
       }
     );
   });
@@ -44,8 +42,8 @@ router.get('/:videoId/montages', authenticateToken, (req, res) => {
 router.get('/:videoId/montages/:montageId', authenticateToken, (req, res) => {
   const { videoId, montageId } = req.params;
   db.get(
-    'SELECT * FROM video_montages WHERE id = ? AND video_id = ? AND user_id = ?',
-    [montageId, videoId, req.user.id],
+    'SELECT * FROM video_montages WHERE id = ? AND video_id = ?',
+    [montageId, videoId],
     (err, row) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!row) return res.status(404).json({ error: 'Montage not found' });
@@ -64,10 +62,9 @@ router.post('/:videoId/montages', authenticateToken, (req, res) => {
   }
 
   verifyVideoOwnership(req, res, (video) => {
-    // Vérifier l'existence physique du fichier vidéo source
     const videoSourcePath = video.filepath;
-    if (!fs.existsSync(videoSourcePath)) {
-      return res.status(404).json({ error: 'Fichier vidéo source introuvable sur le disque.' });
+    if (!videoSourcePath || !fs.existsSync(videoSourcePath)) {
+      return res.status(404).json({ error: 'Fichier vidéo source introuvable sur le disque (le découpage MP4 nécessite un fichier vidéo local).' });
     }
 
     const montageId = uuidv4();
@@ -94,7 +91,6 @@ router.post('/:videoId/montages', authenticateToken, (req, res) => {
           return res.status(500).json({ error: 'Erreur lors de la création du montage en base.' });
         }
 
-        // Lancer la génération asynchrone en arrière-plan
         montageEngine
           .startMontage({
             montageId,
@@ -131,8 +127,8 @@ router.post('/:videoId/montages', authenticateToken, (req, res) => {
 router.get('/:videoId/montages/:montageId/download', authenticateToken, (req, res) => {
   const { videoId, montageId } = req.params;
   db.get(
-    'SELECT * FROM video_montages WHERE id = ? AND video_id = ? AND user_id = ?',
-    [montageId, videoId, req.user.id],
+    'SELECT * FROM video_montages WHERE id = ? AND video_id = ?',
+    [montageId, videoId],
     (err, row) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!row || !row.output_filepath) return res.status(404).json({ error: 'Montage non trouvé ou non terminé' });
@@ -193,8 +189,8 @@ router.get('/:videoId/montages/:montageId/stream', (req, res) => {
 router.delete('/:videoId/montages/:montageId', authenticateToken, (req, res) => {
   const { videoId, montageId } = req.params;
   db.get(
-    'SELECT * FROM video_montages WHERE id = ? AND video_id = ? AND user_id = ?',
-    [montageId, videoId, req.user.id],
+    'SELECT * FROM video_montages WHERE id = ? AND video_id = ?',
+    [montageId, videoId],
     (err, row) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!row) return res.status(404).json({ error: 'Montage non trouvé' });

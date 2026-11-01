@@ -34,7 +34,6 @@ function generateJoinCode() {
   return code;
 }
 
-// Décomposition d'un code DataVolley (déléguée au module partagé).
 const decomposeCode = (code) => dvCode.decomposeCode(code);
 
 function isValidCode(code) {
@@ -92,23 +91,55 @@ function touchLiveSession(sessionId, extraDeletedUuids = []) {
 }
 
 function loadSession(sessionId, res, callback) {
-  db.get('SELECT * FROM live_sessions WHERE id = ?', [sessionId], (err, session) => {
+  db.get('SELECT * FROM live_sessions WHERE id = ? AND COALESCE(deleted, 0) = 0', [sessionId], (err, session) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (!session) return res.status(404).json({ error: 'Session introuvable' });
     callback(session);
   });
 }
 
-// Vérifie que l'utilisateur est propriétaire OU membre de la session.
+// Vérifie l'accès à la session ; si la session est partagée (Cloud ou autre poste)
+// et que l'utilisateur n'est pas encore inscrit dans live_members, on l'inscrit
+// automatiquement comme statisticien pour éviter tout blocage.
 function verifyAccess(session, req, res, callback) {
-  const isOwner = session.owner_user_id === req.user.id;
   db.get(
     'SELECT * FROM live_members WHERE session_id = ? AND user_id = ?',
     [session.id, req.user.id],
     (err, member) => {
       if (err) return res.status(500).json({ error: 'Database error' });
-      if (!isOwner && !member) return res.status(403).json({ error: 'Accès refusé à cette session' });
-      callback(session, isOwner, member);
+      const isOwner =
+        session.owner_user_id === req.user.id ||
+        Number(session.owner_user_id) === 0 ||
+        (member && member.role === 'statistician');
+
+      if (member) {
+        return callback(session, isOwner, member);
+      }
+
+      const now = new Date().toISOString();
+      const memberUuid = uuidv4();
+      const nickname = (req.user.name || req.user.email || 'Statisticien').trim();
+      db.run(
+        `INSERT INTO live_members (session_id, sync_uuid, user_id, nickname, role, assignment, updated_at)
+         VALUES (?, ?, ?, ?, 'statistician', '["S","R","A","B","D"]', ?)`,
+        [session.id, memberUuid, req.user.id, nickname, now],
+        function (insErr) {
+          if (insErr) return res.status(500).json({ error: 'Database error' });
+          const newMember = {
+            id: this.lastID,
+            session_id: session.id,
+            sync_uuid: memberUuid,
+            user_id: req.user.id,
+            nickname,
+            role: 'statistician',
+            assignment: '["S","R","A","B","D"]',
+            updated_at: now,
+          };
+          emitToSession(session.id, 'member:update', {});
+          touchLiveSession(session.id);
+          callback(session, true, newMember);
+        }
+      );
     }
   );
 }
@@ -128,14 +159,14 @@ function loadSessionState(sessionId, res, callback) {
         WHERE m.session_id = ?
         ORDER BY m.id ASC`,
       [sessionId],
-      (err, members) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
+      (err2, members) => {
+        if (err2) return res.status(500).json({ error: 'Database error' });
 
         db.all(
           'SELECT * FROM live_actions WHERE session_id = ? ORDER BY effective_time ASC, seq ASC, id ASC',
           [sessionId],
-          (err, actions) => {
-            if (err) return res.status(500).json({ error: 'Database error' });
+          (err3, actions) => {
+            if (err3) return res.status(500).json({ error: 'Database error' });
             db.all(
               `SELECT * FROM live_events
                 WHERE session_id = ?
@@ -155,7 +186,6 @@ function loadSessionState(sessionId, res, callback) {
 
 // --- Synchronisation d'horloge --------------------------------------------
 
-// Renvoie l'heure du serveur (ms). Le client estime son offset via aller-retour.
 router.get('/time', (req, res) => {
   res.json({ serverTime: Date.now() });
 });
@@ -219,34 +249,33 @@ router.post('/', authenticateToken, (req, res) => {
   );
 });
 
-// Lister les sessions auxquelles l'utilisateur participe.
+// Lister toutes les sessions live actives ou terminées (partagées entre tous les postes).
 router.get('/mine', authenticateToken, (req, res) => {
+  syncHub.live.syncNow({ reason: 'live-list' }).catch(() => {});
   db.all(
-    `SELECT DISTINCT s.*
+    `SELECT s.*
        FROM live_sessions s
-       LEFT JOIN live_members m ON m.session_id = s.id AND m.user_id = ?
-      WHERE (s.owner_user_id = ? OR m.id IS NOT NULL)
-        AND s.deleted_at IS NULL
+      WHERE s.deleted_at IS NULL
         AND COALESCE(s.deleted, 0) = 0
       ORDER BY s.created_at DESC`,
-    [req.user.id, req.user.id],
+    [],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
-      res.json({ sessions: rows });
+      res.json({ sessions: rows || [] });
     }
   );
 });
 
-// Corbeille : matchs mis à la corbeille par l'utilisateur (propriétaire).
+// Corbeille : matchs mis à la corbeille.
 router.get('/trash', authenticateToken, (req, res) => {
   db.all(
     `SELECT * FROM live_sessions
-      WHERE owner_user_id = ? AND deleted_at IS NOT NULL AND COALESCE(deleted, 0) = 0
+      WHERE deleted_at IS NOT NULL AND COALESCE(deleted, 0) = 0
       ORDER BY deleted_at DESC`,
-    [req.user.id],
+    [],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
-      res.json({ sessions: rows });
+      res.json({ sessions: rows || [] });
     }
   );
 });
@@ -254,7 +283,7 @@ router.get('/trash', authenticateToken, (req, res) => {
 // État complet d'une session (session + membres + actions + événements).
 router.get('/:sessionId', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, (s) => {
+    verifyAccess(session, req, res, (s, isOwner) => {
       loadSessionState(s.id, res, ({ session: full, members, actions, events }) => {
         const me = members.find((m) => m.user_id === req.user.id) || null;
         res.json({
@@ -263,7 +292,7 @@ router.get('/:sessionId', authenticateToken, (req, res) => {
           actions,
           events,
           me,
-          isOwner: full.owner_user_id === req.user.id,
+          isOwner: Boolean(isOwner || full.owner_user_id === req.user.id || (me && me.role === 'statistician')),
         });
       });
     });
@@ -331,8 +360,6 @@ router.post('/join', authenticateToken, (req, res) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (session) return proceedWithSession(session);
 
-      // Si le code n'est pas encore présent localement, on synchronise depuis
-      // Supabase (équipes + sessions en direct) puis on revérifie.
       try {
         await Promise.all([
           syncHub.teams.syncNow({ reason: 'live-join' }).catch(() => {}),
@@ -355,67 +382,61 @@ router.post('/join', authenticateToken, (req, res) => {
   );
 });
 
-// Mettre à jour nom / équipes (propriétaire uniquement).
+// Mettre à jour nom / équipes.
 router.patch('/:sessionId', authenticateToken, (req, res) => {
   const { name, team1_name, team2_name } = req.body || {};
   loadSession(req.params.sessionId, res, (session) => {
-    if (session.owner_user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Réservé au propriétaire' });
-    }
-    db.run(
-      'UPDATE live_sessions SET name = ?, team1_name = ?, team2_name = ? WHERE id = ?',
-      [
-        name ?? session.name,
-        team1_name ?? session.team1_name,
-        team2_name ?? session.team2_name,
-        session.id,
-      ],
-      (err) => {
+    verifyAccess(session, req, res, () => {
+      db.run(
+        'UPDATE live_sessions SET name = ?, team1_name = ?, team2_name = ? WHERE id = ?',
+        [
+          name ?? session.name,
+          team1_name ?? session.team1_name,
+          team2_name ?? session.team2_name,
+          session.id,
+        ],
+        (err) => {
+          if (err) return res.status(500).json({ error: 'Database error' });
+          emitToSession(session.id, 'session:update', {});
+          touchLiveSession(session.id);
+          res.json({ message: 'Session mise à jour' });
+        }
+      );
+    });
+  });
+});
+
+// Terminer un match.
+router.post('/:sessionId/finish', authenticateToken, (req, res) => {
+  loadSession(req.params.sessionId, res, (session) => {
+    verifyAccess(session, req, res, () => {
+      db.run("UPDATE live_sessions SET status = 'finished' WHERE id = ?", [session.id], (err) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         emitToSession(session.id, 'session:update', {});
         touchLiveSession(session.id);
-        res.json({ message: 'Session mise à jour' });
-      }
-    );
-  });
-});
-
-// Terminer un match (propriétaire uniquement).
-router.post('/:sessionId/finish', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
-    if (session.owner_user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Réservé au propriétaire' });
-    }
-    db.run("UPDATE live_sessions SET status = 'finished' WHERE id = ?", [session.id], (err) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      emitToSession(session.id, 'session:update', {});
-      touchLiveSession(session.id);
-      res.json({ message: 'Match terminé' });
+        res.json({ message: 'Match terminé' });
+      });
     });
   });
 });
 
-// Rouvrir un match terminé (propriétaire uniquement).
+// Rouvrir un match terminé.
 router.post('/:sessionId/reopen', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    if (session.owner_user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Réservé au propriétaire' });
-    }
-    db.run("UPDATE live_sessions SET status = 'active' WHERE id = ?", [session.id], (err) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      emitToSession(session.id, 'session:update', {});
-      touchLiveSession(session.id);
-      res.json({ message: 'Match rouvert' });
+    verifyAccess(session, req, res, () => {
+      db.run("UPDATE live_sessions SET status = 'active' WHERE id = ?", [session.id], (err) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        emitToSession(session.id, 'session:update', {});
+        touchLiveSession(session.id);
+        res.json({ message: 'Match rouvert' });
+      });
     });
   });
 });
 
-// Mettre un match à la corbeille (soft delete, propriétaire uniquement).
+// Mettre un match à la corbeille (soft delete).
 router.post('/:sessionId/trash', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    if (session.owner_user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Réservé au propriétaire' });
-    }
     db.run(
       'UPDATE live_sessions SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?',
       [session.id],
@@ -429,12 +450,9 @@ router.post('/:sessionId/trash', authenticateToken, (req, res) => {
   });
 });
 
-// Restaurer un match depuis la corbeille (propriétaire uniquement).
+// Restaurer un match depuis la corbeille.
 router.post('/:sessionId/restore', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    if (session.owner_user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Réservé au propriétaire' });
-    }
     db.run(
       'UPDATE live_sessions SET deleted_at = NULL WHERE id = ?',
       [session.id],
@@ -448,12 +466,9 @@ router.post('/:sessionId/restore', authenticateToken, (req, res) => {
   });
 });
 
-// Supprimer définitivement un match et toutes ses données (propriétaire uniquement).
+// Supprimer définitivement un match et toutes ses données.
 router.delete('/:sessionId', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    if (session.owner_user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Réservé au propriétaire' });
-    }
     const now = new Date().toISOString();
     db.serialize(() => {
       db.run('DELETE FROM live_actions WHERE session_id = ?', [session.id]);
@@ -473,65 +488,63 @@ router.delete('/:sessionId', authenticateToken, (req, res) => {
   });
 });
 
-// Inviter des comptes par email (propriétaire uniquement).
+// Inviter des comptes par email.
 router.post('/:sessionId/invite', authenticateToken, (req, res) => {
   const { emails } = req.body || {};
   if (!Array.isArray(emails) || emails.length === 0) {
-    return res.status(400).json({ error: 'Liste d\'emails requise' });
+    return res.status(400).json({ error: "Liste d'emails requise" });
   }
 
   loadSession(req.params.sessionId, res, (session) => {
-    if (session.owner_user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Réservé au propriétaire' });
-    }
+    verifyAccess(session, req, res, () => {
+      const normalized = [
+        ...new Set(emails.map((e) => String(e).trim().toLowerCase()).filter(Boolean)),
+      ];
+      if (normalized.length === 0) {
+        return res.status(400).json({ error: 'Aucun email valide' });
+      }
 
-    const normalized = [...new Set(
-      emails.map((e) => String(e).trim().toLowerCase()).filter(Boolean)
-    )];
-    if (normalized.length === 0) {
-      return res.status(400).json({ error: 'Aucun email valide' });
-    }
+      let added = 0;
+      let pending = normalized.length;
+      const now = new Date().toISOString();
 
-    let added = 0;
-    let pending = normalized.length;
-    const now = new Date().toISOString();
-
-    normalized.forEach((email) => {
-      db.get('SELECT * FROM users WHERE email = ?', [email], (err, user) => {
-        if (err || !user) {
-          pending -= 1;
-          if (pending === 0) finish();
-          return;
-        }
-        db.get(
-          'SELECT * FROM live_members WHERE session_id = ? AND user_id = ?',
-          [session.id, user.id],
-          (err, existing) => {
-            if (existing) {
-              pending -= 1;
-              if (pending === 0) finish();
-              return;
-            }
-            db.run(
-              `INSERT INTO live_members (session_id, sync_uuid, user_id, nickname, role, assignment, updated_at)
-               VALUES (?, ?, ?, ?, 'statistician', '["S","R","A","B","D"]', ?)`,
-              [session.id, uuidv4(), user.id, user.name || email, now],
-              function (err2) {
-                if (!err2) added += 1;
+      normalized.forEach((email) => {
+        db.get('SELECT * FROM users WHERE email = ?', [email], (err, user) => {
+          if (err || !user) {
+            pending -= 1;
+            if (pending === 0) finish();
+            return;
+          }
+          db.get(
+            'SELECT * FROM live_members WHERE session_id = ? AND user_id = ?',
+            [session.id, user.id],
+            (err2, existing) => {
+              if (existing) {
                 pending -= 1;
                 if (pending === 0) finish();
+                return;
               }
-            );
-          }
-        );
+              db.run(
+                `INSERT INTO live_members (session_id, sync_uuid, user_id, nickname, role, assignment, updated_at)
+                 VALUES (?, ?, ?, ?, 'statistician', '["S","R","A","B","D"]', ?)`,
+                [session.id, uuidv4(), user.id, user.name || email, now],
+                function (err3) {
+                  if (!err3) added += 1;
+                  pending -= 1;
+                  if (pending === 0) finish();
+                }
+              );
+            }
+          );
+        });
       });
-    });
 
-    function finish() {
-      emitToSession(session.id, 'member:update', {});
-      touchLiveSession(session.id);
-      res.json({ message: `${added} invité(s) ajouté(s)` });
-    }
+      function finish() {
+        emitToSession(session.id, 'member:update', {});
+        touchLiveSession(session.id);
+        res.json({ message: `${added} invité(s) ajouté(s)` });
+      }
+    });
   });
 });
 
@@ -541,45 +554,45 @@ router.put('/:sessionId/members/:memberId', authenticateToken, (req, res) => {
   const memberId = Number(req.params.memberId);
 
   loadSession(req.params.sessionId, res, (session) => {
-    db.get(
-      'SELECT * FROM live_members WHERE id = ? AND session_id = ?',
-      [memberId, session.id],
-      (err, member) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        if (!member) return res.status(404).json({ error: 'Membre introuvable' });
+    verifyAccess(session, req, res, (s, isOwner) => {
+      db.get(
+        'SELECT * FROM live_members WHERE id = ? AND session_id = ?',
+        [memberId, session.id],
+        (err, member) => {
+          if (err) return res.status(500).json({ error: 'Database error' });
+          if (!member) return res.status(404).json({ error: 'Membre introuvable' });
 
-        const isOwner = session.owner_user_id === req.user.id;
-        if (!isOwner && member.user_id !== req.user.id) {
-          return res.status(403).json({ error: 'Réservé au propriétaire' });
-        }
-
-        const newRole = isOwner && ['viewer', 'statistician', 'camera'].includes(role) ? role : member.role;
-        const newNickname = isOwner && nickname ? nickname : member.nickname;
-        const newAssignment = Array.isArray(assignment) && assignment.length
-          ? JSON.stringify(assignment)
-          : member.assignment;
-        const now = new Date().toISOString();
-
-        db.run(
-          'UPDATE live_members SET sync_uuid = COALESCE(sync_uuid, ?), role = ?, nickname = ?, assignment = ?, updated_at = ? WHERE id = ?',
-          [uuidv4(), newRole, newNickname, newAssignment, now, memberId],
-          (err2) => {
-            if (err2) return res.status(500).json({ error: 'Database error' });
-            emitToSession(session.id, 'member:update', {});
-            touchLiveSession(session.id);
-            res.json({ message: 'Membre mis à jour' });
+          const canManage = isOwner || member.user_id === req.user.id;
+          if (!canManage) {
+            return res.status(403).json({ error: 'Réservé aux statisticiens' });
           }
-        );
-      }
-    );
+
+          const newRole = ['viewer', 'statistician', 'camera'].includes(role) ? role : member.role;
+          const newNickname = nickname ? nickname : member.nickname;
+          const newAssignment =
+            Array.isArray(assignment) && assignment.length
+              ? JSON.stringify(assignment)
+              : member.assignment;
+          const now = new Date().toISOString();
+
+          db.run(
+            'UPDATE live_members SET sync_uuid = COALESCE(sync_uuid, ?), role = ?, nickname = ?, assignment = ?, updated_at = ? WHERE id = ?',
+            [uuidv4(), newRole, newNickname, newAssignment, now, memberId],
+            (err2) => {
+              if (err2) return res.status(500).json({ error: 'Database error' });
+              emitToSession(session.id, 'member:update', {});
+              touchLiveSession(session.id);
+              res.json({ message: 'Membre mis à jour' });
+            }
+          );
+        }
+      );
+    });
   });
 });
 
 // --- Actions ----------------------------------------------------------------
 
-// Ajouter une action (broadcast aux autres appareils).
-// Une formule combinée (`a04SM.06#`) crée DEUX actions : le service puis la
-// réception adverse, avec la même estampille temporelle.
 router.post('/:sessionId/actions', authenticateToken, (req, res) => {
   const {
     code,
@@ -594,6 +607,8 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
     mid_y,
     end_x,
     end_y,
+    start_subzone,
+    end_subzone,
     is_auto,
   } = req.body || {};
   if (!isValidCode(code)) {
@@ -603,9 +618,10 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
       const nowSec = Date.now() / 1000;
-      const eff = typeof effective_time === 'number' && !Number.isNaN(effective_time)
-        ? effective_time
-        : nowSec;
+      const eff =
+        typeof effective_time === 'number' && !Number.isNaN(effective_time)
+          ? effective_time
+          : nowSec;
       const sys = typeof system_time === 'number' ? Math.floor(system_time) : Math.floor(nowSec);
       const codes = dvCode.expandSequence(code);
       const myMember = member && member.user_id === req.user.id ? member : null;
@@ -617,8 +633,6 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
           if (err) return res.status(500).json({ error: 'Database error' });
           let seq = (row.maxSeq ?? -1) + 1;
           const isAssigned = assigned === false || assigned === 0 ? 0 : 1;
-          // Numéro de set (1 par défaut) : indispensable pour retrouver les
-          // stats par set dans le replay finalisé.
           const setNumber = Number(set_number) > 0 ? Math.round(Number(set_number)) : 1;
           const autoFlag = is_auto ? 1 : 0;
           const created = [];
@@ -643,9 +657,9 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
             db.run(
               `INSERT INTO live_actions
                 (session_id, sync_uuid, effective_time, seq, member_id, assigned, code, system_time, team, player_number,
-                 action, evaluation, type, start_zone, end_zone, end_subzone, attack_zone, set_number,
+                 action, evaluation, type, start_zone, end_zone, start_subzone, end_subzone, attack_zone, set_number,
                  start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 session.id,
                 actionUuid,
@@ -662,7 +676,8 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
                 parts.type || null,
                 parts.start_zone || null,
                 parts.end_zone || null,
-                parts.end_subzone || null,
+                start_subzone ?? parts.start_subzone ?? null,
+                end_subzone ?? parts.end_subzone ?? null,
                 attack_zone ?? parts.start_zone ?? null,
                 setNumber,
                 start_x ?? null,
@@ -694,6 +709,8 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
                   mid_y: mid_y ?? null,
                   end_x: end_x ?? null,
                   end_y: end_y ?? null,
+                  start_subzone: start_subzone ?? parts.start_subzone ?? null,
+                  end_subzone: end_subzone ?? parts.end_subzone ?? null,
                   is_auto: autoFlag,
                   updated_at: nowIso,
                   ...parts,
@@ -708,7 +725,7 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
   });
 });
 
-// Modifier une action (code + effective_time + assigned + coordonnées de direction).
+// Modifier une action.
 router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
   const {
     code,
@@ -736,12 +753,16 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
           if (!existing) return res.status(404).json({ error: 'Action introuvable' });
 
           const newCode = isValidCode(code) ? code : existing.code;
-          const newEff = typeof effective_time === 'number' && !Number.isNaN(effective_time)
-            ? effective_time
-            : existing.effective_time;
-          const newAssigned = (assigned === false || assigned === 0)
-            ? 0
-            : (assigned === true || assigned === 1 ? 1 : existing.assigned);
+          const newEff =
+            typeof effective_time === 'number' && !Number.isNaN(effective_time)
+              ? effective_time
+              : existing.effective_time;
+          const newAssigned =
+            assigned === false || assigned === 0
+              ? 0
+              : assigned === true || assigned === 1
+              ? 1
+              : existing.assigned;
           const newZone = attack_zone !== undefined ? attack_zone : existing.attack_zone;
           const parts = decomposeCode(newCode);
           const newStartX = start_x !== undefined ? start_x : existing.start_x;
@@ -751,7 +772,8 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
           const newEndX = end_x !== undefined ? end_x : existing.end_x;
           const newEndY = end_y !== undefined ? end_y : existing.end_y;
           const newStartSub = start_subzone !== undefined ? start_subzone : existing.start_subzone;
-          const newEndSub = end_subzone !== undefined ? end_subzone : (parts.end_subzone || existing.end_subzone);
+          const newEndSub =
+            end_subzone !== undefined ? end_subzone : parts.end_subzone || existing.end_subzone;
 
           const nowIso = new Date().toISOString();
           const syncUuid = existing.sync_uuid || uuidv4();
@@ -759,15 +781,30 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
           db.run(
             `UPDATE live_actions
                 SET sync_uuid = ?, code = ?, effective_time = ?, assigned = ?, team = ?, player_number = ?, action = ?,
-                    evaluation = ?, type = ?, start_zone = ?, end_zone = ?, end_subzone = ?, attack_zone = ?,
+                    evaluation = ?, type = ?, start_zone = ?, end_zone = ?, start_subzone = ?, end_subzone = ?, attack_zone = ?,
                     start_x = ?, start_y = ?, mid_x = ?, mid_y = ?, end_x = ?, end_y = ?, updated_at = ?
               WHERE id = ?`,
             [
               syncUuid,
-              newCode, newEff, newAssigned, parts.team, parts.player_number, parts.action,
-              parts.evaluation, parts.type || null, parts.start_zone || null, parts.end_zone || null,
-              newEndSub || null, newZone ?? parts.start_zone ?? null,
-              newStartX ?? null, newStartY ?? null, newMidX ?? null, newMidY ?? null, newEndX ?? null, newEndY ?? null,
+              newCode,
+              newEff,
+              newAssigned,
+              parts.team,
+              parts.player_number,
+              parts.action,
+              parts.evaluation,
+              parts.type || null,
+              parts.start_zone || null,
+              parts.end_zone || null,
+              newStartSub || null,
+              newEndSub || null,
+              newZone ?? parts.start_zone ?? null,
+              newStartX ?? null,
+              newStartY ?? null,
+              newMidX ?? null,
+              newMidY ?? null,
+              newEndX ?? null,
+              newEndY ?? null,
               nowIso,
               actionId,
             ],
@@ -828,7 +865,7 @@ router.delete('/:sessionId/actions/:actionId', authenticateToken, (req, res) => 
   });
 });
 
-// --- Événements de match en direct (Temps morts, Remplacements, Sanctions) --
+// --- Événements de match en direct ------------------------------------------
 
 router.get('/:sessionId/events', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
@@ -943,7 +980,7 @@ router.delete('/:sessionId/events/:eventId', authenticateToken, (req, res) => {
             'DELETE FROM live_events WHERE id = ? AND session_id = ?',
             [eventId, session.id],
             function (err) {
-              if (err) return res.status(500).json({ error: 'Failed to delete event' });
+              if (err) return res.status(500).json({ error: 'Database error' });
               emitToSession(session.id, 'event:delete', { eventId });
               touchLiveSession(session.id, existing?.sync_uuid ? [existing.sync_uuid] : []);
               res.json({ message: 'Event deleted', deleted: this.changes });
@@ -957,8 +994,6 @@ router.delete('/:sessionId/events/:eventId', authenticateToken, (req, res) => {
 
 // --- Synchronisation du point (statisticiens multiples) -----------------------
 
-// Marque le point comme terminé par le statisticien courant. Quand tous les
-// statisticiens ont terminé le point en cours, le numéro de point avance.
 router.post('/:sessionId/point/complete', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
@@ -1002,17 +1037,12 @@ router.post('/:sessionId/point/complete', authenticateToken, (req, res) => {
 
 // --- Flux caméra : réglage du délai de rediffusion --------------------------
 
-// Le délai (en secondes) est commun à tous les appareils de la session : il
-// détermine de combien la vidéo arrive en retard sur la réalité, ce qui laisse
-// aux statisticiens le temps de coder le point avant de le revoir à l'écran.
 router.put('/:sessionId/video-delay', authenticateToken, (req, res) => {
   const { delay } = req.body || {};
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
-      // Le délai est commun à tous les appareils : seul l'organisateur du match
-      // (ou le téléphone qui filme) le règle.
-      if (!isOwner && member?.role !== 'camera') {
-        return res.status(403).json({ error: 'Réglage réservé à l’organisateur ou à la caméra' });
+      if (!isOwner && member?.role !== 'camera' && member?.role !== 'statistician') {
+        return res.status(403).json({ error: 'Réglage réservé aux statisticiens ou à la caméra' });
       }
       const seconds = liveStream.setDelay(s.id, delay, (event, payload) =>
         emitToSession(s.id, event, payload)
@@ -1026,7 +1056,6 @@ router.put('/:sessionId/video-delay', authenticateToken, (req, res) => {
   });
 });
 
-// État du flux caméra (utilisé à l'ouverture de l'écran).
 router.get('/:sessionId/video-state', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, () => {
@@ -1112,73 +1141,124 @@ router.put('/:sessionId/setups', authenticateToken, (req, res) => {
   });
 });
 
-// --- Finalisation de l'enregistrement du direct (replay ancré) --------------
-// Transcode la piste enregistrée en MP4 (+ proxy), crée la vidéo, ancre le
-// temps système de la session sur la piste, et recopie les actions codées en
-// live (ainsi que les six de départ et les événements) vers la vidéo.
+// --- Finalisation du match en direct vers DataVolley ------------------------
+// Fonctionne AVEC ou SANS enregistrement caméra local (accepte aussi un lien
+// YouTube optionnel et synchronise toutes les stats vers Supabase).
 router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
   const { sessionId } = req.params;
+  const youtubeUrl = req.body?.youtube_url ? String(req.body.youtube_url).trim() || null : null;
+
   loadSession(sessionId, res, (session) => {
     verifyAccess(session, req, res, async () => {
       const info = liveRecord.lastRecording(sessionId);
-      if (!info || !fs.existsSync(info.path)) {
-        return res.status(404).json({ error: "Aucun enregistrement à finaliser pour cette session." });
-      }
+      const hasLocalRecording = Boolean(info && fs.existsSync(info.path));
+
       try {
-        fs.ensureDirSync(uploadsDir);
-        fs.ensureDirSync(proxyDir);
-        const ffmpeg = require('fluent-ffmpeg');
-        const stamp = Date.now();
-        const mp4Name = `live_${sessionId}_${stamp}.mp4`;
-        const mp4Path = path.join(uploadsDir, mp4Name);
-        await new Promise((resolve, reject) => {
-          ffmpeg(info.path)
-            .outputOptions(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'])
-            .on('end', resolve)
-            .on('error', reject)
-            .save(mp4Path);
+        let mp4Name = '';
+        let mp4Path = '';
+        let proxyPath = null;
+
+        if (hasLocalRecording) {
+          fs.ensureDirSync(uploadsDir);
+          fs.ensureDirSync(proxyDir);
+          const ffmpeg = require('fluent-ffmpeg');
+          const stamp = Date.now();
+          mp4Name = `live_${sessionId}_${stamp}.mp4`;
+          mp4Path = path.join(uploadsDir, mp4Name);
+          await new Promise((resolve, reject) => {
+            ffmpeg(info.path)
+              .outputOptions([
+                '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26',
+                '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k',
+                '-movflags', '+faststart',
+              ])
+              .on('end', resolve)
+              .on('error', reject)
+              .save(mp4Path);
+          });
+          const proxyName = `proxy_live_${sessionId}_${stamp}.mp4`;
+          proxyPath = path.join(proxyDir, proxyName);
+          await generateProxy(mp4Path, proxyPath);
+        }
+
+        const actions = await new Promise((resolve, reject) => {
+          db.all(
+            'SELECT * FROM live_actions WHERE session_id = ? ORDER BY effective_time ASC, seq ASC',
+            [sessionId],
+            (err, rows) => (err ? reject(err) : resolve(rows || []))
+          );
         });
-        const proxyName = `proxy_live_${sessionId}_${stamp}.mp4`;
-        const proxyPath = path.join(proxyDir, proxyName);
-        await generateProxy(mp4Path, proxyPath);
 
         const delayS = Number(session.video_delay) >= 0 ? Number(session.video_delay) : 0;
-        const anchorSystemTime = Math.floor((info.startedAt + delayS * 1000) / 1000);
-        // Équipes choisies pour le direct : elles deviennent celles du match
-        // Data Volley (filtres du Centre Vidéo, rapports par équipe).
+        let anchorSystemTime;
+        if (hasLocalRecording) {
+          anchorSystemTime = Math.floor((info.startedAt + delayS * 1000) / 1000);
+        } else {
+          const firstRow = actions.find(
+            (a) => (typeof a.effective_time === 'number' && a.effective_time > 1e9) || typeof a.system_time === 'number'
+          );
+          const firstTs = firstRow
+            ? typeof firstRow.effective_time === 'number' && firstRow.effective_time > 1e9
+              ? firstRow.effective_time
+              : firstRow.system_time
+            : Date.now() / 1000;
+          anchorSystemTime = Math.max(0, Math.floor(firstTs - 5));
+        }
+
         const homeTeamId = session.home_team_id ? Number(session.home_team_id) : null;
         const awayTeamId = session.away_team_id ? Number(session.away_team_id) : null;
+        const homeTeamUuid = session.home_team_uuid || null;
+        const awayTeamUuid = session.away_team_uuid || null;
+        const nowIso = new Date().toISOString();
+        const videoSyncUuid = uuidv4();
+        const videoStatus = hasLocalRecording || youtubeUrl ? 'uploaded' : 'pending_video';
 
         db.run(
-          `INSERT INTO videos (user_id, filename, original_name, display_name, filepath, filepath_proxy,
-             team1_name, team2_name, home_team_id, away_team_id, status, sync_uuid, dirty, local_updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploaded', ?, 1, ?)`,
+          `INSERT INTO videos (
+             user_id, filename, original_name, display_name, youtube_url, filepath, filepath_proxy,
+             team1_name, team2_name, home_team_id, away_team_id, home_team_uuid, away_team_uuid,
+             status, sync_uuid, dirty, deleted, local_updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
           [
             req.user.id,
             mp4Name,
-            `${session.name}.mp4`,
+            hasLocalRecording ? `${session.name}.mp4` : `Direct — ${session.name}`,
             `Direct — ${session.name}`,
+            youtubeUrl,
             mp4Path,
             proxyPath,
             session.team1_name,
             session.team2_name,
             homeTeamId,
             awayTeamId,
-            uuidv4(),
-            new Date().toISOString(),
+            homeTeamUuid,
+            awayTeamUuid,
+            videoStatus,
+            videoSyncUuid,
+            nowIso,
           ],
           function (err) {
             if (err) return res.status(500).json({ error: 'Failed to create video' });
             const videoId = this.lastID;
-            if (homeTeamId || awayTeamId) {
-              db.run(
-                'INSERT OR REPLACE INTO volley_matches (video_id, home_team_id, away_team_id) VALUES (?, ?, ?)',
-                [videoId, homeTeamId, awayTeamId],
-                () => {}
-              );
-            }
+
             db.run(
-              `INSERT OR REPLACE INTO volley_sync (video_id, anchor_timecode, anchor_system_time, lead_in, lead_out) VALUES (?, 0, ?, 4, 3)`,
+              `INSERT INTO volley_matches
+                 (video_id, sync_uuid, status, home_team_id, away_team_id, home_team_uuid, away_team_uuid, deleted, dirty, local_updated_at)
+               VALUES (?, ?, 'coding', ?, ?, ?, ?, 0, 1, ?)
+               ON CONFLICT(video_id) DO UPDATE SET
+                 home_team_id = excluded.home_team_id,
+                 away_team_id = excluded.away_team_id,
+                 home_team_uuid = excluded.home_team_uuid,
+                 away_team_uuid = excluded.away_team_uuid,
+                 dirty = 1,
+                 local_updated_at = excluded.local_updated_at`,
+              [videoId, uuidv4(), homeTeamId, awayTeamId, homeTeamUuid, awayTeamUuid, nowIso],
+              () => {}
+            );
+
+            db.run(
+              `INSERT OR REPLACE INTO volley_sync (video_id, anchor_timecode, anchor_system_time, lead_in, lead_out)
+               VALUES (?, 0, ?, 4, 3)`,
               [videoId, anchorSystemTime]
             );
             db.run('UPDATE live_sessions SET video_id = ? WHERE id = ?', [videoId, sessionId]);
@@ -1186,7 +1266,10 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
             // Copie les six de départ (set_setups) de la session live vers la vidéo.
             getSetups(`session:${sessionId}`, (setupErr, sessionSetups) => {
               if (!setupErr && sessionSetups && Object.keys(sessionSetups).length > 0) {
-                saveSetups(`video:${videoId}`, sessionSetups, () => {});
+                saveSetups(`video:${videoId}`, sessionSetups, () => {
+                  syncHub.setups.syncNow({ reason: 'live-finalize' }).catch(() => {});
+                  emitCollectionChanged('setups');
+                });
               }
             });
 
@@ -1195,55 +1278,82 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
               if (!evErr && Array.isArray(evRows) && evRows.length > 0) {
                 for (const ev of evRows) {
                   db.run(
-                    `INSERT INTO volley_events (video_id, kind, set_number, point_number, team, payload)
-                     VALUES (?, ?, ?, ?, ?, ?)`,
-                    [videoId, ev.kind, ev.set_number, ev.point_number, ev.team, ev.payload],
+                    `INSERT INTO volley_events
+                       (video_id, kind, set_number, point_number, team, payload, sync_uuid, deleted, dirty, local_updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?)`,
+                    [videoId, ev.kind, ev.set_number, ev.point_number, ev.team, ev.payload, uuidv4(), nowIso],
                     () => {}
                   );
                 }
+                syncHub.events.syncNow({ reason: 'live-finalize' }).catch(() => {});
+                emitCollectionChanged('events');
               }
             });
 
-            // La nouvelle vidéo doit apparaître sans rechargement dans le Centre
-            // Vidéo et dans la liste Data Volley (et partir vers le cloud si la
-            // synchronisation est configurée, comme un upload classique).
             emitCollectionChanged('videos');
+            emitCollectionChanged('matches');
             syncHub.videos.syncNow({ reason: 'live-finalize' }).catch(() => {});
+            syncHub.matches.syncNow({ reason: 'live-finalize' }).catch(() => {});
 
-            db.all('SELECT * FROM live_actions WHERE session_id = ? ORDER BY effective_time ASC, seq ASC', [sessionId], (err2, actions) => {
-              if (err2) return res.status(500).json({ error: 'Database error' });
-              const rows = actions || [];
-              if (!rows.length) return res.json({ videoId, actionCount: 0 });
-              db.run('BEGIN TRANSACTION', () => {
-                const stmt = db.prepare(
-                  `INSERT INTO volley_actions (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation, type, start_zone, end_zone, end_subzone, set_number, note, attack_zone, start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-                );
-                stmt.on('error', () => {});
-                rows.forEach((a, i) => {
-                  const parts = decomposeCode(a.code);
-                  // On privilégie effective_time (précis à la fraction de seconde) s'il est disponible, sinon system_time.
-                  const rawTime = typeof a.effective_time === 'number' && a.effective_time > 1e9
+            if (!actions.length) {
+              return res.json({ videoId, actionCount: 0, hasLocalRecording });
+            }
+
+            db.run('BEGIN TRANSACTION', () => {
+              const stmt = db.prepare(
+                `INSERT INTO volley_actions
+                  (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation,
+                   type, start_zone, end_zone, start_subzone, end_subzone, set_number, note, attack_zone,
+                   start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto, deleted, dirty, local_updated_at, sync_uuid)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
+              );
+              stmt.on('error', () => {});
+              actions.forEach((a, i) => {
+                const parts = decomposeCode(a.code);
+                const rawTime =
+                  typeof a.effective_time === 'number' && a.effective_time > 1e9
                     ? a.effective_time
-                    : (typeof a.system_time === 'number' ? a.system_time : null);
-                  const timecode = rawTime != null ? Math.max(0, rawTime - anchorSystemTime) : null;
-                  const setNumber = Number(a.set_number) > 0 ? Math.round(Number(a.set_number)) : 1;
-                  stmt.run(
-                    videoId, i, a.code, timecode, a.system_time ?? null,
-                    a.team || parts.team, a.player_number ?? parts.player_number, a.action || parts.action,
-                    a.evaluation || parts.evaluation, parts.type || null, parts.start_zone || null,
-                    parts.end_zone || null, a.end_subzone || parts.end_subzone || null, setNumber, null,
-                    a.attack_zone ?? parts.start_zone ?? null,
-                    a.start_x ?? null, a.start_y ?? null, a.mid_x ?? null, a.mid_y ?? null,
-                    a.end_x ?? null, a.end_y ?? null, a.is_auto ? 1 : 0
-                  );
-                });
-                stmt.finalize(() => db.run('COMMIT', () => {
-                  // Les actions copiées alimentent le codage Data Volley du replay.
-                  emitCollectionChanged('actions');
-                  res.json({ videoId, actionCount: rows.length });
-                }));
+                    : typeof a.system_time === 'number'
+                    ? a.system_time
+                    : null;
+                const timecode = rawTime != null ? Math.max(0, rawTime - anchorSystemTime) : null;
+                const setNumber = Number(a.set_number) > 0 ? Math.round(Number(a.set_number)) : 1;
+                stmt.run(
+                  videoId,
+                  i,
+                  a.code,
+                  timecode,
+                  a.system_time ?? null,
+                  a.team || parts.team,
+                  a.player_number ?? parts.player_number,
+                  a.action || parts.action,
+                  a.evaluation || parts.evaluation,
+                  parts.type || null,
+                  a.start_zone ?? parts.start_zone ?? null,
+                  a.end_zone ?? parts.end_zone ?? null,
+                  a.start_subzone ?? parts.start_subzone ?? null,
+                  a.end_subzone || parts.end_subzone || null,
+                  setNumber,
+                  null,
+                  a.attack_zone ?? parts.start_zone ?? null,
+                  a.start_x ?? null,
+                  a.start_y ?? null,
+                  a.mid_x ?? null,
+                  a.mid_y ?? null,
+                  a.end_x ?? null,
+                  a.end_y ?? null,
+                  a.is_auto ? 1 : 0,
+                  nowIso,
+                  uuidv4()
+                );
               });
+              stmt.finalize(() =>
+                db.run('COMMIT', () => {
+                  syncHub.actions.syncNow({ reason: 'live-finalize' }).catch(() => {});
+                  emitCollectionChanged('actions');
+                  res.json({ videoId, actionCount: actions.length, hasLocalRecording });
+                })
+              );
             });
           }
         );

@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const db = require('./database');
 const { fieldsEqual, planMergeGeneric, isAfter } = require('./syncCore');
 const { emitCollectionChanged, emitToSession } = require('./socket');
+const { relinkTeamReferences } = require('./relinkTeams');
 
 const runAsync = (sql, params = []) =>
   new Promise((resolve, reject) => {
@@ -53,7 +54,17 @@ function makeFlatCollection(spec) {
   const fields = spec.fields;
 
   const loadLocal =
-    spec.loadLocal || (() => allAsync(`SELECT * FROM ${table} ORDER BY id ASC`, []));
+    spec.loadLocal ||
+    (async () => {
+      const rows = await allAsync(`SELECT * FROM ${table} ORDER BY id ASC`, []);
+      for (const r of rows) {
+        if (!r.sync_uuid && r.id != null) {
+          r.sync_uuid = crypto.randomUUID();
+          await runAsync(`UPDATE ${table} SET sync_uuid = ? WHERE id = ?`, [r.sync_uuid, r.id]);
+        }
+      }
+      return rows;
+    });
 
   const adoptUuid = (localId, uuid) =>
     runAsync(`UPDATE ${table} SET sync_uuid = ? WHERE id = ?`, [uuid, localId]);
@@ -109,8 +120,8 @@ function makeFlatCollection(spec) {
   const statusCounts =
     spec.statusCounts ||
     (async () => {
-      const active = await getAsync(`SELECT COUNT(*) AS n FROM ${table} WHERE deleted = 0`, []);
-      const tombstones = await getAsync(`SELECT COUNT(*) AS n FROM ${table} WHERE deleted = 1`, []);
+      const active = await getAsync(`SELECT COUNT(*) AS n FROM ${table} WHERE COALESCE(deleted, 0) = 0`, []);
+      const tombstones = await getAsync(`SELECT COUNT(*) AS n FROM ${table} WHERE COALESCE(deleted, 0) = 1`, []);
       return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
     });
 
@@ -134,8 +145,7 @@ function makeFlatCollection(spec) {
 }
 
 // ---------------------------------------------------------------------------
-// Trajectoires : match = ligne cloud, flèches embarquées en jsonb, équipes
-// référencées par leur sync_uuid (partagé) plutôt que par leur id local.
+// Helpers équipes & vidéos : id local ↔ sync_uuid
 // ---------------------------------------------------------------------------
 
 /** id d'équipe local → sync_uuid. */
@@ -154,17 +164,52 @@ async function teamUuidToId() {
   return map;
 }
 
+async function videoIdToUuid() {
+  const rows = await allAsync('SELECT id, sync_uuid FROM videos WHERE sync_uuid IS NOT NULL', []);
+  const map = new Map();
+  for (const r of rows) map.set(Number(r.id), r.sync_uuid);
+  return map;
+}
+
+async function ensureVideoByUuid(uuid) {
+  if (!uuid) return null;
+  const row = await getAsync('SELECT id FROM videos WHERE sync_uuid = ?', [uuid]);
+  if (row) return Number(row.id);
+  const result = await runAsync(
+    `INSERT INTO videos (sync_uuid, user_id, filename, original_name, filepath, status, dirty, deleted, local_updated_at)
+     VALUES (?, 0, '', '', '', 'uploaded', 0, 0, ?)`,
+    [uuid, new Date().toISOString()]
+  );
+  return result.lastID;
+}
+
+// ---------------------------------------------------------------------------
+// Trajectoires : match = ligne cloud, flèches embarquées en jsonb, équipes et
+// vidéos référencées par leur sync_uuid (partagé) plutôt que par leur id local.
+// ---------------------------------------------------------------------------
+
 const trajectoriesCollection = makeFlatCollection({
   key: 'trajectories',
   name: 'Trajectoires',
   defaultTable: 'asul_trajectories',
   table: 'trajectory_matches',
-  fields: ['name', 'team1_name', 'team2_name', 'status'],
+  fields: [
+    'name',
+    'home_team_uuid',
+    'away_team_uuid',
+    'video_uuid',
+    'team1_name',
+    'team2_name',
+    'status',
+    'created_by',
+    'shots',
+  ],
 
   loadLocal: async () => {
     const matches = await allAsync('SELECT * FROM trajectory_matches ORDER BY id ASC', []);
     if (!matches.length) return [];
     const idToUuid = await teamIdToUuid();
+    const vidToUuid = await videoIdToUuid();
     const shots = await allAsync('SELECT * FROM trajectory_shots ORDER BY match_id ASC, id ASC', []);
     const byMatch = new Map();
     for (const shot of shots) {
@@ -172,22 +217,31 @@ const trajectoriesCollection = makeFlatCollection({
       if (!byMatch.has(key)) byMatch.set(key, []);
       byMatch.get(key).push({
         team_side: shot.team_side,
-        player_number: shot.player_number,
+        player_number: Number(shot.player_number),
         kind: shot.kind,
-        start_x: shot.start_x,
-        start_y: shot.start_y,
-        end_x: shot.end_x,
-        end_y: shot.end_y,
+        start_x: Number(shot.start_x),
+        start_y: Number(shot.start_y),
+        end_x: Number(shot.end_x),
+        end_y: Number(shot.end_y),
         result: shot.result,
-        set_number: shot.set_number,
+        set_number: shot.set_number == null ? null : Number(shot.set_number),
       });
     }
-    return matches.map((m) => ({
-      ...m,
-      home_team_uuid: m.home_team_uuid || (m.home_team_id ? idToUuid.get(Number(m.home_team_id)) || null : null),
-      away_team_uuid: m.away_team_uuid || (m.away_team_id ? idToUuid.get(Number(m.away_team_id)) || null : null),
-      shots: byMatch.get(Number(m.id)) || [],
-    }));
+    const out = [];
+    for (const m of matches) {
+      if (!m.sync_uuid) {
+        m.sync_uuid = crypto.randomUUID();
+        await runAsync('UPDATE trajectory_matches SET sync_uuid = ? WHERE id = ?', [m.sync_uuid, m.id]);
+      }
+      out.push({
+        ...m,
+        home_team_uuid: m.home_team_uuid || (m.home_team_id ? idToUuid.get(Number(m.home_team_id)) || null : null),
+        away_team_uuid: m.away_team_uuid || (m.away_team_id ? idToUuid.get(Number(m.away_team_id)) || null : null),
+        video_uuid: m.video_uuid || (m.video_id ? vidToUuid.get(Number(m.video_id)) || null : null),
+        shots: byMatch.get(Number(m.id)) || [],
+      });
+    }
+    return out;
   },
 
   rowToCloud: (row, originId) => ({
@@ -195,6 +249,7 @@ const trajectoriesCollection = makeFlatCollection({
     name: row.name,
     home_team_uuid: row.home_team_uuid || null,
     away_team_uuid: row.away_team_uuid || null,
+    video_uuid: row.video_uuid || null,
     team1_name: row.team1_name,
     team2_name: row.team2_name,
     status: row.status,
@@ -210,24 +265,59 @@ const trajectoriesCollection = makeFlatCollection({
     const uuidToId = await teamUuidToId();
     const homeTeamId = entry.home_team_uuid ? uuidToId.get(String(entry.home_team_uuid)) || null : null;
     const awayTeamId = entry.away_team_uuid ? uuidToId.get(String(entry.away_team_uuid)) || null : null;
+    const videoId = entry.video_uuid ? await ensureVideoByUuid(entry.video_uuid) : null;
 
     let localId = entry.localId;
     if (localId) {
       await runAsync(
         `UPDATE trajectory_matches
-            SET sync_uuid = ?, name = ?, home_team_id = ?, away_team_id = ?,
+            SET sync_uuid = ?, name = ?, home_team_id = COALESCE(?, home_team_id), away_team_id = COALESCE(?, away_team_id),
                 home_team_uuid = ?, away_team_uuid = ?,
+                video_id = ?, video_uuid = ?,
                 team1_name = ?, team2_name = ?, status = ?, created_by = ?, deleted = ?,
                 dirty = 0, cloud_updated_at = ?
           WHERE id = ?`,
-        [entry.uuid, entry.name, homeTeamId, awayTeamId, entry.home_team_uuid || null, entry.away_team_uuid || null, entry.team1_name, entry.team2_name, entry.status, entry.created_by, deleted, entry.cloudUpdatedAt || now, localId]
+        [
+          entry.uuid,
+          entry.name,
+          homeTeamId,
+          awayTeamId,
+          entry.home_team_uuid || null,
+          entry.away_team_uuid || null,
+          videoId,
+          entry.video_uuid || null,
+          entry.team1_name,
+          entry.team2_name,
+          entry.status,
+          entry.created_by,
+          deleted,
+          entry.cloudUpdatedAt || now,
+          localId,
+        ]
       );
     } else {
       const result = await runAsync(
         `INSERT INTO trajectory_matches
-            (sync_uuid, name, home_team_id, away_team_id, home_team_uuid, away_team_uuid, team1_name, team2_name, status, created_by, deleted, dirty, cloud_updated_at, local_updated_at, user_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)`,
-        [entry.uuid, entry.name, homeTeamId, awayTeamId, entry.home_team_uuid || null, entry.away_team_uuid || null, entry.team1_name, entry.team2_name, entry.status, entry.created_by, deleted, entry.cloudUpdatedAt || now, now]
+            (sync_uuid, name, home_team_id, away_team_id, home_team_uuid, away_team_uuid, video_id, video_uuid,
+             team1_name, team2_name, status, created_by, deleted, dirty, cloud_updated_at, local_updated_at, user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)`,
+        [
+          entry.uuid,
+          entry.name,
+          homeTeamId,
+          awayTeamId,
+          entry.home_team_uuid || null,
+          entry.away_team_uuid || null,
+          videoId,
+          entry.video_uuid || null,
+          entry.team1_name,
+          entry.team2_name,
+          entry.status,
+          entry.created_by,
+          deleted,
+          entry.cloudUpdatedAt || now,
+          now,
+        ]
       );
       localId = result.lastID;
     }
@@ -259,32 +349,12 @@ const trajectoriesCollection = makeFlatCollection({
     return localId;
   },
   onChanged: (applied, removed) => {
-    if (applied || removed) emitCollectionChanged('trajectories');
+    if (applied || removed) {
+      relinkTeamReferences().catch(() => {});
+      emitCollectionChanged('trajectories');
+    }
   },
 });
-
-// ---------------------------------------------------------------------------
-// Helpers vidéo : id local ↔ sync_uuid (les fichiers restent locaux, seule la
-// métadonnée est partagée ; une vidéo distante reçoit une coquille sans fichier).
-// ---------------------------------------------------------------------------
-
-async function videoIdToUuid() {
-  const rows = await allAsync('SELECT id, sync_uuid FROM videos WHERE sync_uuid IS NOT NULL', []);
-  const map = new Map();
-  for (const r of rows) map.set(Number(r.id), r.sync_uuid);
-  return map;
-}
-
-async function ensureVideoByUuid(uuid) {
-  const row = await getAsync('SELECT id FROM videos WHERE sync_uuid = ?', [uuid]);
-  if (row) return Number(row.id);
-  const result = await runAsync(
-    `INSERT INTO videos (sync_uuid, user_id, filename, original_name, filepath, status, dirty, deleted, local_updated_at)
-     VALUES (?, 0, '', '', '', 'uploaded', 0, 0, ?)`,
-    [uuid, new Date().toISOString()]
-  );
-  return result.lastID;
-}
 
 /**
  * Collection référençant une vidéo : convertit `video_id` (local) en `video_uuid`
@@ -333,7 +403,7 @@ function makeVideoRefCollection(spec) {
 }
 
 // ---------------------------------------------------------------------------
-// Vidéos (métadonnées seules — jamais filepath/filename)
+// Vidéos (métadonnées + lien YouTube + équipes associées — jamais filepath/filename)
 // ---------------------------------------------------------------------------
 
 const videosCollection = makeFlatCollection({
@@ -341,27 +411,127 @@ const videosCollection = makeFlatCollection({
   name: 'Vidéos',
   defaultTable: 'asul_videos',
   table: 'videos',
-  fields: ['original_name', 'display_name', 'team1_name', 'team2_name', 'duration', 'status', 'color'],
+  fields: [
+    'original_name',
+    'display_name',
+    'youtube_url',
+    'home_team_uuid',
+    'away_team_uuid',
+    'team1_name',
+    'team2_name',
+    'duration',
+    'angle2_offset',
+    'status',
+    'color',
+  ],
+  loadLocal: async () => {
+    const rows = await allAsync('SELECT * FROM videos ORDER BY id ASC', []);
+    if (!rows.length) return [];
+    const teamMap = await teamIdToUuid();
+    const out = [];
+    for (const r of rows) {
+      if (!r.sync_uuid) {
+        r.sync_uuid = crypto.randomUUID();
+        await runAsync('UPDATE videos SET sync_uuid = ? WHERE id = ?', [r.sync_uuid, r.id]);
+      }
+      out.push({
+        ...r,
+        youtube_url: r.youtube_url || null,
+        home_team_uuid: r.home_team_uuid || (r.home_team_id ? teamMap.get(Number(r.home_team_id)) || null : null),
+        away_team_uuid: r.away_team_uuid || (r.away_team_id ? teamMap.get(Number(r.away_team_id)) || null : null),
+        angle2_offset: Number(r.angle2_offset) || 0,
+      });
+    }
+    return out;
+  },
+  rowToCloud: (row, originId) => ({
+    sync_uuid: row.sync_uuid,
+    original_name: row.original_name || '',
+    display_name: row.display_name || null,
+    youtube_url: row.youtube_url || null,
+    home_team_uuid: row.home_team_uuid || null,
+    away_team_uuid: row.away_team_uuid || null,
+    team1_name: row.team1_name || null,
+    team2_name: row.team2_name || null,
+    duration: row.duration == null ? null : Number(row.duration),
+    angle2_offset: Number(row.angle2_offset) || 0,
+    status: row.status || 'uploaded',
+    color: row.color || '#1a73e8',
+    deleted: Boolean(Number(row.deleted)),
+    origin_id: originId,
+  }),
   applyRemote: async (entry) => {
     const now = new Date().toISOString();
     const deleted = entry.deleted ? 1 : 0;
+    const teamMap = await teamUuidToId();
+    const homeTeamId = entry.home_team_uuid ? teamMap.get(String(entry.home_team_uuid)) || null : null;
+    const awayTeamId = entry.away_team_uuid ? teamMap.get(String(entry.away_team_uuid)) || null : null;
+    const angle2Offset = Number(entry.angle2_offset) || 0;
+
     if (entry.localId) {
       await runAsync(
-        `UPDATE videos SET sync_uuid = ?, original_name = ?, display_name = ?, team1_name = ?, team2_name = ?,
-                duration = ?, status = ?, color = ?, deleted = ?, dirty = 0, cloud_updated_at = ? WHERE id = ?`,
-        [entry.uuid, entry.original_name, entry.display_name, entry.team1_name, entry.team2_name, entry.duration, entry.status, entry.color, deleted, entry.cloudUpdatedAt || now, entry.localId]
+        `UPDATE videos
+            SET sync_uuid = ?, original_name = ?, display_name = ?, youtube_url = ?,
+                home_team_id = COALESCE(?, home_team_id), away_team_id = COALESCE(?, away_team_id),
+                home_team_uuid = ?, away_team_uuid = ?,
+                team1_name = ?, team2_name = ?, duration = ?, angle2_offset = ?,
+                status = ?, color = ?, deleted = ?, dirty = 0, cloud_updated_at = ?
+          WHERE id = ?`,
+        [
+          entry.uuid,
+          entry.original_name || '',
+          entry.display_name || null,
+          entry.youtube_url || null,
+          homeTeamId,
+          awayTeamId,
+          entry.home_team_uuid || null,
+          entry.away_team_uuid || null,
+          entry.team1_name || null,
+          entry.team2_name || null,
+          entry.duration == null ? null : Number(entry.duration),
+          angle2Offset,
+          entry.status || 'uploaded',
+          entry.color || '#1a73e8',
+          deleted,
+          entry.cloudUpdatedAt || now,
+          entry.localId,
+        ]
       );
       return entry.localId;
     }
     const result = await runAsync(
-      `INSERT INTO videos (sync_uuid, user_id, filename, original_name, display_name, filepath, team1_name, team2_name, duration, status, color, deleted, dirty, cloud_updated_at, local_updated_at)
-       VALUES (?, 0, '', ?, ?, '', ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-      [entry.uuid, entry.original_name || '', entry.display_name || null, entry.team1_name, entry.team2_name, entry.duration, entry.status, entry.color, deleted, entry.cloudUpdatedAt || now, now]
+      `INSERT INTO videos
+          (sync_uuid, user_id, filename, original_name, display_name, youtube_url, filepath,
+           home_team_id, away_team_id, home_team_uuid, away_team_uuid,
+           team1_name, team2_name, duration, angle2_offset, status, color, deleted, dirty, cloud_updated_at, local_updated_at)
+       VALUES (?, 0, '', ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      [
+        entry.uuid,
+        entry.original_name || '',
+        entry.display_name || null,
+        entry.youtube_url || null,
+        homeTeamId,
+        awayTeamId,
+        entry.home_team_uuid || null,
+        entry.away_team_uuid || null,
+        entry.team1_name || null,
+        entry.team2_name || null,
+        entry.duration == null ? null : Number(entry.duration),
+        angle2Offset,
+        entry.status || 'uploaded',
+        entry.color || '#1a73e8',
+        deleted,
+        entry.cloudUpdatedAt || now,
+        now,
+      ]
     );
     return result.lastID;
   },
   onChanged: (applied, removed) => {
-    if (applied || removed) emitCollectionChanged('videos');
+    if (applied || removed) {
+      relinkTeamReferences().catch(() => {});
+      emitCollectionChanged('videos');
+    }
   },
 });
 
@@ -374,7 +544,31 @@ const actionsCollection = makeVideoRefCollection({
   name: 'Actions DataVolley',
   defaultTable: 'asul_actions',
   table: 'volley_actions',
-  fields: ['action_index', 'code', 'timecode', 'system_time', 'team', 'player_number', 'action', 'evaluation', 'type', 'start_zone', 'end_zone', 'end_subzone', 'set_number', 'note', 'attack_zone', 'start_x', 'start_y', 'mid_x', 'mid_y', 'end_x', 'end_y', 'is_auto'],
+  fields: [
+    'action_index',
+    'code',
+    'timecode',
+    'system_time',
+    'team',
+    'player_number',
+    'action',
+    'evaluation',
+    'type',
+    'start_zone',
+    'end_zone',
+    'start_subzone',
+    'end_subzone',
+    'set_number',
+    'note',
+    'attack_zone',
+    'start_x',
+    'start_y',
+    'mid_x',
+    'mid_y',
+    'end_x',
+    'end_y',
+    'is_auto',
+  ],
   onChanged: (applied, removed) => {
     if (applied || removed) emitCollectionChanged('actions');
   },
@@ -407,10 +601,20 @@ const claimsCollection = makeFlatCollection({
 });
 
 // ---------------------------------------------------------------------------
-// État du match (vidéo terminée/en cours, équipes) — clé primaire = video_id.
+// État du match (vidéo terminée/en cours, équipes, calibration timecode)
+// Clé primaire locale = video_id.
 // ---------------------------------------------------------------------------
 
-const MATCH_FIELDS = ['status', 'finished_at', 'home_team_uuid', 'away_team_uuid'];
+const MATCH_FIELDS = [
+  'status',
+  'finished_at',
+  'home_team_uuid',
+  'away_team_uuid',
+  'sync_offset',
+  'set_offsets',
+  'lead_in',
+  'lead_out',
+];
 
 const matchesCollection = {
   key: 'matches',
@@ -419,28 +623,51 @@ const matchesCollection = {
   envPrefix: 'TEAMS_SYNC',
   loadLocal: async () => {
     const rows = await allAsync('SELECT *, video_id AS id FROM volley_matches', []);
+    if (!rows.length) return [];
     const idToUuid = await videoIdToUuid();
     const teamMap = await teamIdToUuid();
-    return rows.map((r) => ({
-      ...r,
-      video_uuid: r.video_id ? idToUuid.get(Number(r.video_id)) || null : null,
-      home_team_uuid: r.home_team_uuid || (r.home_team_id ? teamMap.get(Number(r.home_team_id)) || null : null),
-      away_team_uuid: r.away_team_uuid || (r.away_team_id ? teamMap.get(Number(r.away_team_id)) || null : null),
-    }));
+    const syncRows = await allAsync('SELECT * FROM volley_sync', []);
+    const syncByVideo = new Map();
+    for (const s of syncRows) syncByVideo.set(Number(s.video_id), s);
+
+    const out = [];
+    for (const r of rows) {
+      if (!r.sync_uuid) {
+        r.sync_uuid = crypto.randomUUID();
+        await runAsync('UPDATE volley_matches SET sync_uuid = ? WHERE video_id = ?', [r.sync_uuid, r.video_id]);
+      }
+      const s = syncByVideo.get(Number(r.video_id));
+      out.push({
+        ...r,
+        video_uuid: r.video_id ? idToUuid.get(Number(r.video_id)) || null : null,
+        home_team_uuid: r.home_team_uuid || (r.home_team_id ? teamMap.get(Number(r.home_team_id)) || null : null),
+        away_team_uuid: r.away_team_uuid || (r.away_team_id ? teamMap.get(Number(r.away_team_id)) || null : null),
+        sync_offset: s && s.sync_offset != null ? Number(s.sync_offset) : 0,
+        set_offsets: s && s.set_offsets ? String(s.set_offsets) : '{}',
+        lead_in: s && s.lead_in != null ? Number(s.lead_in) : 4,
+        lead_out: s && s.lead_out != null ? Number(s.lead_out) : 3,
+      });
+    }
+    return out;
   },
   rowToCloud: (row, originId) => ({
     sync_uuid: row.sync_uuid,
     video_uuid: row.video_uuid || null,
-    status: row.status,
-    finished_at: row.finished_at,
+    status: row.status || 'coding',
+    finished_at: row.finished_at || null,
     home_team_uuid: row.home_team_uuid || null,
     away_team_uuid: row.away_team_uuid || null,
+    sync_offset: Number(row.sync_offset) || 0,
+    set_offsets: row.set_offsets || '{}',
+    lead_in: row.lead_in != null ? Number(row.lead_in) : 4,
+    lead_out: row.lead_out != null ? Number(row.lead_out) : 3,
     deleted: Boolean(Number(row.deleted)),
     origin_id: originId,
   }),
   applyRemote: async (entry) => {
     const now = new Date().toISOString();
-    const videoId = entry.video_uuid ? await ensureVideoByUuid(entry.video_uuid) : null;
+    const videoId = entry.video_uuid ? await ensureVideoByUuid(entry.video_uuid) : entry.localId || null;
+    if (!videoId) return null;
     const teamMap = await teamUuidToId();
     const homeTeamId = entry.home_team_uuid ? teamMap.get(String(entry.home_team_uuid)) || null : null;
     const awayTeamId = entry.away_team_uuid ? teamMap.get(String(entry.away_team_uuid)) || null : null;
@@ -449,25 +676,76 @@ const matchesCollection = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
        ON CONFLICT(video_id) DO UPDATE SET
          sync_uuid = excluded.sync_uuid, status = excluded.status, finished_at = excluded.finished_at,
-         home_team_id = excluded.home_team_id, away_team_id = excluded.away_team_id,
+         home_team_id = COALESCE(excluded.home_team_id, volley_matches.home_team_id),
+         away_team_id = COALESCE(excluded.away_team_id, volley_matches.away_team_id),
          home_team_uuid = excluded.home_team_uuid, away_team_uuid = excluded.away_team_uuid,
          deleted = excluded.deleted, dirty = 0, cloud_updated_at = excluded.cloud_updated_at`,
-      [videoId, entry.uuid, entry.status, entry.finished_at, homeTeamId, awayTeamId, entry.home_team_uuid || null, entry.away_team_uuid || null, entry.deleted ? 1 : 0, entry.cloudUpdatedAt || now, now]
+      [
+        videoId,
+        entry.uuid,
+        entry.status || 'coding',
+        entry.finished_at || null,
+        homeTeamId,
+        awayTeamId,
+        entry.home_team_uuid || null,
+        entry.away_team_uuid || null,
+        entry.deleted ? 1 : 0,
+        entry.cloudUpdatedAt || now,
+        now,
+      ]
     );
+    await runAsync(
+      `INSERT INTO volley_sync (video_id, sync_offset, set_offsets, lead_in, lead_out, updated_at)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(video_id) DO UPDATE SET
+         sync_offset = excluded.sync_offset,
+         set_offsets = excluded.set_offsets,
+         lead_in = excluded.lead_in,
+         lead_out = excluded.lead_out,
+         updated_at = CURRENT_TIMESTAMP`,
+      [
+        videoId,
+        Number(entry.sync_offset) || 0,
+        entry.set_offsets || '{}',
+        entry.lead_in != null ? Number(entry.lead_in) : 4,
+        entry.lead_out != null ? Number(entry.lead_out) : 3,
+      ]
+    );
+    if (homeTeamId || awayTeamId || entry.home_team_uuid || entry.away_team_uuid) {
+      await runAsync(
+        `UPDATE videos
+            SET home_team_id = COALESCE(?, home_team_id),
+                away_team_id = COALESCE(?, away_team_id),
+                home_team_uuid = COALESCE(?, home_team_uuid),
+                away_team_uuid = COALESCE(?, away_team_uuid)
+          WHERE id = ?`,
+        [homeTeamId, awayTeamId, entry.home_team_uuid || null, entry.away_team_uuid || null, videoId]
+      );
+    }
     return videoId;
   },
   adoptUuid: (localId, uuid) => runAsync('UPDATE volley_matches SET sync_uuid = ? WHERE video_id = ?', [uuid, localId]),
   deleteLocal: (localId) => runAsync('UPDATE volley_matches SET deleted = 1, dirty = 0 WHERE video_id = ?', [localId]),
-  settleLocal: (localId, cloudUpdatedAt) => runAsync('UPDATE volley_matches SET dirty = 0, cloud_updated_at = ? WHERE video_id = ?', [cloudUpdatedAt, localId]),
-  touchPushed: (uuid, cloudUpdatedAt) => runAsync('UPDATE volley_matches SET dirty = 0, cloud_updated_at = ? WHERE sync_uuid = ?', [cloudUpdatedAt, uuid]),
-  planMerge: ({ localRows, remoteRows, lastSyncAt }) => planMergeGeneric({ localRows, remoteRows, lastSyncAt, fields: MATCH_FIELDS }),
+  settleLocal: (localId, cloudUpdatedAt) =>
+    runAsync('UPDATE volley_matches SET dirty = 0, cloud_updated_at = ? WHERE video_id = ?', [cloudUpdatedAt, localId]),
+  touchPushed: (uuid, cloudUpdatedAt) =>
+    runAsync('UPDATE volley_matches SET dirty = 0, cloud_updated_at = ? WHERE sync_uuid = ?', [cloudUpdatedAt, uuid]),
+  planMerge: ({ localRows, remoteRows, lastSyncAt }) =>
+    planMergeGeneric({ localRows, remoteRows, lastSyncAt, fields: MATCH_FIELDS }),
   pendingCount: async () => {
     const r = await getAsync('SELECT COUNT(*) AS n FROM volley_matches WHERE dirty = 1', []);
     return r ? r.n : 0;
   },
-  statusCounts: async () => ({ active: 0, tombstones: 0 }),
+  statusCounts: async () => {
+    const active = await getAsync('SELECT COUNT(*) AS n FROM volley_matches WHERE COALESCE(deleted, 0) = 0', []);
+    const tombstones = await getAsync('SELECT COUNT(*) AS n FROM volley_matches WHERE COALESCE(deleted, 0) = 1', []);
+    return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
+  },
   onChanged: (applied, removed) => {
-    if (applied || removed) emitCollectionChanged('matches');
+    if (applied || removed) {
+      relinkTeamReferences().catch(() => {});
+      emitCollectionChanged('matches');
+    }
   },
 };
 
@@ -475,7 +753,16 @@ const matchesCollection = {
 // Six de départ par set (match_key 'video:<id>' → video_uuid partagé).
 // ---------------------------------------------------------------------------
 
-const SETUP_FIELDS = ['set_number', 'first_server', 'home_lineup', 'away_lineup'];
+const SETUP_FIELDS = [
+  'set_number',
+  'first_server',
+  'home_setter_pos',
+  'away_setter_pos',
+  'home_setter',
+  'away_setter',
+  'home_lineup',
+  'away_lineup',
+];
 
 const setupsCollection = {
   key: 'setups',
@@ -484,47 +771,104 @@ const setupsCollection = {
   envPrefix: 'TEAMS_SYNC',
   loadLocal: async () => {
     const rows = await allAsync("SELECT * FROM set_setups WHERE match_key LIKE 'video:%'", []);
+    if (!rows.length) return [];
     const idToUuid = await videoIdToUuid();
-    return rows.map((r) => {
+    const out = [];
+    for (const r of rows) {
+      if (!r.sync_uuid) {
+        r.sync_uuid = crypto.randomUUID();
+        await runAsync('UPDATE set_setups SET sync_uuid = ? WHERE id = ?', [r.sync_uuid, r.id]);
+      }
       const videoId = Number(String(r.match_key).slice('video:'.length));
-      return { ...r, video_id: videoId, video_uuid: idToUuid.get(videoId) || null };
-    });
+      out.push({
+        ...r,
+        video_id: videoId,
+        video_uuid: idToUuid.get(videoId) || null,
+        home_setter_pos: r.home_setter_pos || null,
+        away_setter_pos: r.away_setter_pos || null,
+        home_setter: r.home_setter == null ? null : Number(r.home_setter),
+        away_setter: r.away_setter == null ? null : Number(r.away_setter),
+      });
+    }
+    return out;
   },
   rowToCloud: (row, originId) => ({
     sync_uuid: row.sync_uuid,
     video_uuid: row.video_uuid || null,
     set_number: row.set_number,
-    first_server: row.first_server,
-    home_lineup: row.home_lineup,
-    away_lineup: row.away_lineup,
+    first_server: row.first_server || null,
+    home_setter_pos: row.home_setter_pos || null,
+    away_setter_pos: row.away_setter_pos || null,
+    home_setter: row.home_setter == null ? null : Number(row.home_setter),
+    away_setter: row.away_setter == null ? null : Number(row.away_setter),
+    home_lineup: row.home_lineup || null,
+    away_lineup: row.away_lineup || null,
     deleted: Boolean(Number(row.deleted)),
     origin_id: originId,
   }),
   applyRemote: async (entry) => {
     const now = new Date().toISOString();
     const videoId = entry.video_uuid ? await ensureVideoByUuid(entry.video_uuid) : null;
+    if (!videoId) return entry.localId || null;
     const matchKey = `video:${videoId}`;
     await runAsync(
-      `INSERT INTO set_setups (match_key, set_number, first_server, home_lineup, away_lineup, sync_uuid, deleted, dirty, cloud_updated_at, local_updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+      `INSERT INTO set_setups
+        (match_key, set_number, first_server, home_setter_pos, away_setter_pos,
+         home_setter, away_setter, home_lineup, away_lineup, sync_uuid, deleted, dirty, cloud_updated_at, local_updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
        ON CONFLICT(match_key, set_number) DO UPDATE SET
-         first_server = excluded.first_server, home_lineup = excluded.home_lineup,
-         away_lineup = excluded.away_lineup, sync_uuid = excluded.sync_uuid,
-         deleted = excluded.deleted, dirty = 0, cloud_updated_at = excluded.cloud_updated_at`,
-      [matchKey, entry.set_number, entry.first_server, entry.home_lineup, entry.away_lineup, entry.uuid, entry.deleted ? 1 : 0, entry.cloudUpdatedAt || now, now]
+         first_server = excluded.first_server,
+         home_setter_pos = excluded.home_setter_pos,
+         away_setter_pos = excluded.away_setter_pos,
+         home_setter = excluded.home_setter,
+         away_setter = excluded.away_setter,
+         home_lineup = excluded.home_lineup,
+         away_lineup = excluded.away_lineup,
+         sync_uuid = excluded.sync_uuid,
+         deleted = excluded.deleted,
+         dirty = 0,
+         cloud_updated_at = excluded.cloud_updated_at`,
+      [
+        matchKey,
+        entry.set_number,
+        entry.first_server || null,
+        entry.home_setter_pos || null,
+        entry.away_setter_pos || null,
+        entry.home_setter == null ? null : Number(entry.home_setter),
+        entry.away_setter == null ? null : Number(entry.away_setter),
+        entry.home_lineup || null,
+        entry.away_lineup || null,
+        entry.uuid,
+        entry.deleted ? 1 : 0,
+        entry.cloudUpdatedAt || now,
+        now,
+      ]
     );
     return entry.localId || null;
   },
   adoptUuid: (localId, uuid) => runAsync('UPDATE set_setups SET sync_uuid = ? WHERE id = ?', [uuid, localId]),
   deleteLocal: (localId) => runAsync('UPDATE set_setups SET deleted = 1, dirty = 0 WHERE id = ?', [localId]),
-  settleLocal: (localId, cloudUpdatedAt) => runAsync('UPDATE set_setups SET dirty = 0, cloud_updated_at = ? WHERE id = ?', [cloudUpdatedAt, localId]),
-  touchPushed: (uuid, cloudUpdatedAt) => runAsync('UPDATE set_setups SET dirty = 0, cloud_updated_at = ? WHERE sync_uuid = ?', [cloudUpdatedAt, uuid]),
-  planMerge: ({ localRows, remoteRows, lastSyncAt }) => planMergeGeneric({ localRows, remoteRows, lastSyncAt, fields: SETUP_FIELDS }),
+  settleLocal: (localId, cloudUpdatedAt) =>
+    runAsync('UPDATE set_setups SET dirty = 0, cloud_updated_at = ? WHERE id = ?', [cloudUpdatedAt, localId]),
+  touchPushed: (uuid, cloudUpdatedAt) =>
+    runAsync('UPDATE set_setups SET dirty = 0, cloud_updated_at = ? WHERE sync_uuid = ?', [cloudUpdatedAt, uuid]),
+  planMerge: ({ localRows, remoteRows, lastSyncAt }) =>
+    planMergeGeneric({ localRows, remoteRows, lastSyncAt, fields: SETUP_FIELDS }),
   pendingCount: async () => {
     const r = await getAsync('SELECT COUNT(*) AS n FROM set_setups WHERE dirty = 1', []);
     return r ? r.n : 0;
   },
-  statusCounts: async () => ({ active: 0, tombstones: 0 }),
+  statusCounts: async () => {
+    const active = await getAsync(
+      "SELECT COUNT(*) AS n FROM set_setups WHERE match_key LIKE 'video:%' AND COALESCE(deleted, 0) = 0",
+      []
+    );
+    const tombstones = await getAsync(
+      "SELECT COUNT(*) AS n FROM set_setups WHERE match_key LIKE 'video:%' AND COALESCE(deleted, 0) = 1",
+      []
+    );
+    return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
+  },
   onChanged: (applied, removed) => {
     if (applied || removed) emitCollectionChanged('setups');
   },
@@ -714,7 +1058,10 @@ const liveCollection = {
     const members = await allAsync('SELECT * FROM live_members ORDER BY id ASC', []);
     const actions = await allAsync('SELECT * FROM live_actions ORDER BY effective_time ASC, seq ASC, id ASC', []);
     const events = await allAsync('SELECT * FROM live_events ORDER BY COALESCE(set_number, 1) ASC, COALESCE(point_number, 0) ASC, id ASC', []);
-    const setups = await allAsync("SELECT * FROM set_setups WHERE match_key LIKE 'session:%' ORDER BY set_number ASC", []);
+    const setups = await allAsync(
+      "SELECT * FROM set_setups WHERE match_key LIKE 'session:%' AND COALESCE(deleted, 0) = 0 ORDER BY set_number ASC",
+      []
+    );
 
     const memberIdToUuid = new Map();
     const membersBySession = new Map();
@@ -1314,8 +1661,8 @@ const liveCollection = {
       await runAsync(
         `INSERT INTO set_setups
             (match_key, set_number, first_server, home_setter_pos, away_setter_pos,
-             home_setter, away_setter, home_lineup, away_lineup, local_updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             home_setter, away_setter, home_lineup, away_lineup, deleted, dirty, local_updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
          ON CONFLICT(match_key, set_number) DO UPDATE SET
            first_server = excluded.first_server,
            home_setter_pos = excluded.home_setter_pos,
@@ -1324,6 +1671,8 @@ const liveCollection = {
            away_setter = excluded.away_setter,
            home_lineup = excluded.home_lineup,
            away_lineup = excluded.away_lineup,
+           deleted = 0,
+           dirty = 0,
            local_updated_at = excluded.local_updated_at`,
         [
           matchKey,
@@ -1363,7 +1712,10 @@ const liveCollection = {
     return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
   },
   onChanged: (applied, removed) => {
-    if (applied || removed) emitCollectionChanged('live');
+    if (applied || removed) {
+      relinkTeamReferences().catch(() => {});
+      emitCollectionChanged('live');
+    }
   },
 };
 
@@ -1378,7 +1730,3 @@ module.exports = {
   setupsCollection,
   liveCollection,
 };
-
-
-
-

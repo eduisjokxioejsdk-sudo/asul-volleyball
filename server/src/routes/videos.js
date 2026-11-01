@@ -12,7 +12,7 @@ const { ensurePlayable, inspectVideo } = require('../proxy');
 
 const router = express.Router();
 
-// Partage à distance (métadonnées vidéo seulement, jamais les fichiers).
+// Partage à distance (métadonnées vidéo + liens YouTube, jamais les fichiers lourds).
 mountSyncRoutes(router, syncHub.videos);
 
 // Dossier de données (positionné par config.js ; repli sur server/ si absent).
@@ -26,21 +26,10 @@ fs.ensureDirSync(proxyDir);
 
 // ---------------------------------------------------------------------------
 // Préparation des vidéos pour la lecture dans le navigateur.
-//
-// Un fichier uploadé n'est pas toujours décodable par un élément <video>
-// (conteneur fragmenté, codec exotique, index en fin de fichier). Dans ce cas
-// le lecteur tourne à l'infini sans émettre d'erreur. On détecte donc le
-// problème puis on produit une version lisible dans uploads/trimmed/, pointée
-// par videos.filepath_proxy — que le client utilise déjà en priorité.
 // ---------------------------------------------------------------------------
 
-// Préparation en cours, par id de vidéo (le résultat est aussi persisté dans
-// videos.proxy_status / videos.proxy_error pour survivre à un redémarrage).
 const playableJobs = new Map();
-// File d'attente : une seule préparation à la fois pour ne pas saturer le
-// disque et le CPU (les fichiers font plusieurs Go).
 let playableQueue = Promise.resolve();
-// Diagnoses déjà calculés, par id de vidéo (un probe ffmpeg coûte quelques s).
 const playableDiagnoses = new Map();
 
 /** Enregistre le statut de préparation d'une vidéo en base. */
@@ -59,11 +48,6 @@ function getVideoById(videoId) {
   });
 }
 
-/**
- * Diagnose (sans rien produire) : la vidéo est-elle lisible telle quelle ?
- * Le résultat est mis en cache car un probe ffmpeg coûte quelques secondes.
- * @returns {Promise<object>} verdict enrichi du mode de correction conseillé.
- */
 async function diagnoseVideo(videoId, { force = false } = {}) {
   if (!force && playableDiagnoses.has(videoId)) return playableDiagnoses.get(videoId);
   const video = await getVideoById(videoId);
@@ -74,21 +58,13 @@ async function diagnoseVideo(videoId, { force = false } = {}) {
     reason: verdict.reason,
     probe: verdict.probe,
     container: verdict.container,
-    // Conservé pour pouvoir réutiliser ce verdict lors de la préparation
-    // (évite une seconde sonde ffmpeg sur des fichiers de plusieurs Go).
     copyPossible: verdict.copyPossible,
-    // Ce que produirait une préparation : remux (rapide, sans perte) ou
-    // transcodage proxy 480p (lent, nécessaire si le codec n'est pas supporté).
     mode: verdict.playable ? 'none' : verdict.copyPossible ? 'remux' : 'transcode',
   };
   playableDiagnoses.set(videoId, result);
   return result;
 }
 
-/**
- * Travail de préparation d'une vidéo. Ne rejette jamais : renvoie toujours un
- * objet de statut, pour que la file d'attente et les routes restent simples.
- */
 async function runPrepare(videoId, force) {
   let video;
   try {
@@ -108,7 +84,6 @@ async function runPrepare(videoId, force) {
 
   setProxyStatus(videoId, 'processing');
 
-  // Une version déjà préparée et toujours présente est réutilisée telle quelle.
   if (!force && video.filepath_proxy && fs.existsSync(video.filepath_proxy)) {
     setProxyStatus(videoId, 'ready', video.proxy_error || null);
     return { status: 'ready', mode: 'cached', reason: video.proxy_error || null };
@@ -116,18 +91,12 @@ async function runPrepare(videoId, force) {
 
   const outPath = path.join(proxyDir, `playable_${uuidv4()}.mp4`);
   try {
-    // diagnoseVideo met son résultat en cache : une préparation lancée juste
-    // après un diagnostic ne resonde pas le fichier (la sonde coûte plusieurs
-    // dizaines de secondes sur un fichier de quelques Go). Un `force` resonde,
-    // puisque l'utilisateur demande explicitement à tout reprendre.
     const verdict = await diagnoseVideo(videoId, { force });
     const result = await ensurePlayable(video.filepath, outPath, verdict);
 
-    // Rien à faire : le fichier d'origine est déjà lisible par le navigateur.
     if (!result.needed) {
       fs.remove(outPath).catch(() => {});
       playableDiagnoses.delete(videoId);
-      // Un proxy devenu inutile (fichier source remplacé depuis) est oublié.
       const staleProxy = video.filepath_proxy && !fs.existsSync(video.filepath_proxy);
       db.run(
         `UPDATE videos SET proxy_status = 'not_needed', proxy_error = NULL${staleProxy ? ', filepath_proxy = NULL' : ''} WHERE id = ?`,
@@ -146,7 +115,6 @@ async function runPrepare(videoId, force) {
       [outPath, 'ready', result.reason, new Date().toISOString(), videoId],
       () => {}
     );
-    // L'ancienne version préparée devient inutile.
     if (previousProxy && previousProxy !== outPath) fs.remove(previousProxy).catch(() => {});
     emitCollectionChanged('videos');
     console.log(`[ASUL] Vidéo ${videoId} préparée (${result.mode}) : ${path.basename(outPath)}`);
@@ -161,18 +129,11 @@ async function runPrepare(videoId, force) {
   }
 }
 
-/**
- * Lance (ou rejoint) la préparation d'une version lisible pour `videoId`.
- * Les préparations sont sérialisées ; un appel répété rejoint le travail en
- * cours au lieu d'en démarrer un second.
- * @returns {Promise<{status:string,mode?:string,reason?:string,error?:string}>}
- */
 function preparePlayableVideo(videoId, { force = false } = {}) {
   const existing = playableJobs.get(videoId);
   if (existing) return existing;
 
   const job = playableQueue.then(() => runPrepare(videoId, force));
-  // La chaîne ne doit jamais se rompre, même si une préparation échoue.
   playableQueue = job.then(() => {}, () => {});
   playableJobs.set(videoId, job);
   job.then(
@@ -181,7 +142,6 @@ function preparePlayableVideo(videoId, { force = false } = {}) {
   );
   return job;
 }
-
 
 // Configure multer for video uploads
 const storage = multer.diskStorage({
@@ -192,11 +152,9 @@ const storage = multer.diskStorage({
     const ext = path.extname(file.originalname);
     const uniqueName = `${uuidv4()}${ext}`;
     cb(null, uniqueName);
-  }
+  },
 });
 
-// Extensions vidéo acceptées (le filtre MIME seul rejette les .mkv / .avi
-// envoyés en « application/octet-stream », très fréquent sous Windows).
 const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mpeg', '.mpg', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
 
 const upload = multer({
@@ -212,12 +170,10 @@ const upload = multer({
       cb(new Error(`Format vidéo non pris en charge : ${ext || file.mimetype}. Formats acceptés : mp4, mpeg, mov, avi, mkv, webm, m4v.`));
     }
   },
-  // Limite de taille : 100 Go max (permet l'upload de très grosses vidéos,
-  // ex. fichiers de 12 Go). Passer à Infinity pour supprimer toute limite.
-  limits: { fileSize: 100 * 1024 * 1024 * 1024 }
+  limits: { fileSize: 100 * 1024 * 1024 * 1024 },
 });
 
-// Upload a video (or create a match with 0, 1, or 2 camera angles)
+// Upload a video (or create a match with a YouTube link or 0, 1, or 2 camera angles)
 router.post('/upload', authenticateToken, (req, res) => {
   upload.fields([
     { name: 'video', maxCount: 1 },
@@ -233,6 +189,7 @@ router.post('/upload', authenticateToken, (req, res) => {
     const team1_name = req.body.team1_name || 'Équipe 1';
     const team2_name = req.body.team2_name || 'Équipe 2';
     const display_name = req.body.display_name || `${team1_name} vs ${team2_name}`;
+    const youtube_url = req.body.youtube_url ? String(req.body.youtube_url).trim() || null : null;
     const home_team_id = req.body.home_team_id ? Number(req.body.home_team_id) : null;
     const away_team_id = req.body.away_team_id ? Number(req.body.away_team_id) : null;
     const angle2_offset = req.body.angle2_offset ? Number(req.body.angle2_offset) : 0;
@@ -242,69 +199,105 @@ router.post('/upload', authenticateToken, (req, res) => {
     const filepath = file1 ? file1.path : '';
     const filename_angle2 = file2 ? file2.filename : null;
     const filepath_angle2 = file2 ? file2.path : null;
-    const status = file1 ? 'uploaded' : 'pending_video';
+    const status = file1 || youtube_url ? 'uploaded' : 'pending_video';
+    const nowIso = new Date().toISOString();
+    const videoSyncUuid = uuidv4();
 
-    db.run(
-      `INSERT INTO videos (
-        user_id, filename, original_name, display_name, filepath,
-        filename_angle2, filepath_angle2, angle2_offset,
-        team1_name, team2_name, home_team_id, away_team_id,
-        status, sync_uuid, dirty, local_updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-      [
-        req.user.id,
-        filename,
-        original_name,
-        display_name,
-        filepath,
-        filename_angle2,
-        filepath_angle2,
-        angle2_offset,
-        team1_name,
-        team2_name,
-        home_team_id,
-        away_team_id,
-        status,
-        uuidv4(),
-        new Date().toISOString(),
-      ],
-      function (dbErr) {
-        if (dbErr) {
-          return res.status(500).json({ error: 'Failed to save video metadata' });
-        }
-
-        const videoId = this.lastID;
-
-        if (home_team_id || away_team_id) {
-          db.run(
-            'INSERT OR REPLACE INTO volley_matches (video_id, home_team_id, away_team_id) VALUES (?, ?, ?)',
-            [this.lastID, home_team_id, away_team_id],
-            () => {}
+    const teamIds = [home_team_id, away_team_id].filter(Boolean);
+    const loadTeamUuids = (cb) => {
+      if (!teamIds.length) return cb(null, null);
+      db.all(
+        `SELECT id, sync_uuid FROM teams WHERE id IN (${teamIds.map(() => '?').join(', ')})`,
+        teamIds,
+        (tErr, tRows) => {
+          if (tErr) return cb(null, null);
+          const map = new Map((tRows || []).map((r) => [Number(r.id), r.sync_uuid]));
+          cb(
+            home_team_id ? map.get(home_team_id) || null : null,
+            away_team_id ? map.get(away_team_id) || null : null
           );
         }
-        syncHub.videos.syncNow({ reason: 'upload' }).catch(() => {});
-        emitCollectionChanged('videos');
-        // Prépare tout de suite une version lisible par le navigateur si le
-        // fichier ne l'est pas : sinon le lecteur tournerait à l'infini, sans
-        // message d'erreur (conteneur fragmenté, codec non décodable…).
-        if (file1) preparePlayableVideo(videoId).catch(() => {});
-        res.status(201).json({
-          id: this.lastID,
-          user_id: req.user.id,
+      );
+    };
+
+    loadTeamUuids((home_team_uuid, away_team_uuid) => {
+      db.run(
+        `INSERT INTO videos (
+          user_id, filename, original_name, display_name, youtube_url, filepath,
+          filename_angle2, filepath_angle2, angle2_offset,
+          team1_name, team2_name, home_team_id, away_team_id, home_team_uuid, away_team_uuid,
+          status, sync_uuid, dirty, deleted, local_updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
+        [
+          req.user.id,
           filename,
           original_name,
           display_name,
+          youtube_url,
           filepath,
           filename_angle2,
           filepath_angle2,
           angle2_offset,
           team1_name,
           team2_name,
+          home_team_id,
+          away_team_id,
+          home_team_uuid,
+          away_team_uuid,
           status,
-          duration: null,
-        });
-      }
-    );
+          videoSyncUuid,
+          nowIso,
+        ],
+        function (dbErr) {
+          if (dbErr) {
+            return res.status(500).json({ error: 'Failed to save video metadata' });
+          }
+
+          const videoId = this.lastID;
+
+          db.run(
+            `INSERT INTO volley_matches
+              (video_id, sync_uuid, status, home_team_id, away_team_id, home_team_uuid, away_team_uuid, deleted, dirty, local_updated_at)
+             VALUES (?, ?, 'coding', ?, ?, ?, ?, 0, 1, ?)
+             ON CONFLICT(video_id) DO UPDATE SET
+               home_team_id = excluded.home_team_id,
+               away_team_id = excluded.away_team_id,
+               home_team_uuid = excluded.home_team_uuid,
+               away_team_uuid = excluded.away_team_uuid,
+               dirty = 1,
+               local_updated_at = excluded.local_updated_at`,
+            [videoId, uuidv4(), home_team_id, away_team_id, home_team_uuid, away_team_uuid, nowIso],
+            () => {
+              syncHub.videos.syncNow({ reason: 'upload' }).catch(() => {});
+              syncHub.matches.syncNow({ reason: 'upload' }).catch(() => {});
+            }
+          );
+
+          emitCollectionChanged('videos');
+          emitCollectionChanged('matches');
+          if (file1) preparePlayableVideo(videoId).catch(() => {});
+          res.status(201).json({
+            id: videoId,
+            sync_uuid: videoSyncUuid,
+            user_id: req.user.id,
+            filename,
+            original_name,
+            display_name,
+            youtube_url,
+            filepath,
+            filename_angle2,
+            filepath_angle2,
+            angle2_offset,
+            team1_name,
+            team2_name,
+            home_team_id,
+            away_team_id,
+            status,
+            duration: null,
+          });
+        }
+      );
+    });
   });
 });
 
@@ -321,13 +314,12 @@ router.post('/:id/upload-angle', authenticateToken, (req, res) => {
     const angle = String(req.body.angle || '2') === '1' ? '1' : '2';
     const nowIso = new Date().toISOString();
 
-    db.get('SELECT * FROM videos WHERE id = ? AND user_id = ?', [req.params.id, req.user.id], (getErr, video) => {
+    db.get('SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0', [req.params.id], (getErr, video) => {
       if (getErr) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
 
       if (angle === '1') {
         if (video.filepath) fs.remove(video.filepath).catch(() => {});
-        // La version préparée correspondait à l'ancien fichier : on l'oublie.
         if (video.filepath_proxy) fs.remove(video.filepath_proxy).catch(() => {});
         playableDiagnoses.delete(video.id);
         db.run(
@@ -339,8 +331,8 @@ router.post('/:id/upload-angle', authenticateToken, (req, res) => {
           [req.file.filename, req.file.originalname, req.file.path, nowIso, video.id],
           (upErr) => {
             if (upErr) return res.status(500).json({ error: 'Failed to update Angle 1' });
-            // Nouvelle source : on relance la préparation d'une version lisible.
             preparePlayableVideo(video.id).catch(() => {});
+            syncHub.videos.syncNow({ reason: 'upload-angle' }).catch(() => {});
             db.get('SELECT * FROM videos WHERE id = ?', [video.id], (e2, updated) => {
               emitCollectionChanged('videos');
               res.json({ video: updated });
@@ -357,6 +349,7 @@ router.post('/:id/upload-angle', authenticateToken, (req, res) => {
           [req.file.filename, req.file.path, offset, nowIso, video.id],
           (upErr) => {
             if (upErr) return res.status(500).json({ error: 'Failed to update Angle 2' });
+            syncHub.videos.syncNow({ reason: 'upload-angle' }).catch(() => {});
             db.get('SELECT * FROM videos WHERE id = ?', [video.id], (e2, updated) => {
               emitCollectionChanged('videos');
               res.json({ video: updated });
@@ -368,16 +361,16 @@ router.post('/:id/upload-angle', authenticateToken, (req, res) => {
   });
 });
 
-// Get all videos for the current user
+// Get all videos (partagées entre tous les utilisateurs et postes)
 router.get('/', authenticateToken, (req, res) => {
   db.all(
-    'SELECT * FROM videos WHERE user_id = ? ORDER BY created_at DESC',
-    [req.user.id],
+    'SELECT * FROM videos WHERE COALESCE(deleted, 0) = 0 ORDER BY created_at DESC, id DESC',
+    [],
     (err, rows) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
-      res.json({ videos: rows });
+      res.json({ videos: rows || [] });
     }
   );
 });
@@ -385,8 +378,8 @@ router.get('/', authenticateToken, (req, res) => {
 // Get a specific video
 router.get('/:id', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
     (err, video) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
@@ -403,12 +396,10 @@ router.get('/:id', authenticateToken, (req, res) => {
 // Préparation d'une version lisible par le navigateur (voir ../proxy.js)
 // ---------------------------------------------------------------------------
 
-// Diagnose : explique pourquoi la vidéo ne démarre pas, sans rien produire.
-// Un peu coûteux (sonde ffmpeg) d'où le verbe POST et un cache côté serveur.
 router.post('/:id/playable/diagnose', authenticateToken, (req, res) => {
   db.get(
-    'SELECT id FROM videos WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT id FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -419,12 +410,10 @@ router.post('/:id/playable/diagnose', authenticateToken, (req, res) => {
   );
 });
 
-// État de la préparation. Léger (lecture base + existence du fichier), il est
-// donc interrogeable en boucle par le client pendant un remux / transcodage.
 router.get('/:id/playable/status', authenticateToken, (req, res) => {
   db.get(
-    'SELECT id, filepath_proxy, proxy_status, proxy_error FROM videos WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT id, filepath_proxy, proxy_status, proxy_error FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -432,7 +421,6 @@ router.get('/:id/playable/status', authenticateToken, (req, res) => {
       const hasProxy = Boolean(video.filepath_proxy && fs.existsSync(video.filepath_proxy));
       const running = playableJobs.has(video.id);
       let status = video.proxy_status || (hasProxy ? 'ready' : null);
-      // Préparation interrompue (redémarrage du serveur) : on repart de zéro.
       if (status === 'processing' && !running) status = null;
       if (running) status = 'processing';
 
@@ -447,12 +435,10 @@ router.get('/:id/playable/status', authenticateToken, (req, res) => {
   );
 });
 
-// Prépare (ou répare) une version lisible. Réponse immédiate (202) : le travail
-// peut durer plusieurs minutes, le client suit l'avancement via le statut.
 router.post('/:id/playable', authenticateToken, (req, res) => {
   db.get(
-    'SELECT id FROM videos WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT id FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -463,11 +449,11 @@ router.post('/:id/playable', authenticateToken, (req, res) => {
   );
 });
 
-// Delete a video
+// Delete a video (pierre tombale propagée au Cloud + nettoyage des fichiers locaux)
 router.delete('/:id', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
     (err, video) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
@@ -476,31 +462,39 @@ router.delete('/:id', authenticateToken, (req, res) => {
         return res.status(404).json({ error: 'Video not found' });
       }
 
-      // Supprime les fichiers associés (source + proxy + 2e angle).
       if (video.filepath) fs.remove(video.filepath).catch(() => {});
-      if (video.filepath_proxy) {
-        fs.remove(video.filepath_proxy).catch(() => {});
-      }
-      // Le 2e angle de caméra : sans cela, le fichier reste orphelin sur le disque.
-      if (video.filepath_angle2) {
-        fs.remove(video.filepath_angle2).catch(() => {});
-      }
-      // Delete database records
-      db.run('DELETE FROM videos WHERE id = ?', [video.id], function (err) {
-        if (err) {
-          return res.status(500).json({ error: 'Failed to delete video' });
+      if (video.filepath_proxy) fs.remove(video.filepath_proxy).catch(() => {});
+      if (video.filepath_angle2) fs.remove(video.filepath_angle2).catch(() => {});
+
+      const nowIso = new Date().toISOString();
+      const syncUuid = video.sync_uuid || uuidv4();
+      db.run(
+        `UPDATE videos
+            SET sync_uuid = ?, deleted = 1, dirty = 1, local_updated_at = ?,
+                filename = '', filepath = '', filepath_proxy = NULL, filename_angle2 = NULL, filepath_angle2 = NULL
+          WHERE id = ?`,
+        [syncUuid, nowIso, video.id],
+        function (delErr) {
+          if (delErr) {
+            return res.status(500).json({ error: 'Failed to delete video' });
+          }
+          db.run(
+            'UPDATE volley_matches SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_id = ?',
+            [nowIso, video.id],
+            () => {
+              syncHub.videos.syncNow({ reason: 'delete' }).catch(() => {});
+              syncHub.matches.syncNow({ reason: 'delete' }).catch(() => {});
+            }
+          );
+          emitCollectionChanged('videos');
+          emitCollectionChanged('matches');
+          res.json({ message: 'Video deleted successfully' });
         }
-        emitCollectionChanged('videos');
-        res.json({ message: 'Video deleted successfully' });
-      });
+      );
     }
   );
 });
 
-// Options de diffusion des vidéos : les requêtes partielles sont indispensables
-// (sans `Accept-Ranges`, un fichier de plusieurs Go doit être entièrement
-// téléchargé avant le démarrage de la lecture) et le cache est désactivé car le
-// contenu peut être remplacé par une version préparée.
 const STREAM_OPTIONS = {
   acceptRanges: true,
   cacheControl: false,
@@ -513,7 +507,6 @@ const STREAM_OPTIONS = {
 
 // Stream video file (local storage)
 router.get('/file/:filename', (req, res) => {
-  // path.basename : interdit toute traversée de dossier via le paramètre.
   const filePath = path.join(uploadsDir, path.basename(req.params.filename));
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File not found' });
@@ -521,7 +514,7 @@ router.get('/file/:filename', (req, res) => {
   res.sendFile(filePath, STREAM_OPTIONS);
 });
 
-// Stream proxy video file (version légère / préparée pour la lecture)
+// Stream proxy video file
 router.get('/proxy/:filename', (req, res) => {
   const filePath = path.join(proxyDir, path.basename(req.params.filename));
   if (!fs.existsSync(filePath)) {
@@ -530,13 +523,13 @@ router.get('/proxy/:filename', (req, res) => {
   res.sendFile(filePath, STREAM_OPTIONS);
 });
 
-// Update video (rename, color, angle2_offset)
+// Update video (rename, color, angle2_offset, youtube_url, teams, duration)
 router.patch('/:id', authenticateToken, (req, res) => {
-  const { display_name, color, angle2_offset } = req.body;
-  
+  const { display_name, color, angle2_offset, youtube_url, team1_name, team2_name, duration, status } = req.body || {};
+
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
     (err, video) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
@@ -560,23 +553,57 @@ router.patch('/:id', authenticateToken, (req, res) => {
         updates.push('angle2_offset = ?');
         values.push(Number(angle2_offset) || 0);
       }
+      if (youtube_url !== undefined) {
+        const cleanYt = youtube_url ? String(youtube_url).trim() || null : null;
+        updates.push('youtube_url = ?');
+        values.push(cleanYt);
+        if (cleanYt && video.status === 'pending_video' && status === undefined) {
+          updates.push("status = 'uploaded'");
+        }
+      }
+      if (team1_name !== undefined) {
+        updates.push('team1_name = ?');
+        values.push(team1_name);
+      }
+      if (team2_name !== undefined) {
+        updates.push('team2_name = ?');
+        values.push(team2_name);
+      }
+      if (duration !== undefined) {
+        updates.push('duration = ?');
+        values.push(duration == null ? null : Number(duration));
+      }
+      if (status !== undefined) {
+        updates.push('status = ?');
+        values.push(status);
+      }
 
       if (updates.length === 0) {
         return res.status(400).json({ error: 'No updates provided' });
       }
 
+      if (!video.sync_uuid) {
+        updates.push('sync_uuid = ?');
+        values.push(uuidv4());
+      }
+      updates.push('dirty = 1');
+      updates.push('local_updated_at = ?');
+      values.push(new Date().toISOString());
+
       values.push(req.params.id);
       const query = `UPDATE videos SET ${updates.join(', ')} WHERE id = ?`;
-      
-      db.run(query, values, function (err) {
-        if (err) {
+
+      db.run(query, values, function (upErr) {
+        if (upErr) {
           return res.status(500).json({ error: 'Failed to update video' });
         }
+        syncHub.videos.syncNow({ reason: 'patch' }).catch(() => {});
+        emitCollectionChanged('videos');
         db.get(
           'SELECT * FROM videos WHERE id = ?',
           [req.params.id],
-          (err, updatedVideo) => {
-            if (err) {
+          (err2, updatedVideo) => {
+            if (err2) {
               return res.status(500).json({ error: 'Database error' });
             }
             res.json({ video: updatedVideo });
@@ -590,25 +617,19 @@ router.patch('/:id', authenticateToken, (req, res) => {
 // Add video to folder
 router.post('/:id/folders', authenticateToken, (req, res) => {
   const { folder_id } = req.body;
-  
+
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
     (err, video) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      if (!video) {
-        return res.status(404).json({ error: 'Video not found' });
-      }
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
 
       db.run(
         'INSERT OR IGNORE INTO video_folders (video_id, folder_id) VALUES (?, ?)',
         [req.params.id, folder_id],
-        function (err) {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to add video to folder' });
-          }
+        function (insErr) {
+          if (insErr) return res.status(500).json({ error: 'Failed to add video to folder' });
           res.json({ message: 'Video added to folder' });
         }
       );
@@ -619,23 +640,17 @@ router.post('/:id/folders', authenticateToken, (req, res) => {
 // Remove video from folder
 router.delete('/:id/folders/:folderId', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
     (err, video) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      if (!video) {
-        return res.status(404).json({ error: 'Video not found' });
-      }
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
 
       db.run(
         'DELETE FROM video_folders WHERE video_id = ? AND folder_id = ?',
         [req.params.id, req.params.folderId],
-        function (err) {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to remove video from folder' });
-          }
+        function (delErr) {
+          if (delErr) return res.status(500).json({ error: 'Failed to remove video from folder' });
           res.json({ message: 'Video removed from folder' });
         }
       );
@@ -646,48 +661,40 @@ router.delete('/:id/folders/:folderId', authenticateToken, (req, res) => {
 // Get folders for a video
 router.get('/:id/folders', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
     (err, video) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      if (!video) {
-        return res.status(404).json({ error: 'Video not found' });
-      }
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
 
       db.all(
         `SELECT f.* FROM folders f
          INNER JOIN video_folders vf ON f.id = vf.folder_id
-         WHERE vf.video_id = ? AND f.user_id = ?
+         WHERE vf.video_id = ?
          ORDER BY f.name ASC`,
-        [req.params.id, req.user.id],
-        (err, folders) => {
-          if (err) {
-            return res.status(500).json({ error: 'Database error' });
-          }
-          res.json({ folders });
+        [req.params.id],
+        (fErr, folders) => {
+          if (fErr) return res.status(500).json({ error: 'Database error' });
+          res.json({ folders: folders || [] });
         }
       );
     }
   );
 });
 
-// Get all folders for the current user with video count
+// Get all folders with video count
 router.get('/folders/all', authenticateToken, (req, res) => {
   db.all(
-    `SELECT f.*, COUNT(vf.video_id) as video_count 
+    `SELECT f.*, COUNT(v.id) as video_count 
      FROM folders f
      LEFT JOIN video_folders vf ON f.id = vf.folder_id
-     WHERE f.user_id = ?
+     LEFT JOIN videos v ON v.id = vf.video_id AND COALESCE(v.deleted, 0) = 0
      GROUP BY f.id
      ORDER BY f.name ASC`,
-    [req.user.id],
+    [],
     (err, rows) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      res.json({ folders: rows });
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json({ folders: rows || [] });
     }
   );
 });
@@ -695,27 +702,21 @@ router.get('/folders/all', authenticateToken, (req, res) => {
 // Get videos in a folder
 router.get('/folders/:id/videos', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM folders WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
+    'SELECT * FROM folders WHERE id = ?',
+    [req.params.id],
     (err, folder) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      if (!folder) {
-        return res.status(404).json({ error: 'Folder not found' });
-      }
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!folder) return res.status(404).json({ error: 'Folder not found' });
 
       db.all(
         `SELECT v.* FROM videos v
          INNER JOIN video_folders vf ON v.id = vf.video_id
-         WHERE vf.folder_id = ? AND v.user_id = ?
+         WHERE vf.folder_id = ? AND COALESCE(v.deleted, 0) = 0
          ORDER BY v.created_at DESC`,
-        [req.params.id, req.user.id],
-        (err, videos) => {
-          if (err) {
-            return res.status(500).json({ error: 'Database error' });
-          }
-          res.json({ videos });
+        [req.params.id],
+        (vErr, videos) => {
+          if (vErr) return res.status(500).json({ error: 'Database error' });
+          res.json({ videos: videos || [] });
         }
       );
     }
@@ -725,28 +726,17 @@ router.get('/folders/:id/videos', authenticateToken, (req, res) => {
 // Create a folder
 router.post('/folders', authenticateToken, (req, res) => {
   const { name, color, parent_folder_id } = req.body;
-  
-  if (!name) {
-    return res.status(400).json({ error: 'Folder name is required' });
-  }
+  if (!name) return res.status(400).json({ error: 'Folder name is required' });
 
   db.run(
     'INSERT INTO folders (user_id, name, color, parent_folder_id) VALUES (?, ?, ?, ?)',
     [req.user.id, name, color || '#1a73e8', parent_folder_id || null],
     function (err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to create folder' });
-      }
-      db.get(
-        'SELECT * FROM folders WHERE id = ?',
-        [this.lastID],
-        (err, folder) => {
-          if (err) {
-            return res.status(500).json({ error: 'Database error' });
-          }
-          res.status(201).json({ folder });
-        }
-      );
+      if (err) return res.status(500).json({ error: 'Failed to create folder' });
+      db.get('SELECT * FROM folders WHERE id = ?', [this.lastID], (err2, folder) => {
+        if (err2) return res.status(500).json({ error: 'Database error' });
+        res.status(201).json({ folder });
+      });
     }
   );
 });
@@ -754,85 +744,48 @@ router.post('/folders', authenticateToken, (req, res) => {
 // Update a folder
 router.patch('/folders/:id', authenticateToken, (req, res) => {
   const { name, color } = req.body;
-  
-  db.get(
-    'SELECT * FROM folders WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
-    (err, folder) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      if (!folder) {
-        return res.status(404).json({ error: 'Folder not found' });
-      }
 
-      const updates = [];
-      const values = [];
+  db.get('SELECT * FROM folders WHERE id = ?', [req.params.id], (err, folder) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+    if (!folder) return res.status(404).json({ error: 'Folder not found' });
 
-      if (name !== undefined) {
-        updates.push('name = ?');
-        values.push(name);
-      }
-      if (color !== undefined) {
-        updates.push('color = ?');
-        values.push(color);
-      }
-
-      if (updates.length === 0) {
-        return res.status(400).json({ error: 'No updates provided' });
-      }
-
-      values.push(req.params.id);
-      const query = `UPDATE folders SET ${updates.join(', ')} WHERE id = ?`;
-      
-      db.run(query, values, function (err) {
-        if (err) {
-          return res.status(500).json({ error: 'Failed to update folder' });
-        }
-        db.get(
-          'SELECT * FROM folders WHERE id = ?',
-          [req.params.id],
-          (err, updatedFolder) => {
-            if (err) {
-              return res.status(500).json({ error: 'Database error' });
-            }
-            res.json({ folder: updatedFolder });
-          }
-        );
-      });
+    const updates = [];
+    const values = [];
+    if (name !== undefined) {
+      updates.push('name = ?');
+      values.push(name);
     }
-  );
+    if (color !== undefined) {
+      updates.push('color = ?');
+      values.push(color);
+    }
+    if (updates.length === 0) return res.status(400).json({ error: 'No updates provided' });
+
+    values.push(req.params.id);
+    db.run(`UPDATE folders SET ${updates.join(', ')} WHERE id = ?`, values, function (upErr) {
+      if (upErr) return res.status(500).json({ error: 'Failed to update folder' });
+      db.get('SELECT * FROM folders WHERE id = ?', [req.params.id], (err2, updatedFolder) => {
+        if (err2) return res.status(500).json({ error: 'Database error' });
+        res.json({ folder: updatedFolder });
+      });
+    });
+  });
 });
 
 // Delete a folder
 router.delete('/folders/:id', authenticateToken, (req, res) => {
-  db.get(
-    'SELECT * FROM folders WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id],
-    (err, folder) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      if (!folder) {
-        return res.status(404).json({ error: 'Folder not found' });
-      }
+  db.get('SELECT * FROM folders WHERE id = ?', [req.params.id], (err, folder) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+    if (!folder) return res.status(404).json({ error: 'Folder not found' });
 
-      // Remove all video-folder relationships for this folder
-      db.run('DELETE FROM video_folders WHERE folder_id = ?', [req.params.id], function (err) {
-        if (err) {
-          return res.status(500).json({ error: 'Failed to remove videos from folder' });
-        }
-
-        // Delete the folder
-        db.run('DELETE FROM folders WHERE id = ?', [req.params.id], function (err) {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to delete folder' });
-          }
-          res.json({ message: 'Folder deleted successfully' });
-        });
+    db.run('DELETE FROM video_folders WHERE folder_id = ?', [req.params.id], function (delVfErr) {
+      if (delVfErr) return res.status(500).json({ error: 'Failed to remove videos from folder' });
+      db.run('DELETE FROM folders WHERE id = ?', [req.params.id], function (delFErr) {
+        if (delFErr) return res.status(500).json({ error: 'Failed to delete folder' });
+        res.json({ message: 'Folder deleted successfully' });
       });
-    }
-  );
+    });
+  });
 });
 
 module.exports = router;

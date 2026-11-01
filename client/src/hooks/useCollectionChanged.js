@@ -9,22 +9,29 @@ import { useEffect, useRef } from 'react';
 import { createSocket } from '../services/liveSocket';
 
 /**
- * @param {string} key        clé de collection (ex. 'trajectories', 'videos').
- * @param {() => void} onChanged  rappel appelé à chaque notification.
+ * @param {string|string[]} key        clé(s) de collection (ex. 'trajectories', 'videos').
+ * @param {() => void} onChanged       rappel appelé à chaque notification.
  */
 export default function useCollectionChanged(key, onChanged) {
   const handlerRef = useRef(onChanged);
   handlerRef.current = onChanged;
+  const keysSig = Array.isArray(key) ? key.join(',') : String(key || '');
 
   useEffect(() => {
+    const list = keysSig.split(',').filter(Boolean);
+    if (!list.length) return undefined;
     const socket = createSocket();
     const handle = () => {
       if (handlerRef.current) handlerRef.current();
     };
-    socket.on(`${key}:changed`, handle);
+    for (const k of list) socket.on(`${k}:changed`, handle);
     return () => {
-      socket.off(`${key}:changed`, handle);
+      for (const k of list) socket.off(`${k}:changed`, handle);
       socket.disconnect();
     };
-  }, [key]);
+  }, [keysSig]);
+}
+
+export function useOnCollectionsChanged(keys, onChanged) {
+  return useCollectionChanged(keys, onChanged);
 }

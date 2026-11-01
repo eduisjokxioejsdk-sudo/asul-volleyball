@@ -9,6 +9,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { formatTimecode } from '../utils/datavolley';
+import SmartVideoPlayer from '../components/SmartVideoPlayer';
+import { extractYouTubeId } from '../utils/youtube';
 
 const CHANNEL_NAME = 'pancake_video_sync';
 
@@ -153,9 +155,10 @@ export default function DetachedVideoPage() {
       {/* Zone vidéo plein écran */}
       <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
         {videoSrc ? (
-          <video
+          <SmartVideoPlayer
             ref={videoRef}
-            src={videoSrc}
+            src={extractYouTubeId(videoSrc) ? null : videoSrc}
+            youtubeUrl={extractYouTubeId(videoSrc) ? videoSrc : null}
             controls
             style={{ width: '100%', height: 'calc(100vh - 54px)', objectFit: 'contain' }}
             onLoadedMetadata={(e) => {
