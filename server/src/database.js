@@ -121,6 +121,14 @@ db.serialize(() => {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
+  // Progression Académie privée, liée au compte et jamais partagée globalement.
+  db.run(`CREATE TABLE IF NOT EXISTS academy_progress (
+    user_id INTEGER PRIMARY KEY,
+    progress_json TEXT NOT NULL DEFAULT '{}',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+
   // Folders table
   db.run(`CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

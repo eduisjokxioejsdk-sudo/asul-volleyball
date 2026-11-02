@@ -43,6 +43,12 @@ export const authAPI = {
   me: () => api.get('/auth/me'),
 };
 
+// Progression personnelle de l'Académie (aucun classement ou partage global).
+export const academyAPI = {
+  getProgress: () => api.get('/academy/progress'),
+  saveProgress: (progress) => api.put('/academy/progress', { progress }),
+};
+
 // Videos API
 export const videosAPI = {
   getAll: () => api.get('/videos'),

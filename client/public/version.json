@@ -1,8 +1,22 @@
 {
-  "version": "3.6.1",
+  "version": "3.7.0",
   "releasedAt": "2026-11-02",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.7.0",
+      "date": "2026-11-02",
+      "title": "Académie Pancake : 47 niveaux pour apprendre le codage DataVolley en jouant",
+      "items": [
+        "La page Entraînement devient l’Académie : 6 univers, 47 niveaux et 151 notions couvertes — des codes de base (S#, R+, A#) aux formules combinées, en passant par les zones, les appels passeur et les codes spéciaux. Les anciens jeux memory, relier, QCM et traduction chronométrée laissent place à ce parcours progressif",
+        "Progression par niveaux : un niveau validé ouvre le suivant, rapporte 25 XP et fait monter de niveau (100 XP par niveau) ; aucune pénalité en cas d’erreur, la réponse attendue est affichée pour comprendre",
+        "Réponses vérifiées par le vrai parseur DataVolley : les alias de saisie sont acceptés et le code est normalisé, par exemple R# et R+ reconnus comme la même réception positive",
+        "Quête du jour, série de jours consécutifs et badges (Premier niveau, Explorateur du terrain, Série de 3 jours, Série de 7 jours) — la meilleure série est conservée",
+        "Tutoriels guidés de l’application : création de match, import CAM 1 / CAM 2, codage, corrections, montage et partage des clips, expliqués étape par étape",
+        "Terrain d’entraînement : simulations de rallye (coder les quatre contacts d’un point, réparer un rallye, frappe rapide avec formules combinées) sans toucher aux vrais matchs",
+        "Progression privée enregistrée avec le compte : XP, série et badges suivent l’utilisateur d’un poste à l’autre, sans classement ni partage global ; les réglages de raccourcis clavier restent accessibles depuis la page"
+      ]
+    },
     {
       "version": "3.6.1",
       "date": "2026-11-02",

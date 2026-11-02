@@ -17,6 +17,7 @@ const systemRoutes = require('./routes/system');
 const montageRoutes = require('./routes/montages');
 const playlistsRoutes = require('./routes/playlists');
 const practiceRoutes = require('./routes/practice');
+const academyRoutes = require('./routes/academy');
 const { initSocket } = require('./socket');
 const db = require('./database');
 
@@ -57,6 +58,7 @@ app.use('/api/trajectories', trajectoryRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/playlists', playlistsRoutes);
 app.use('/api/practice', practiceRoutes);
+app.use('/api/academy', academyRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

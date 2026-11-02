@@ -1,900 +1,361 @@
-import AppNavigation from '../components/AppNavigation';
-import PancakeLogo from '../components/PancakeLogo';
-import AnimatedPancake from '../components/AnimatedPancake';
-// ============================================================================
-// Mode Entraînement — deux modes :
-//   • « Réviser »  : jeux (memory, relier par flèches, QCM) + traduction chronométrée.
-//   • « Formation » : leçons théoriques progressives (à venir).
-// La logique est dans utils/training.js (pure) ; ici, uniquement l'UI.
-// ============================================================================
-
-import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  buildPairCatalog,
-  catalogForGroups,
-  dealPairs,
-  isPair,
-  dealMatching,
-  generateQuiz,
-  generateTranslation,
-  checkAnswer,
-  applyAnswer,
-  TRAINING_GROUPS,
-} from '../utils/training';
-import { DV_ACTIONS } from '../utils/datavolley';
-import { LESSONS, generateRecall, checkLessonAnswer } from '../utils/lessons';
-import { handleRemappedKeyDown } from '../utils/keyboardRemap';
-import useCodingKeyboard from '../hooks/useCodingKeyboard';
-import { formatKeyLabel, matchesShortcut } from '../utils/shortcuts';
+import AppNavigation from '../components/AppNavigation';
 import ShortcutSettings from '../components/ShortcutSettings';
-import { ChevronLeft, Check, RotateCcw, Timer, Trophy, Zap, Dices, Play, X, Sparkles, Shuffle, ListChecks, BookOpen, Lock, ChevronRight, Keyboard } from '../components/icons';
+import useCodingKeyboard from '../hooks/useCodingKeyboard';
+import { academyAPI } from '../services/api';
+import { handleRemappedKeyDown } from '../utils/keyboardRemap';
+import { formatKeyLabel, matchesShortcut } from '../utils/shortcuts';
+import { ACADEMY_WORLDS, ACADEMY_UNIT_BY_ID, ACADEMY_UNITS, validateAcademyAnswer } from '../utils/academy';
+import { BookOpen, Check, ChevronLeft, ChevronRight, Flame, Keyboard, Lock, Play, RotateCcw, Sparkles, Trophy, X, Zap } from '../components/icons';
 
-const PAIR_COUNT = 6;
-const MATCH_COUNT = 5;
+const EMPTY_PROGRESS = { version: 1, completed: [], xp: 0, level: 1, streak: 0, bestStreak: 0, badges: [], lastActivityDate: null };
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isYesterday(date) {
+  if (!date) return false;
+  const previous = new Date(`${date}T00:00:00Z`);
+  previous.setUTCDate(previous.getUTCDate() + 1);
+  return previous.toISOString().slice(0, 10) === todayKey();
+}
+
+function cleanProgress(raw) {
+  if (!raw || typeof raw !== 'object') return EMPTY_PROGRESS;
+  return {
+    ...EMPTY_PROGRESS,
+    ...raw,
+    completed: Array.isArray(raw.completed) ? raw.completed : [],
+    badges: Array.isArray(raw.badges) ? raw.badges : [],
+    xp: Number(raw.xp) || 0,
+    level: Number(raw.level) || 1,
+    streak: Number(raw.streak) || 0,
+    bestStreak: Number(raw.bestStreak) || 0,
+  };
+}
 
 export default function TrainingPage({ user, onLogout }) {
   const navigate = useNavigate();
-  const catalog = useMemo(() => buildPairCatalog(), []);
-  const [mode, setMode] = useState('review'); // 'review' | 'training'
-  const [activity, setActivity] = useState('pairs'); // pairs | match | quiz | translate
-  const [groups, setGroups] = useState([]);
-
-  // Clavier partagé avec tous les modes de codage (Data Volley, Direct,
-  // Entraînement) : mêmes raccourcis, même profil de Keyboard Remapping.
   const { shortcuts, setShortcuts, keymapProfile } = useCodingKeyboard();
   const [showShortcuts, setShowShortcuts] = useState(false);
-
-  /**
-   * Touche pressée dans un champ de code : le Keyboard Remapping (AZERTY Scout,
-   * macros 1-to-Many, auto-validation) s'applique d'abord, puis le raccourci de
-   * validation commun. `submit` reçoit la valeur déjà mise à jour.
-   * @param {string} value valeur courante du champ
-   * @param {(next:string)=>void} setValue setter du champ
-   * @param {(override?:string)=>void} submit validation
-   */
-  const codeKeyHandler = (value, setValue, submit) => (e) => {
-    const remapRes = handleRemappedKeyDown(e, {
-      value,
-      profile: keymapProfile,
-      onChange: (nextVal) => setValue(nextVal),
-      onCommit: (finalVal) => submit(finalVal),
-    });
-    if (remapRes.handled) return;
-    if (matchesShortcut(e, shortcuts.validate)) {
-      e.preventDefault();
-      submit();
-    }
-  };
-
-  const toggleGroup = (id) =>
-    setGroups((g) => (g.includes(id) ? g.filter((x) => x !== id) : [...g, id]));
-
-  // Catalogue filtré par les familles sélectionnées (matière des jeux).
-  const pool = useMemo(() => catalogForGroups(catalog, groups), [catalog, groups]);
-
-  // --- Onglet Jeux : memory / association ------------------------------------
-  const [game, setGame] = useState(null);
-  const [flipped, setFlipped] = useState([]);
-  const [matched, setMatched] = useState(() => new Set());
-  const [moves, setMoves] = useState(0);
-  const lockRef = useRef(false);
-
-  const newGame = useCallback(() => {
-    setGame(dealPairs(pool, PAIR_COUNT));
-    setFlipped([]);
-    setMatched(new Set());
-    setMoves(0);
-    lockRef.current = false;
-  }, [pool]);
-  const onCardClick = (card) => {
-    if (!game || lockRef.current) return;
-    if (flipped.some((c) => c.id === card.id) || matched.has(card.pairId)) return;
-    const next = [...flipped, card];
-    setFlipped(next);
-    if (next.length === 2) {
-      setMoves((m) => m + 1);
-      lockRef.current = true;
-      const [a, b] = next;
-      if (isPair(a, b)) {
-        setTimeout(() => {
-          setMatched((prev) => new Set([...prev, a.pairId]));
-          setFlipped([]);
-          lockRef.current = false;
-        }, 350);
-      } else {
-        setTimeout(() => {
-          setFlipped([]);
-          lockRef.current = false;
-        }, 850);
-      }
-    }
-  };
-
-  const pairsTotal = game ? game.pairs.length : 0;
-  const won = game && matched.size === pairsTotal && pairsTotal > 0;
-
-  // --- Jeu « Relier » (associer code ↔ sens par des flèches) ------------------
-  const [match, setMatch] = useState(null);
-  const [conns, setConns] = useState([]); // [{ pairId, rightId, ok }]
-  const [selLeft, setSelLeft] = useState(null);
-  const [badConn, setBadConn] = useState(null); // { pairId, rightId } (erreur en cours)
-  const newMatch = useCallback(() => {
-    setMatch(dealMatching(pool, MATCH_COUNT));
-    setConns([]);
-    setSelLeft(null);
-    setBadConn(null);
-  }, [pool]);
-  const onLeftClick = (item) => {
-    if (conns.some((c) => c.ok && c.pairId === item.pairId)) return;
-    setSelLeft(item.pairId);
-  };
-  const onRightClick = (item) => {
-    if (selLeft == null) return;
-    if (conns.some((c) => c.ok && c.rightId === item.id)) return;
-    if (item.pairId === selLeft) {
-      setConns((cs) => [...cs, { pairId: selLeft, rightId: item.id, ok: true }]);
-      setSelLeft(null);
-    } else {
-      const bad = { pairId: selLeft, rightId: item.id };
-      setConns((cs) => [...cs, { ...bad, ok: false }]);
-      setBadConn(bad);
-      setTimeout(() => {
-        setConns((cs) => cs.filter((c) => c.ok));
-        setBadConn(null);
-        setSelLeft(null);
-      }, 700);
-    }
-  };
-  const matchTotal = match ? match.left.length : 0;
-  const matchWon = match && conns.filter((c) => c.ok).length === matchTotal && matchTotal > 0;
-
-  // --- Jeu « QCM » (une formule, 3 propositions) ------------------------------
-  const [quiz, setQuiz] = useState(() => generateQuiz(catalog));
-  const [quizPick, setQuizPick] = useState(null);
-  const [quizScore, setQuizScore] = useState({ score: 0, streak: 0, best: 0 });
-  const [quizDone, setQuizDone] = useState(0);
-  const nextQuiz = useCallback(() => {
-    setQuiz(generateQuiz(pool));
-    setQuizPick(null);
-  }, [pool]);
-  const answerQuiz = (i) => {
-    if (quizPick != null) return;
-    setQuizPick(i);
-    const ok = i === quiz.correctIndex;
-    setQuizScore((s) => applyAnswer(s, ok));
-    if (ok) setQuizDone((n) => n + 1);
-  };
-
-  // --- Mode « Formation » (leçons) -------------------------------------------
-  const COMPLETED_KEY = 'asul.lessons.completed';
-  const [completed, setCompleted] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(COMPLETED_KEY)) || [];
-    } catch {
-      return [];
-    }
-  });
-  const markCompleted = useCallback((id) => {
-    setCompleted((prev) => {
-      const next = prev.includes(id) ? prev : [...prev, id];
-      try { localStorage.setItem(COMPLETED_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  }, []);
-
-  const [lesson, setLesson] = useState(null); // leçon en cours (ou rappel)
-  const [phase, setPhase] = useState('theory'); // theory | practice | eval | done
-  const [slideIdx, setSlideIdx] = useState(0);
-  const [pracIdx, setPracIdx] = useState(0);
-  const [ans, setAns] = useState('');
-  const [fb, setFb] = useState(null); // { ok, expected }
-  const [evalIdx, setEvalIdx] = useState(0);
-
-  const startLesson = useCallback((l) => {
-    setLesson(l);
-    setPhase('theory');
-    setSlideIdx(0);
-    setPracIdx(0);
-    setAns('');
-    setFb(null);
-    setEvalIdx(0);
-  }, []);
-  const startRecall = () => {
-    const rec = generateRecall(completed, 6, 10);
-    if (rec) startLesson(rec);
-  };
-  const leaveLesson = () => {
-    setLesson(null);
-    setPhase('theory');
-    setAns('');
-    setFb(null);
-  };
-
-  // `override` : valeur déjà mise à jour par une macro à auto-validation
-  // (voir codeKeyHandler) ; un événement React est ignoré.
-  const submitAns = (override) => {
-    const value = typeof override === 'string' ? override : ans;
-    if (!lesson || !value.trim()) return;
-    if (phase === 'practice') {
-      const item = lesson.practice[pracIdx];
-      if (checkLessonAnswer(value, item.code)) {
-        if (pracIdx + 1 >= lesson.practice.length) {
-          setFb({ ok: true, expected: item.code });
-          setTimeout(() => {
-            setFb(null); setAns('');
-            if (lesson.eval.length) { setPhase('eval'); setEvalIdx(0); }
-            else { setPhase('done'); markCompleted(lesson.id); }
-          }, 550);
-        } else {
-          setPracIdx(pracIdx + 1); setFb({ ok: true, expected: item.code }); setAns('');
-          setTimeout(() => setFb(null), 550);
-        }
-      } else {
-        setFb({ ok: false, expected: item.code });
-      }
-    } else if (phase === 'eval') {
-      const q = lesson.eval[evalIdx];
-      if (checkLessonAnswer(value, q.answer)) {
-        if (evalIdx + 1 >= lesson.eval.length) {
-          setFb({ ok: true, expected: q.answer });
-          setTimeout(() => {
-            setFb(null); setAns(''); setPhase('done');
-            if (!lesson.recall) markCompleted(lesson.id);
-          }, 600);
-        } else {
-          setFb({ ok: true, expected: q.answer }); setAns(''); setEvalIdx(evalIdx + 1);
-          setTimeout(() => setFb(null), 450);
-        }
-      } else {
-        setFb({ ok: false, expected: q.answer });
-      }
-    }
-  };
-
-  // --- Onglet Traduction : phrase → code, chronométré -------------------------
-  const [puzzle, setPuzzle] = useState(() => generateTranslation());
+  const [progress, setProgress] = useState(EMPTY_PROGRESS);
+  const [loaded, setLoaded] = useState(false);
+  const [saveState, setSaveState] = useState('loading');
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadRetry, setLoadRetry] = useState(0);
+  const [activeUnitId, setActiveUnitId] = useState(null);
+  const [phase, setPhase] = useState('');
+  const [conceptIndex, setConceptIndex] = useState(0);
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [tutorialIndex, setTutorialIndex] = useState(0);
+  const [sessionAnswers, setSessionAnswers] = useState([]);
   const [answer, setAnswer] = useState('');
-  const [feedback, setFeedback] = useState(null); // { ok, expected }
-  const [score, setScore] = useState({ score: 0, streak: 0, best: 0 });
-  const [solved, setSolved] = useState(0);
-  const startRef = useRef(Date.now());
-  const [elapsed, setElapsed] = useState(0);
+  const [feedback, setFeedback] = useState(null);
+  const [tab, setTab] = useState('all');
+  const [saveRetry, setSaveRetry] = useState(0);
 
-  // Chronomètre : actif seulement pendant la traduction.
+  const completedSet = useMemo(() => new Set(progress.completed), [progress.completed]);
+  const activeUnit = activeUnitId ? ACADEMY_UNIT_BY_ID[activeUnitId] : null;
+  const activeQuestion = activeUnit?.questions?.[questionIndex];
+  const nextUnit = ACADEMY_UNITS.find((unit) => !completedSet.has(unit.id));
+  const percent = Math.round((completedSet.size / ACADEMY_UNITS.length) * 100);
+  const dailyDone = progress.lastActivityDate === todayKey();
+
   useEffect(() => {
-    if (mode !== 'review' || activity !== 'translate') return undefined;
-    startRef.current = Date.now();
-    setElapsed(0);
-    const id = setInterval(() => setElapsed((Date.now() - startRef.current) / 1000), 100);
-    return () => clearInterval(id);
-  }, [mode, activity, solved]);
+    let alive = true;
+    setLoaded(false);
+    setLoadFailed(false);
+    setSaveState('loading');
+    academyAPI.getProgress()
+      .then(({ data }) => {
+        if (!alive) return;
+        setProgress(cleanProgress(data?.progress));
+        setSaveState('saved');
+      })
+      .catch(() => {
+        if (!alive) return;
+        setProgress(EMPTY_PROGRESS);
+        setLoadFailed(true);
+        setSaveState('error');
+      })
+      .finally(() => { if (alive) setLoaded(true); });
+    return () => { alive = false; };
+  }, [user?.id, loadRetry]);
 
-  const nextPuzzle = useCallback(() => {
-    setPuzzle(generateTranslation());
+  useEffect(() => {
+    if (!loaded || loadFailed) return undefined;
+    setSaveState('saving');
+    const timer = window.setTimeout(() => {
+      academyAPI.saveProgress(progress)
+        .then(() => setSaveState('saved'))
+        .catch(() => setSaveState('error'));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [progress, loaded, loadFailed, saveRetry]);
+
+  const retryProgress = () => {
+    if (loadFailed) {
+      setLoaded(false);
+      setSaveState('loading');
+      setLoadRetry((value) => value + 1);
+    } else {
+      setSaveRetry((value) => value + 1);
+      setSaveState('saving');
+    }
+  };
+
+  const closeUnit = () => {
+    setActiveUnitId(null);
+    setPhase('');
     setAnswer('');
     setFeedback(null);
+  };
+
+  const startUnit = (unit) => {
+    setActiveUnitId(unit.id);
+    setConceptIndex(0);
+    setQuestionIndex(0);
+    setTutorialIndex(0);
+    setSessionAnswers([]);
+    setAnswer('');
+    setFeedback(null);
+    setPhase(unit.kind === 'tutorial' ? 'tutorial' : unit.kind === 'simulation' ? 'simulation' : 'learn');
+  };
+
+  const finishUnit = useCallback((unit) => {
+    const today = todayKey();
+    setProgress((previous) => {
+      if (previous.completed.includes(unit.id)) return previous;
+      const streak = previous.lastActivityDate === today
+        ? previous.streak
+        : isYesterday(previous.lastActivityDate) ? previous.streak + 1 : 1;
+      const xp = previous.xp + 25;
+      const badges = new Set(previous.badges);
+      if (previous.completed.length === 0) badges.add('first-level');
+      if (unit.kind === 'simulation') badges.add('sim-first');
+      if (streak >= 3) badges.add('streak-3');
+      if (streak >= 7) badges.add('streak-7');
+      return {
+        ...previous,
+        completed: [...previous.completed, unit.id],
+        xp,
+        level: Math.floor(xp / 100) + 1,
+        streak,
+        bestStreak: Math.max(previous.bestStreak, streak),
+        badges: [...badges],
+        lastActivityDate: today,
+      };
+    });
+    setPhase('done');
   }, []);
 
   const submitAnswer = (override) => {
+    if (!activeUnit || !activeQuestion || feedback) return;
     const value = typeof override === 'string' ? override : answer;
     if (!value.trim()) return;
-    const ok = checkAnswer(value, puzzle.code);
-    setFeedback({ ok, expected: puzzle.code });
-    setScore((s) => applyAnswer(s, ok));
-    if (ok) setSolved((n) => n + 1);
+    const ok = validateAcademyAnswer(value, activeQuestion.answer);
+    setFeedback({ ok, expected: activeQuestion.answer });
+    if (ok && activeUnit.kind === 'simulation') setSessionAnswers((previous) => [...previous, value.trim()]);
   };
 
-  // Filtre des familles (commun aux jeux).
-  const renderGroups = () => (
-    <div className="dv-help-card" style={{ marginBottom: 16, padding: 14 }}>
-      <h5 style={{ margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a1a1aa', fontSize: 11.5 }}>
-        Familles de codes à réviser
-      </h5>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {TRAINING_GROUPS.map((g) => {
-          const checked = groups.includes(g.id);
-          return (
-            <label
-              key={g.id}
-              className={`btn btn-sm ${checked ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ cursor: 'pointer' }}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => toggleGroup(g.id)}
-                style={{ marginRight: 6 }}
-              />
-              {g.label}
-            </label>
-          );
-        })}
-      </div>
-    </div>
-  );
+  const nextChallenge = () => {
+    if (!activeUnit) return;
+    setFeedback(null);
+    setAnswer('');
+    if (questionIndex + 1 >= activeUnit.questions.length) finishUnit(activeUnit);
+    else setQuestionIndex((index) => index + 1);
+  };
 
-  // Jeu 1 : memory (retourner les cartes).
-  const renderPairs = () => (
-    <div>
-      <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button className="btn btn-primary" onClick={newGame} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Play size={14} /> Nouvelle partie
-        </button>
-        {game && (
-          <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-            Paires trouvées : {matched.size}/{pairsTotal} · coups : {moves}
-          </span>
-        )}
-      </div>
-      {!game ? (
-        <p className="dv-hint">Lance une partie : retourne les cartes et associe chaque code à sa signification.</p>
-      ) : (
-        <>
-          {won && (
-            <p style={{ color: 'var(--accent)', fontWeight: 700, marginBottom: 8 }}>
-              <Trophy size={14} /> Bravo ! {pairsTotal} paires en {moves} coups.
-            </p>
-          )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
-            {game.cards.map((card) => {
-              const open = flipped.some((c) => c.id === card.id) || matched.has(card.pairId);
-              const done = matched.has(card.pairId);
-              return (
-                <button
-                  key={card.id}
-                  onClick={() => onCardClick(card)}
-                  disabled={open}
-                  style={{
-                    minHeight: 74,
-                    padding: 8,
-                    borderRadius: 10,
-                    border: `1px solid ${done ? 'var(--accent)' : 'var(--border-subtle)'}`,
-                    background: open ? 'var(--bg-secondary)' : 'var(--bg-tertiary)',
-                    color: open ? 'var(--text-primary)' : 'transparent',
-                    fontFamily: card.side === 'code' ? 'var(--font-mono)' : 'inherit',
-                    fontSize: card.side === 'code' ? 20 : 12,
-                    fontWeight: card.side === 'code' ? 800 : 600,
-                    cursor: open ? 'default' : 'pointer',
-                  }}
-                >
-                  {open ? card.text : '•'}
+  const nextTutorialStep = () => {
+    const steps = activeUnit?.steps || [];
+    if (tutorialIndex + 1 >= steps.length) finishUnit(activeUnit);
+    else setTutorialIndex((index) => index + 1);
+  };
+
+  const handleCodeKeyDown = (event) => {
+    const remap = handleRemappedKeyDown(event, {
+      value: answer,
+      profile: keymapProfile,
+      onChange: setAnswer,
+      onCommit: (finalValue) => submitAnswer(finalValue),
+    });
+    if (remap.handled) return;
+    if (matchesShortcut(event, shortcuts.validate)) {
+      event.preventDefault();
+      submitAnswer();
+    }
+  };
+
+  const visibleWorlds = ACADEMY_WORLDS.map((world) => ({
+    ...world,
+    units: world.units.filter((unit) => tab === 'all' || tab === unit.kind),
+  })).filter((world) => world.units.length > 0);
+
+  const isUnlocked = (unit) => {
+    if (completedSet.has(unit.id)) return true;
+    const index = ACADEMY_UNITS.findIndex((item) => item.id === unit.id);
+    return index === 0 || completedSet.has(ACADEMY_UNITS[index - 1]?.id);
+  };
+
+  const saveLabel = saveState === 'loading' ? 'Connexion…' : saveState === 'saving' ? 'Sauvegarde…' : saveState === 'error' ? 'Hors ligne' : 'Sauvegardé';
+
+  return (
+    <div className="dashboard asul-modern academy-page">
+      <AppNavigation user={user} onLogout={onLogout} />
+      <main className="academy-shell">
+        <header className="academy-hero">
+          <div className="academy-hero-top">
+            <span className="academy-brand"><span className="academy-brand-mark">A</span> ASUL · ACADÉMIE</span>
+            <div className="academy-hero-stats">
+              <span className="academy-stat"><Zap size={17} /> {progress.xp} XP</span>
+              <span className="academy-stat"><Flame size={17} /> {progress.streak} jours</span>
+              <span className="academy-stat academy-level">NIVEAU {progress.level}</span>
+            </div>
+          </div>
+          <div className="academy-hero-main">
+            <div>
+              <p className="academy-kicker">LE TERRAIN EST À TOI</p>
+              <h1>Apprends. Code. <em>Domine.</em></h1>
+              <p className="academy-hero-copy">Des codes aux matchs en direct : progresse à ton rythme, teste sans risque, et fais monter ton niveau.</p>
+              <div className="academy-hero-actions">
+                <button className="academy-primary" onClick={() => nextUnit && startUnit(nextUnit)} disabled={!loaded || loadFailed || !nextUnit}>
+                  <Play size={17} fill="currentColor" /> {!loaded ? 'Chargement du parcours…' : nextUnit ? 'Continuer le parcours' : 'Parcours terminé !'}
                 </button>
+                <button className="academy-ghost" onClick={() => setShowShortcuts(true)}><Keyboard size={16} /> Clavier AZERTY Scout</button>
+              </div>
+            </div>
+            <div className="academy-mascot" aria-hidden="true"><span className="academy-orbit orbit-one" /><span className="academy-orbit orbit-two" /><span>🏐</span><b>+25 XP</b></div>
+          </div>
+          <div className="academy-progress-wrap">
+            <div className="academy-progress-label"><span>PROGRESSION GLOBALE</span><strong>{completedSet.size} / {ACADEMY_UNITS.length} NIVEAUX</strong></div>
+            <div className="academy-progress-track"><i style={{ width: `${percent}%` }} /></div>
+          </div>
+          <div className="academy-quest"><Sparkles size={16} /><span><b>QUÊTE DU JOUR</b> Valide un niveau et entretiens ta série.</span><strong>{dailyDone ? 'TERMINÉE ✓' : '+25 XP'}</strong></div>
+        </header>
+
+        {saveState === 'error' && (
+          <div className="academy-save-warning" role="status">
+            <span>{loadFailed ? 'La progression du compte ne peut pas être chargée. Réessaie pour commencer le parcours.' : 'La progression n’a pas pu être enregistrée. Tes validations restent visibles ici; réessaie pour les synchroniser.'}</span>
+            <button onClick={retryProgress}><RotateCcw size={14} /> Réessayer</button>
+          </div>
+        )}
+
+        <section className="academy-map-section">
+          <div className="academy-section-heading">
+            <div><p className="academy-kicker">CHOISIS TA PROCHAINE MISSION</p><h2>La carte des niveaux</h2></div>
+            <div className="academy-save-status"><span className={`academy-save-dot ${saveState}`} />{saveLabel}</div>
+          </div>
+          <div className="academy-tabs" role="tablist" aria-label="Filtrer les niveaux">
+            {[['all', 'Tout le parcours'], ['codes', 'Codes DataVolley'], ['tutorial', 'Tutoriels app'], ['simulation', 'Simulations']].map(([id, label]) => (
+              <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}</button>
+            ))}
+          </div>
+
+          <div className="academy-worlds">
+            {visibleWorlds.map((world, worldIndex) => {
+              const worldDone = world.units.filter((unit) => completedSet.has(unit.id)).length;
+              return (
+                <section className="academy-world" key={world.id} style={{ '--world-color': world.color }}>
+                  <div className="academy-world-head">
+                    <div className="academy-world-icon">{world.emoji}</div>
+                    <div><span>MONDE {String(worldIndex + 1).padStart(2, '0')}</span><h3>{world.title}</h3></div>
+                    <strong>{worldDone}/{world.units.length}</strong>
+                  </div>
+                  <div className="academy-node-grid">
+                    {world.units.map((unit) => {
+                      const done = completedSet.has(unit.id);
+                      const unlocked = isUnlocked(unit);
+                      return (
+                        <button key={unit.id} className={`academy-node ${done ? 'done' : ''} ${unlocked && loaded && !loadFailed ? 'unlocked' : 'locked'}`} disabled={!unlocked || !loaded || loadFailed} onClick={() => startUnit(unit)} title={unlocked ? unit.subtitle : 'Termine le niveau précédent pour débloquer celui-ci'}>
+                          <span className="academy-node-symbol">{done ? <Check size={21} /> : unlocked ? unit.kind === 'tutorial' ? <BookOpen size={20} /> : unit.kind === 'simulation' ? <Play size={19} /> : <Zap size={20} /> : <Lock size={16} />}</span>
+                          <span className="academy-node-title">{unit.title}</span>
+                          <span className="academy-node-meta">{done ? 'VALIDÉ · +25 XP' : unlocked ? unit.kind === 'tutorial' ? 'TUTORIEL' : unit.kind === 'simulation' ? 'SIMULATION' : 'NIVEAU OUVERT' : 'VERROUILLÉ'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
               );
             })}
           </div>
-        </>
-      )}
-    </div>
-  );
-
-  // Jeu 2 : relier les codes à leur sens par des flèches.
-  const renderMatch = () => (
-    <div>
-      <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button className="btn btn-primary" onClick={newMatch} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Play size={14} /> Nouvelle grille
-        </button>
-        {match && (
-          <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-            Reliées : {conns.filter((c) => c.ok).length}/{matchTotal}
-          </span>
-        )}
-      </div>
-      {!match ? (
-        <p className="dv-hint">Clique un code à gauche puis sa signification à droite : la flèche se dessine.</p>
-      ) : (
-        <MatchBoard match={match} conns={conns} selLeft={selLeft} badConn={badConn} onLeft={onLeftClick} onRight={onRightClick} won={matchWon} />
-      )}
-    </div>
-  );
-
-  // Jeu 3 : QCM — une formule, 3 propositions de sens.
-  const renderQuiz = () => (
-    <div>
-      <div className="dv-help-card" style={{ marginBottom: 12, display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-        <span><Zap size={14} /> Score : <strong>{quizScore.score}</strong></span>
-        <span><Sparkles size={14} /> Série : <strong>{quizScore.streak}</strong> (record {quizScore.best})</span>
-        <span><Trophy size={14} /> Réussis : <strong>{quizDone}</strong></span>
-      </div>
-      <div className="dv-help-card" style={{ marginBottom: 12 }}>
-        <h5>Que signifie ce code ?</h5>
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 26, fontWeight: 800, margin: '10px 0 14px' }}>{quiz.prompt}</p>
-        <div style={{ display: 'grid', gap: 8 }}>
-          {quiz.options.map((opt, i) => {
-            const answered = quizPick != null;
-            const isCorrect = i === quiz.correctIndex;
-            const picked = quizPick === i;
-            const color = answered && isCorrect ? 'var(--accent)' : answered && picked && !isCorrect ? '#e84848' : 'var(--border-subtle)';
-            return (
-              <button
-                key={i}
-                type="button"
-                className="btn btn-secondary"
-                disabled={answered}
-                onClick={() => answerQuiz(i)}
-                style={{ justifyContent: 'flex-start', textAlign: 'left', display: 'flex', alignItems: 'center', borderColor: color, borderWidth: answered ? 2 : 1 }}
-              >
-                {opt}
-                {answered && isCorrect && <span style={{ marginLeft: 'auto' }}><Check size={14} /></span>}
-                {answered && picked && !isCorrect && <span style={{ marginLeft: 'auto' }}><X size={14} /></span>}
-              </button>
-            );
-          })}
-        </div>
-        {quizPick != null && (
-          <button className="btn btn-primary btn-sm" onClick={nextQuiz} style={{ marginTop: 12 }}>Question suivante →</button>
-        )}
-      </div>
-    </div>
-  );
-
-  // Activité 4 : traduction chronométrée (phrase → code).
-  const renderTranslate = () => (
-    <div>
-      <div className="dv-help-card" style={{ marginBottom: 12, display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-        <span><Zap size={14} /> Score : <strong>{score.score}</strong></span>
-        <span><Sparkles size={14} /> Série : <strong>{score.streak}</strong> (record {score.best})</span>
-        <span><Trophy size={14} /> Résolus : <strong>{solved}</strong></span>
-        <span><Timer size={14} /> {elapsed.toFixed(1)} s</span>
-      </div>
-
-      <div className="dv-help-card" style={{ marginBottom: 12 }}>
-        <h5>Traduis cette situation en code DataVolley</h5>
-        <p style={{ fontSize: 15, margin: '8px 0 12px' }}>{puzzle.desc}</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            autoFocus
-            type="text"
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            onKeyDown={codeKeyHandler(answer, setAnswer, submitAnswer)}
-            placeholder="ex. *09AV6#"
-            style={{ flex: 1, minWidth: 180, fontFamily: 'var(--font-mono)', fontSize: 18, padding: '8px 10px' }}
-          />
-          <button className="btn btn-primary" onClick={submitAnswer}>
-            <Check size={14} /> Valider
-          </button>
-          <button className="btn btn-secondary" onClick={nextPuzzle} title="Passer">
-            <RotateCcw size={14} /> Passer
-          </button>
-        </div>
-
-        {feedback && (
-          <p style={{ marginTop: 10, fontWeight: 700, color: feedback.ok ? 'var(--accent)' : '#e84848' }}>
-            {feedback.ok ? (
-              <><Check size={14} /> Bien joué !</>
-            ) : (
-              <><X size={14} /> Attendu : <code>{feedback.expected}</code></>
-            )}
-          </p>
-        )}
-        {feedback && (
-          <button className="btn btn-primary btn-sm" onClick={nextPuzzle} style={{ marginTop: 8 }}>
-            Suivant →
-          </button>
-        )}
-      </div>
-
-      <p className="dv-hint">
-        Le code commence par <code>*</code> (domicile) ou <code>a</code> (extérieur), puis le numéro du
-        joueur, l’action, le type/la combinaison, les zones et l’évaluation. Le clavier AZERTY Scout
-        s’applique ici comme en match : chiffres du haut = évaluations, numéros et zones au pavé
-        numérique, <kbd>{formatKeyLabel(shortcuts.validate)}</kbd> pour valider.
-      </p>
-    </div>
-  );
-
-  // Mode « Réviser » : sélecteur d'activité + jeu actif.
-  const renderReview = () => (
-    <div>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#a1a1aa', marginBottom: 6 }}>
-          Choisir un mini-jeu d’entraînement
-        </div>
-        <div className="mode-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))', gap: 10, padding: 8 }}>
-          <button className={`mode-btn ${activity === 'pairs' ? 'active' : ''}`} onClick={() => setActivity('pairs')}>
-            <Dices size={16} /> 01 · Paires (Memory)
-          </button>
-          <button className={`mode-btn ${activity === 'match' ? 'active' : ''}`} onClick={() => setActivity('match')}>
-            <Shuffle size={16} /> 02 · Relier
-          </button>
-          <button className={`mode-btn ${activity === 'quiz' ? 'active' : ''}`} onClick={() => setActivity('quiz')}>
-            <ListChecks size={16} /> 03 · QCM
-          </button>
-          <button className={`mode-btn ${activity === 'translate' ? 'active' : ''}`} onClick={() => setActivity('translate')}>
-            <Timer size={16} /> 04 · Traduction Chrono
-          </button>
-        </div>
-      </div>
-      {activity !== 'translate' && renderGroups()}
-      {activity === 'pairs' && renderPairs()}
-      {activity === 'match' && renderMatch()}
-      {activity === 'quiz' && renderQuiz()}
-      {activity === 'translate' && renderTranslate()}
-    </div>
-  );
-
-  // Mode « Formation » : chemin (Duolingo) ou leçon en cours.
-  const renderTraining = () => (lesson ? renderLessonView() : renderPath());
-
-  const renderPath = () => {
-    const isUnlocked = (i) => i === 0 || completed.includes(LESSONS[i - 1].id);
-    return (
-      <div>
-        <div className="ls-path-head">
-          <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-            Apprends le langage DataVolley pas à pas, en tapant les codes. Termine les leçons dans l’ordre
-            (il faut <strong>10/10</strong> à l’épreuve finale). Les leçons réussies restent accessibles.
-          </p>
-          <button className="btn btn-secondary" onClick={startRecall} disabled={completed.length === 0}
-            title={completed.length === 0 ? 'Termine d’abord une leçon' : 'Réviser des notions déjà vues (mélange aléatoire)'}>
-            <Shuffle size={14} /> Leçon de rappel
-          </button>
-        </div>
-        <div className="ls-path">
-          {LESSONS.map((l, i) => {
-            const isDone = completed.includes(l.id);
-            const unlocked = isUnlocked(i);
-            return (
-              <div key={l.id} className="ls-node-row">
-                <button
-                  type="button"
-                  className={`ls-node ${isDone ? 'done' : unlocked ? 'active' : 'locked'}`}
-                  style={{ '--ls-color': l.color }}
-                  disabled={!unlocked}
-                  onClick={() => unlocked && startLesson(l)}
-                  title={unlocked ? l.subtitle : 'Termine la leçon précédente'}
-                >
-                  {isDone ? <Trophy size={18} /> : unlocked ? (i + 1) : <Lock size={15} />}
-                </button>
-                <div className="ls-node-text">
-                  <strong>{i + 1}. {l.title}</strong>
-                  <span>{l.subtitle}{isDone ? ' · réussie' : ''}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const renderLessonView = () => {
-    const total = lesson.theory.length + lesson.practice.length + lesson.eval.length;
-    let step = 0;
-    if (phase === 'theory') step = slideIdx;
-    else if (phase === 'practice') step = lesson.theory.length + pracIdx;
-    else if (phase === 'eval') step = lesson.theory.length + lesson.practice.length + evalIdx;
-    else step = total;
-    const pct = total ? Math.round((step / total) * 100) : 0;
-
-    const inputCls = fb ? (fb.ok ? 'ok' : 'bad') : '';
-    const answerBox = (
-      <div>
-        <div className="ls-answer">
-          <input
-            autoFocus
-            type="text"
-            value={ans}
-            className={inputCls}
-            onChange={(e) => setAns(e.target.value)}
-            onKeyDown={codeKeyHandler(ans, setAns, submitAns)}
-            placeholder="tape le code…"
-          />
-          <button className="btn btn-primary" onClick={submitAns}><Check size={14} /> Valider</button>
-        </div>
-        <p className="dv-hint" style={{ margin: '8px 0 0' }}>
-          Clavier AZERTY Scout actif comme en match : <kbd>1</kbd>→# <kbd>2</kbd>→+ <kbd>3</kbd>→! <kbd>4</kbd>→−
-          {' '}<kbd>5</kbd>→/ <kbd>6</kbd>→= · numéros et zones au pavé numérique ·{' '}
-          <kbd>{formatKeyLabel(shortcuts.validate)}</kbd> pour valider.
-        </p>
-      </div>
-    );
-
-    return (
-      <div className="ls-view">
-        <div className="ls-title-row">
-          <button className="btn btn-secondary btn-sm" onClick={leaveLesson}><ChevronLeft size={14} /> Retour</button>
-          <h3 style={{ margin: 0, color: lesson.color }}>{lesson.title}</h3>
-        </div>
-        <div className="ls-bar"><i style={{ width: `${pct}%` }} /></div>
-
-        {phase === 'theory' && (
-          <div>
-            <div className="ls-slide">
-              <h3>
-                {lesson.theory[slideIdx].from ? (
-                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{lesson.theory[slideIdx].from} · </span>
-                ) : null}
-                {lesson.theory[slideIdx].title}
-              </h3>
-              <p>{lesson.theory[slideIdx].text}</p>
-              {lesson.theory[slideIdx].code && (
-                <div className="ls-code">
-                  <code>{lesson.theory[slideIdx].code}</code>
-                  <span>{lesson.theory[slideIdx].meaning}</span>
-                </div>
-              )}
-            </div>
-            <div className="ls-actions">
-              <button className="btn btn-secondary" onClick={() => setSlideIdx(Math.max(0, slideIdx - 1))} disabled={slideIdx === 0}>
-                <ChevronLeft size={14} /> Précédent
-              </button>
-              <span className="ls-counter">{slideIdx + 1} / {lesson.theory.length}</span>
-              {slideIdx + 1 < lesson.theory.length ? (
-                <button className="btn btn-primary" onClick={() => setSlideIdx(slideIdx + 1)}>Suivant <ChevronRight size={14} /></button>
-              ) : (
-                <button
-                  className="btn btn-primary"
-                  onClick={() => { setPhase(lesson.practice.length ? 'practice' : 'eval'); setPracIdx(0); setAns(''); setFb(null); }}
-                >
-                  {lesson.practice.length ? 'Commencer l’entraînement' : 'Passer à l’épreuve'} <ChevronRight size={14} />
-                </button>
-              )}
-            </div>
+          <div className="academy-badges">
+            <div><Trophy size={18} /><b>TES BADGES</b><span>Les victoires s’accumulent, sans pénalité si tu te trompes.</span></div>
+            {[
+              ['first-level', 'Premier niveau'], ['sim-first', 'Explorateur du terrain'], ['streak-3', 'Série de 3 jours'], ['streak-7', 'Série de 7 jours'],
+            ].map(([id, label]) => <span key={id} className={`academy-badge ${progress.badges.includes(id) ? 'earned' : ''}`}>{progress.badges.includes(id) ? '✦' : '◇'} {label}</span>)}
           </div>
-        )}
-
-        {phase === 'practice' && (
-          <div>
-            <p className="ls-counter">Code {pracIdx + 1} / {lesson.practice.length}</p>
-            <div className="ls-slide">
-              <p className="ls-prompt" style={{ margin: '0 0 6px' }}>Traduis cette situation en code DataVolley :</p>
-              <p style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{lesson.practice[pracIdx].meaning}</p>
-            </div>
-            {answerBox}
-            {fb && (
-              <p className={`ls-fb ${fb.ok ? 'ok' : 'bad'}`}>
-                {fb.ok ? <><Check size={14} /> Bien !</> : <><X size={14} /> Attendu : <code>{fb.expected}</code> — réessaie</>}
-              </p>
-            )}
-          </div>
-        )}
-
-        {phase === 'eval' && (
-          <div>
-            <p className="ls-counter">
-              Question {evalIdx + 1} / {lesson.eval.length}
-              {lesson.recall && lesson.eval[evalIdx].from ? ` · ${lesson.eval[evalIdx].from}` : ''}
-            </p>
-            <div className="ls-slide">
-              <p className="ls-prompt" style={{ margin: '0 0 6px' }}>Traduis en code DataVolley :</p>
-              <p style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{lesson.eval[evalIdx].prompt}</p>
-            </div>
-            {answerBox}
-            {fb && (
-              <p className={`ls-fb ${fb.ok ? 'ok' : 'bad'}`}>
-                {fb.ok ? <><Check size={14} /> Correct !</> : <><X size={14} /> Attendu : <code>{fb.expected}</code> — réessaie</>}
-              </p>
-            )}
-          </div>
-        )}
-
-        {phase === 'done' && (
-          <div className="ls-slide" style={{ textAlign: 'center' }}>
-            <p className="ls-done-badge" style={{ justifyContent: 'center' }}>
-              <Trophy size={26} /> {lesson.recall ? 'Rappel terminé !' : 'Leçon réussie !'}
-            </p>
-            <p style={{ color: 'var(--text-muted)', marginTop: 10 }}>10/10 à l’épreuve finale. Bravo !</p>
-            <div className="ls-actions" style={{ justifyContent: 'center' }}>
-              <button className="btn btn-primary" onClick={leaveLesson}><ChevronLeft size={14} /> Revenir aux leçons</button>
-              {!lesson.recall && LESSONS.findIndex((x) => x.id === lesson.id) < LESSONS.length - 1 && (
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => { const i = LESSONS.findIndex((x) => x.id === lesson.id); if (i >= 0 && i + 1 < LESSONS.length) startLesson(LESSONS[i + 1]); }}
-                >
-                  Leçon suivante <ChevronRight size={14} />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="dashboard asul-modern">
-      <AppNavigation user={user} onLogout={onLogout} />
-
-      <div className="dashboard-content">
-        <section className="pk-hero-banner" style={{ marginBottom: 22 }}>
-          <div style={{ position: 'relative', zIndex: 2 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
-              <PancakeLogo size={52} />
-              <div>
-                <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.05em', color: '#ffffff', lineHeight: 1.1 }}>
-                  Pancake <span style={{ color: '#c8a165' }}>Stats</span> · Académie
-                </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, color: '#e8c98f', letterSpacing: '0.08em', marginTop: 2 }}>
-                  ENTRAÎNEMENT INTENSIF AU CODAGE
-                </div>
-              </div>
-            </div>
-            <h1 className="pk-hero-title" style={{ fontSize: 38 }}>
-              Deviens un pro du <span>codage DataVolley</span>
-            </h1>
-            <p className="pk-hero-lead" style={{ marginBottom: 18 }}>
-              <strong>Réviser</strong> : 4 mini-jeux interactifs (Paires, Relier, QCM et Traduction chronométrée) pour automatiser tes réflexes clavier.{' '}
-              <strong>Formation</strong> : 11 leçons progressives, de la théorie à la pratique, validées par une épreuve finale à 10/10.
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              <span className="pk-mono" style={{ padding: '4px 10px', background: 'rgba(16, 185, 129, 0.14)', border: '1px solid #059669', color: '#10b981', fontSize: 11.5, fontWeight: 700 }}>
-                ✓ {completed.length} / {LESSONS.length} LEÇONS VALIDÉES
-              </span>
-              <span className="pk-mono" style={{ padding: '4px 10px', background: 'rgba(200, 161, 101, 0.14)', border: '1px solid #c8a165', color: '#e8c98f', fontSize: 11.5, fontWeight: 700 }}>
-                4 MINI-JEUX D’ENTRAÎNEMENT
-              </span>
-              <span className="pk-mono" style={{ padding: '4px 10px', background: 'rgba(14, 165, 233, 0.14)', border: '1px solid #0284c7', color: '#38bdf8', fontSize: 11.5, fontWeight: 700 }}>
-                SYNTAXE OFFICIELLE DV4
-              </span>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowShortcuts(true)}
-                title="Clavier AZERTY Scout (macros) et raccourcis communs à tous les modes de codage"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-              >
-                <Keyboard size={13} /> Raccourcis clavier
-              </button>
-            </div>
-          </div>
-          <AnimatedPancake size={145} showTelemetry={true} />
         </section>
+      </main>
 
-        <div className="mode-selector" style={{ marginBottom: 18, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: 8 }}>
-          <button className={`mode-btn ${mode === 'review' ? 'active' : ''}`} onClick={() => setMode('review')}>
-            <Dices size={16} /> Mode Réviser (Mini-Jeux & Chrono)
-          </button>
-          <button className={`mode-btn ${mode === 'training' ? 'active' : ''}`} onClick={() => setMode('training')}>
-            <BookOpen size={16} /> Mode Formation (Parcours 11 Leçons)
-          </button>
-        </div>
+      {activeUnit && (
+        <div className="academy-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeUnit(); }}>
+          <section className="academy-modal" role="dialog" aria-modal="true" aria-labelledby="academy-modal-title" key={activeUnit.id}>
+            <div className="academy-modal-top"><button className="academy-back" onClick={closeUnit}><ChevronLeft size={16} /> Carte</button><span>+25 XP À GAGNER · AUCUNE PÉNALITÉ</span><button className="academy-close" aria-label="Fermer" onClick={closeUnit}><X size={18} /></button></div>
+            <div className="academy-modal-progress"><i style={{ width: phase === 'done' ? '100%' : activeUnit.kind === 'tutorial' ? `${((tutorialIndex + 1) / activeUnit.steps.length) * 100}%` : phase === 'challenge' ? `${((questionIndex + 1) / activeUnit.questions.length) * 100}%` : '25%' }} /></div>
 
-        {mode === 'review' ? renderReview() : renderTraining()}
-
-        {/* Modale Raccourcis clavier : réglages communs à tous les modes */}
-        {showShortcuts && (
-          <div className="modal-overlay" onClick={() => setShowShortcuts(false)}>
-            <div
-              className="modal"
-              onClick={(e) => e.stopPropagation()}
-              style={{ maxWidth: 760, width: '100%', maxHeight: '85vh', overflowY: 'auto' }}
-            >
-              <h2>Raccourcis — Académie</h2>
-              <p className="dv-hint">
-                Ces touches et le profil de Keyboard Remapping (AZERTY Scout, macros) sont ceux de Data Volley,
-                du Direct et de l’Entraînement : un réglage fait ici vaut dans <strong>tous</strong> les modes qui
-                codent au clavier.
-              </p>
-              <ShortcutSettings shortcuts={shortcuts} onChange={setShortcuts} video={false} />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowShortcuts(false)}>
-                  Fermer
-                </button>
+            {phase === 'done' ? (
+              <div className="academy-complete">
+                <div className="academy-trophy-burst">🏆</div><p className="academy-kicker">NIVEAU TERMINÉ</p><h2 id="academy-modal-title">Bien joué !</h2><p>{activeUnit.kind === 'simulation' ? 'Point simulé ! Ton rallye est resté sur le terrain fictif.' : 'Tu viens de gagner'} <strong>25 XP</strong>. Le prochain niveau est maintenant ouvert.</p>
+                <div className="academy-complete-actions"><button className="academy-primary" onClick={closeUnit}>Retour à la carte</button>{nextUnit && <button className="academy-ghost" onClick={() => startUnit(nextUnit)}>Niveau suivant <ChevronRight size={16} /></button>}</div>
               </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+            ) : (
+              <>
+                <div className="academy-modal-content">
+                  <div className="academy-modal-world">{activeUnit.worldTitle}</div>
+                  <h2 id="academy-modal-title">{activeUnit.title}</h2>
+                  <p className="academy-modal-subtitle">{activeUnit.subtitle || activeUnit.scenario}</p>
 
-// --- Jeu « Relier » : 2 colonnes + flèches SVG reliant code ↔ signification ---
-function MatchBoard({ match, conns, selLeft, badConn, onLeft, onRight, won }) {
-  const containerRef = useRef(null);
-  const refs = useRef({}); // `l${pairId}` / `r${id}` -> élément DOM
-  const [lines, setLines] = useState([]);
+                  {activeUnit.kind === 'codes' && phase === 'learn' && activeUnit.items?.[conceptIndex] && (
+                    <div className="academy-lesson-card">
+                      <div className="academy-concept-count">NOTION {conceptIndex + 1} / {activeUnit.items.length}</div>
+                      <h3>{activeUnit.items[conceptIndex].title}</h3>
+                      <p>{activeUnit.items[conceptIndex].explanation}</p>
+                      <div className="academy-code-example"><code>{activeUnit.items[conceptIndex].example}</code><span>EXEMPLE</span></div>
+                      <button className="academy-primary academy-wide" onClick={() => {
+                        if (conceptIndex + 1 >= activeUnit.items.length) { setPhase('challenge'); setQuestionIndex(0); }
+                        else setConceptIndex((index) => index + 1);
+                      }}>{conceptIndex + 1 >= activeUnit.items.length ? 'Lancer le défi' : 'Notion suivante'} <ChevronRight size={16} /></button>
+                    </div>
+                  )}
 
-  const recompute = useCallback(() => {
-    const c = containerRef.current;
-    if (!c) return;
-    const cRect = c.getBoundingClientRect();
-    const out = [];
-    for (const conn of conns) {
-      const l = refs.current[`l${conn.pairId}`];
-      const r = refs.current[`r${conn.rightId}`];
-      if (!l || !r) continue;
-      const lr = l.getBoundingClientRect();
-      const rr = r.getBoundingClientRect();
-      out.push({
-        id: `${conn.pairId}-${conn.rightId}`,
-        ok: conn.ok,
-        x1: lr.right - cRect.left,
-        y1: lr.top + lr.height / 2 - cRect.top,
-        x2: rr.left - cRect.left,
-        y2: rr.top + rr.height / 2 - cRect.top,
-      });
-    }
-    setLines(out);
-  }, [conns]);
+                  {activeUnit.kind === 'tutorial' && phase === 'tutorial' && (
+                    <div className="academy-tutorial-step">
+                      <div className="academy-tutorial-count">ÉTAPE {tutorialIndex + 1} / {activeUnit.steps.length}</div>
+                      <div className="academy-tutorial-visual">{activeUnit.tutorial?.path === '/teams' ? '👥' : activeUnit.tutorial?.path.includes('video') ? '🎬' : activeUnit.tutorial?.path.includes('trajectory') ? '🗺️' : activeUnit.tutorial?.path.includes('auto-codes') ? '⌨️' : '🏐'}</div>
+                      <p>{activeUnit.steps[tutorialIndex]}</p>
+                      <div className="academy-tutorial-actions">
+                        <button className="academy-ghost" onClick={() => window.open(activeUnit.path, '_blank', 'noopener,noreferrer')}>Ouvrir l’écran concerné ↗</button>
+                        <button className="academy-primary" onClick={nextTutorialStep}>{tutorialIndex + 1 >= activeUnit.steps.length ? 'Terminer le tutoriel' : 'Étape suivante'} <ChevronRight size={16} /></button>
+                      </div>
+                      <p className="academy-sandbox-note">Le tutoriel t’explique le parcours. Les manipulations dans ton app restent séparées de ce niveau.</p>
+                    </div>
+                  )}
 
-  useLayoutEffect(() => { recompute(); }, [recompute]);
-  useEffect(() => {
-    window.addEventListener('resize', recompute);
-    return () => window.removeEventListener('resize', recompute);
-  }, [recompute]);
+                  {activeUnit.kind === 'simulation' && phase === 'simulation' && (
+                    <div className="academy-simulation-intro"><div className="academy-simulation-art">🎯</div><p>{activeUnit.scenario}</p>{activeUnit.initialCode && <div className="academy-broken-code"><span>CODE À RÉPARER</span><code>{activeUnit.initialCode}</code></div>}<div className="academy-sandbox-note">Terrain fictif · aucune donnée de match n’est modifiée.</div><button className="academy-primary academy-wide" onClick={() => { setPhase('challenge'); setQuestionIndex(0); }}>Entrer sur le terrain <Play size={16} /></button></div>
+                  )}
 
-  const box = (state) => ({
-    padding: '10px 12px',
-    borderRadius: 8,
-    border: `2px solid ${state === 'bad' ? '#e84848' : state === 'ok' || state === 'sel' ? 'var(--accent)' : 'var(--border-subtle)'}`,
-    background: state === 'sel' ? 'rgba(200,150,92,0.12)' : 'var(--bg-tertiary)',
-    color: 'var(--text-primary)',
-    cursor: 'pointer',
-    textAlign: 'left',
-    width: '100%',
-    fontSize: 13,
-  });
-
-  return (
-    <div>
-      {won && (
-        <p style={{ color: 'var(--accent)', fontWeight: 700, marginBottom: 8 }}>
-          <Trophy size={14} /> Toutes les paires sont reliées !
-        </p>
+                  {phase === 'challenge' && activeQuestion && (
+                    <div className="academy-challenge">
+                      {activeUnit.kind === 'simulation' && <div className="academy-live-console"><span>CONSOLE DU RALLYE · TERRAIN FICTIF</span>{activeUnit.initialCode && <code className="academy-broken-inline">À corriger : {activeUnit.initialCode}</code>}<div>{sessionAnswers.length ? sessionAnswers.map((code, index) => <code key={`${index}-${code}`}>{code}</code>) : <i>En attente du premier contact…</i>}</div></div>}
+                      <div className="academy-question-count">DÉFI {questionIndex + 1} / {activeUnit.questions.length} <span>● ● ●</span></div>
+                      <div className="academy-prompt">{activeQuestion.prompt}</div>
+                      <div className="academy-answer-row"><input autoFocus value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={handleCodeKeyDown} placeholder="Tape ta réponse…" disabled={feedback?.ok} /><button className="academy-primary" onClick={() => submitAnswer()} disabled={feedback?.ok}><Check size={16} /> Vérifier</button></div>
+                      <p className="academy-key-hint">Raccourcis AZERTY Scout actifs · <kbd>{formatKeyLabel(shortcuts.validate)}</kbd> pour valider.</p>
+                      {feedback && <div className={`academy-feedback ${feedback.ok ? 'good' : 'retry'}`} role="status">{feedback.ok ? <><Check size={17} /> Exact ! Continue, tu ne perds rien en essayant.</> : <><X size={17} /> Pas encore. Regarde l’exemple puis réessaie. <code>{feedback.expected}</code></>}</div>}
+                      {feedback?.ok && <button className="academy-primary academy-wide" onClick={nextChallenge}>{questionIndex + 1 >= activeUnit.questions.length ? 'Terminer le niveau' : 'Défi suivant'} <ChevronRight size={16} /></button>}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+        </div>
       )}
-      <div ref={containerRef} style={{ position: 'relative', display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 56 }}>
-        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}>
-          <defs>
-            <marker id="mb-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
-              <path d="M0,0 L9,4.5 L0,9 z" fill="var(--accent)" />
-            </marker>
-          </defs>
-          {lines.map((ln) => (
-            <line
-              key={ln.id}
-              x1={ln.x1}
-              y1={ln.y1}
-              x2={ln.x2}
-              y2={ln.y2}
-              stroke={ln.ok ? 'var(--accent)' : '#e84848'}
-              strokeWidth={2}
-              markerEnd="url(#mb-arrow)"
-              opacity={ln.ok ? 1 : 0.7}
-            />
-          ))}
-        </svg>
-        <div style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
-          {match.left.map((it) => {
-            const done = conns.some((c) => c.ok && c.pairId === it.pairId);
-            const sel = selLeft === it.pairId;
-            const bad = badConn && badConn.pairId === it.pairId;
-            return (
-              <button
-                key={`l${it.id}`}
-                type="button"
-                ref={(el) => { refs.current[`l${it.pairId}`] = el; }}
-                style={{ ...box(bad ? 'bad' : done ? 'ok' : sel ? 'sel' : ''), fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 16 }}
-                onClick={() => onLeft(it)}
-              >
-                {it.text}
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
-          {match.right.map((it) => {
-            const done = conns.some((c) => c.ok && c.rightId === it.id);
-            const bad = badConn && badConn.rightId === it.id;
-            return (
-              <button
-                key={`r${it.id}`}
-                type="button"
-                ref={(el) => { refs.current[`r${it.id}`] = el; }}
-                style={box(bad ? 'bad' : done ? 'ok' : '')}
-                onClick={() => onRight(it)}
-              >
-                {it.text}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+
+      {showShortcuts && <ShortcutSettings shortcuts={shortcuts} setShortcuts={setShortcuts} onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }
