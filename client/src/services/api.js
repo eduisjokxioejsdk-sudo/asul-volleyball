@@ -132,6 +132,7 @@ export const foldersAPI = {
 // DataVolley API (codage d'actions + synchronisation vidéo)
 export const datavolleyAPI = {
   getActions: (videoId) => api.get(`/datavolley/${videoId}/actions`),
+  getAudit: (videoId, limit = 100) => api.get(`/datavolley/${videoId}/audit`, { params: { limit } }),
   saveActions: (videoId, actions) => api.post(`/datavolley/${videoId}/actions`, { actions }),
   saveSetActions: (videoId, setNumber, actions) =>
     api.post(`/datavolley/${videoId}/actions/set/${setNumber}`, { actions }),
@@ -241,6 +242,8 @@ export const liveAPI = {
 export const montageAPI = {
   getAll: (videoId) => api.get(`/videos/${videoId}/montages`),
   getOne: (videoId, montageId) => api.get(`/videos/${videoId}/montages/${montageId}`),
+  revokeShare: (videoId, montageId) => api.delete(`/videos/${videoId}/montages/${montageId}/share`),
+  getShare: (token) => api.get(`/videos/share/${token}`),
   create: (videoId, payload) => api.post(`/videos/${videoId}/montages`, payload),
   cancel: (videoId, montageId) => api.post(`/videos/${videoId}/montages/${montageId}/cancel`),
   delete: (videoId, montageId) => api.delete(`/videos/${videoId}/montages/${montageId}`),

@@ -1086,7 +1086,28 @@ function LiveDashboard({ user, onLogout }) {
     }
   }, [submitBuffer, isViewer, sessionId]);
 
-  // --- Temps morts, remplacements, fenêtre de commandes & rotations ---------
+  // --- Messages équipe, temps morts, remplacements et rotations -------------
+  const sendCoachMessage = async (text) => {
+    if (isCamera) return;
+    try {
+      const res = await liveAPI.saveEvent(sessionId, {
+        kind: 'message',
+        set_number: matchState.currentSet,
+        point_number: matchState.score.team1 + matchState.score.team2,
+        payload: { text },
+      });
+      if (res.data?.event) {
+        setEvents((prev) => prev.some((ev) => Number(ev.id) === Number(res.data.event.id))
+          ? prev
+          : sortEvents([...prev, res.data.event]));
+      }
+      return res.data?.event;
+    } catch (err) {
+      setFlash({ ok: false, text: err?.response?.data?.error || 'Envoi du message impossible.' });
+      throw err;
+    }
+  };
+
   const addTimeout = async (team) => {
     if (isViewer) return;
     try {
@@ -2696,6 +2717,8 @@ function LiveDashboard({ user, onLogout }) {
                           extra={camera.active ? <span className="live-camera-lat">lecture {cameraLatency} s</span> : null}
                         />
                       }
+                      events={events}
+                      onSendMessage={isCamera ? undefined : sendCoachMessage}
                     />
                   </motion.div>
                 )}

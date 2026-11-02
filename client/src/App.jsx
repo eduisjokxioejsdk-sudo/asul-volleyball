@@ -23,6 +23,7 @@ const TrajectoryView = lazy(() => import('./pages/TrajectoryView'));
 const TrajectoryTeamReport = lazy(() => import('./pages/TrajectoryTeamReport'));
 const TrajectoryHubPage = lazy(() => import('./pages/TrajectoryHubPage'));
 const VideoCenterPage = lazy(() => import('./pages/VideoCenterPage'));
+const SharedClipPage = lazy(() => import('./pages/SharedClipPage'));
 const LiveDashboard = lazy(() => import('./pages/LiveDashboard'));
 const TeamsPage = lazy(() => import('./pages/TeamsPage'));
 const TrainingPage = lazy(() => import('./pages/TrainingPage'));
@@ -241,6 +242,14 @@ function App() {
                 element={
                   <AnimatedPage>
                     {user ? <VideoCenterPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
+                  </AnimatedPage>
+                }
+              />
+              <Route
+                path="/shared-clip/:token"
+                element={
+                  <AnimatedPage>
+                    <SharedClipPage />
                   </AnimatedPage>
                 }
               />

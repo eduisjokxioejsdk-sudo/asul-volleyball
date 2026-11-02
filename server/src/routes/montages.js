@@ -4,6 +4,7 @@
 
 const express = require('express');
 const fs = require('fs-extra');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
@@ -11,6 +12,67 @@ const montageEngine = require('../montageEngine');
 const { emitCollectionChanged } = require('../socket');
 
 const router = express.Router({ mergeParams: true });
+
+function parseClips(raw) {
+  try {
+    const clips = JSON.parse(raw || '[]');
+    return Array.isArray(clips) ? clips : [];
+  } catch {
+    return [];
+  }
+}
+
+function streamFile(req, res, filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: 'Fichier vidéo introuvable.' });
+  const stat = fs.statSync(filePath);
+  const range = req.headers.range;
+  if (!range) {
+    res.writeHead(200, { 'Content-Length': stat.size, 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes' });
+    return fs.createReadStream(filePath).pipe(res);
+  }
+  const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+  if (!match) return res.status(416).end();
+  const start = match[1] ? Number(match[1]) : 0;
+  const end = match[2] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
+  if (start > end || start >= stat.size) return res.status(416).end();
+  res.writeHead(206, {
+    'Content-Range': 'bytes ' + start + '-' + end + '/' + stat.size,
+    'Accept-Ranges': 'bytes',
+    'Content-Length': end - start + 1,
+    'Content-Type': 'video/mp4',
+  });
+  return fs.createReadStream(filePath, { start, end }).pipe(res);
+}
+
+router.get('/share/:token', (req, res) => {
+  db.get(
+    "SELECT m.title, m.description, m.clips_json, v.team1_name, v.team2_name FROM video_montages m JOIN videos v ON v.id = m.video_id WHERE m.share_token = ? AND m.status = 'completed'",
+    [req.params.token],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!row) return res.status(404).json({ error: 'Partage introuvable ou non terminé.' });
+      res.json({ share: {
+        title: row.title,
+        description: row.description || '',
+        teams: [row.team1_name || 'Domicile', row.team2_name || 'Extérieur'],
+        clips: parseClips(row.clips_json),
+        streamUrl: '/api/videos/share/' + encodeURIComponent(req.params.token) + '/stream',
+      } });
+    }
+  );
+});
+
+router.get('/share/:token/stream', (req, res) => {
+  db.get(
+    "SELECT output_filepath FROM video_montages WHERE share_token = ? AND status = 'completed'",
+    [req.params.token],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!row) return res.status(404).json({ error: 'Partage introuvable ou non terminé.' });
+      return streamFile(req, res, row.output_filepath);
+    }
+  );
+});
 
 function verifyVideoOwnership(req, res, callback) {
   const videoId = req.params.videoId || req.body.videoId;
@@ -52,6 +114,20 @@ router.get('/:videoId/montages/:montageId', authenticateToken, (req, res) => {
   );
 });
 
+router.delete('/:videoId/montages/:montageId/share', authenticateToken, (req, res) => {
+  const { videoId, montageId } = req.params;
+  db.run(
+    'UPDATE video_montages SET share_token = NULL WHERE id = ? AND video_id = ? AND user_id = ?',
+    [montageId, videoId, req.user.id],
+    function (err) {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!this.changes) return res.status(404).json({ error: 'Montage introuvable.' });
+      emitCollectionChanged('montages');
+      res.json({ message: 'Lien de partage révoqué.' });
+    }
+  );
+});
+
 // 3. Lancer la création d'un nouveau montage
 router.post('/:videoId/montages', authenticateToken, (req, res) => {
   const { videoId } = req.params;
@@ -60,6 +136,14 @@ router.post('/:videoId/montages', authenticateToken, (req, res) => {
   if (!Array.isArray(clips) || clips.length === 0) {
     return res.status(400).json({ error: 'La liste des clips est vide.' });
   }
+  const safeClips = clips.map((clip) => ({
+    ...clip,
+    startTime: Math.max(0, Number(clip.startTime) || 0),
+    endTime: Math.max(0.5, Number(clip.endTime) || 0.5),
+    title: String(clip.title || '').slice(0, 200),
+    subtitle: String(clip.subtitle || '').slice(0, 300),
+    note: String(clip.note || '').slice(0, 1000),
+  }));
 
   verifyVideoOwnership(req, res, (video) => {
     const videoSourcePath = video.filepath;
@@ -68,12 +152,13 @@ router.post('/:videoId/montages', authenticateToken, (req, res) => {
     }
 
     const montageId = uuidv4();
+    const shareToken = crypto.randomBytes(24).toString('hex');
     const montageTitle = title ? String(title).trim() : `Montage ${new Date().toLocaleDateString('fr-FR')}`;
 
     db.run(
       `INSERT INTO video_montages 
-        (id, video_id, user_id, title, description, status, progress, progress_step, clip_count, settings)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, video_id, user_id, title, description, status, progress, progress_step, clip_count, settings, share_token, clips_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         montageId,
         videoId,
@@ -83,8 +168,10 @@ router.post('/:videoId/montages', authenticateToken, (req, res) => {
         'pending',
         0,
         'Initialisation...',
-        clips.length,
+        safeClips.length,
         JSON.stringify(options || {}),
+        shareToken,
+        JSON.stringify(safeClips),
       ],
       (insertErr) => {
         if (insertErr) {
@@ -95,7 +182,7 @@ router.post('/:videoId/montages', authenticateToken, (req, res) => {
           .startMontage({
             montageId,
             videoPath: videoSourcePath,
-            clips,
+            clips: safeClips,
             options: {
               title: montageTitle,
               introSubtitle: `${video.team1_name || 'Équipe 1'} vs ${video.team2_name || 'Équipe 2'} • ${clips.length} actions`,
@@ -116,6 +203,7 @@ router.post('/:videoId/montages', authenticateToken, (req, res) => {
         res.status(202).json({
           message: 'Génération du montage lancée',
           montageId,
+          shareToken,
           status: 'pending',
         });
       }

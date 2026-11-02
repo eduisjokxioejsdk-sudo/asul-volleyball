@@ -323,6 +323,22 @@ db.serialize(() => {
 
   db.run('CREATE INDEX IF NOT EXISTS idx_volley_events_video ON volley_events (video_id, set_number, point_number)');
 
+  // Journal append-only des changements apportés aux actions codées.
+  db.run(`CREATE TABLE IF NOT EXISTS volley_action_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id INTEGER NOT NULL,
+    action_uuid TEXT,
+    action_index INTEGER,
+    operation TEXT NOT NULL,
+    before_json TEXT,
+    after_json TEXT,
+    user_id INTEGER,
+    actor_name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_volley_action_audit_video ON volley_action_audit (video_id, id DESC)');
+
   // Événements de match en direct (temps morts, remplacements, sanctions, arbitrage)
   db.run(`CREATE TABLE IF NOT EXISTS live_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -421,6 +437,24 @@ db.serialize(() => {
   )`);
 
   db.run('CREATE INDEX IF NOT EXISTS idx_video_montages_video ON video_montages (video_id, user_id)');
+
+  pendingMigrations += 1;
+  db.all('PRAGMA table_info(video_montages)', (err, columns) => {
+    if (err) return migrationDone();
+    const names = (columns || []).map((c) => c.name);
+    if (!names.length) return migrationDone();
+    const steps = [];
+    if (!names.includes('share_token')) steps.push('ALTER TABLE video_montages ADD COLUMN share_token TEXT');
+    if (!names.includes('clips_json')) steps.push("ALTER TABLE video_montages ADD COLUMN clips_json TEXT DEFAULT '[]'");
+    const runNext = (index) => {
+      if (index >= steps.length) return migrationDone();
+      db.run(steps[index], (stepErr) => {
+        if (stepErr) console.warn(`Migration vidéo partagée : ${stepErr.message}`);
+        runNext(index + 1);
+      });
+    };
+    runNext(0);
+  });
 
   // Les playlists de séance (versions 2.1 et 2.2) ont été retirées : le système
   // n'existe plus dans l'application. La table est supprimée des postes qui

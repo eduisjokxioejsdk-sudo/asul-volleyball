@@ -14,7 +14,7 @@ import React, { useState, useMemo } from 'react';
 import { DistributionCourt } from './AttackCourt';
 import { computeSetterDistributionByRotation } from '../utils/distribution';
 import { blockerTableRows } from '../utils/scouting';
-import { AlertTriangle, Crosshair, House, Plane, RotateCcw, Target, Trophy, Users, Volleyball } from './icons';
+import { AlertTriangle, Crosshair, House, MessageSquare, Plane, RotateCcw, Send, Target, Trophy, Users, Volleyball } from './icons';
 
 function fmtPct(v) {
   if (v == null || Number.isNaN(v)) return '—';
@@ -39,11 +39,31 @@ export default function LiveCoachTablet({
   homeConfig = {},
   awayConfig = {},
   videoSlot = null,
+  events = [],
+  onSendMessage,
 }) {
   // Équipe observée comme "Adversaire" par le coach (par défaut 'away')
   const [oppTeam, setOppTeam] = useState('away');
   const [distScope, setDistScope] = useState('CURRENT'); // 'CURRENT' | 'Total'
   const [distPhase, setDistPhase] = useState('ALL'); // 'ALL' | 'K1' | 'K2'
+  const [messageDraft, setMessageDraft] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const messages = (events || []).filter((event) => event.kind === 'message').slice(-30);
+
+  const sendMessage = async (event) => {
+    event.preventDefault();
+    const text = messageDraft.trim();
+    if (!text || sendingMessage || !onSendMessage) return;
+    setSendingMessage(true);
+    try {
+      await onSendMessage(text);
+      setMessageDraft('');
+    } catch {
+      // L’état d’erreur est affiché par la page du match ; le texte reste éditable.
+    } finally {
+      setSendingMessage(false);
+    }
+  };
 
   const myTeam = oppTeam === 'away' ? 'home' : 'away';
   const oppName = oppTeam === 'away' ? team2 : team1;
@@ -277,6 +297,40 @@ export default function LiveCoachTablet({
           </button>
         </div>
       </div>
+
+      <section style={{ background: '#141418', border: '1px solid #27272a', padding: 12 }} aria-label="Messages équipe">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+          <MessageSquare size={14} />
+          <strong style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Messages équipe</strong>
+          <span style={{ color: '#a1a1aa', fontSize: 11 }}>· visibles par les membres connectés</span>
+        </div>
+        <div style={{ maxHeight: 150, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 9 }}>
+          {messages.length === 0 ? (
+            <span style={{ color: '#a1a1aa', fontSize: 12 }}>Aucun message pour le moment.</span>
+          ) : messages.map((message) => (
+            <div key={message.id} style={{ display: 'flex', gap: 8, fontSize: 12, lineHeight: 1.4 }}>
+              <strong style={{ color: '#fbbf24', whiteSpace: 'nowrap' }}>{message.payload?.author || 'Membre'}</strong>
+              <span style={{ color: '#e4e4e7', overflowWrap: 'anywhere' }}>{message.payload?.text}</span>
+              <time style={{ color: '#71717a', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                {message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+              </time>
+            </div>
+          ))}
+        </div>
+        <form onSubmit={sendMessage} style={{ display: 'flex', gap: 8 }}>
+          <input
+            value={messageDraft}
+            onChange={(event) => setMessageDraft(event.target.value)}
+            maxLength={1000}
+            placeholder="Message au banc et aux statisticiens…"
+            aria-label="Nouveau message à l’équipe"
+            style={{ flex: 1, minWidth: 0, padding: '8px 10px', color: '#f4f4f5', background: '#09090b', border: '1px solid #3f3f46', borderRadius: 5 }}
+          />
+          <button type="submit" className="btn btn-primary btn-sm" disabled={!messageDraft.trim() || sendingMessage || !onSendMessage}>
+            <Send size={13} /> Envoyer
+          </button>
+        </form>
+      </section>
 
       {/* GRILLE PRINCIPALE DU MODE BANC (2 COLONNES HAUTE DENSITÉ) */}
       <div

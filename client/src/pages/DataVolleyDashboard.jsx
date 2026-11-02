@@ -228,6 +228,7 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [error, setError] = useState(null);
 
   const [actions, setActions] = useState([]);
+  const [auditEntries, setAuditEntries] = useState([]);
   const [sync, setSync] = useState({
     sync_offset: 0,
     anchor_action_id: null,
@@ -1475,6 +1476,13 @@ function DataVolleyDashboard({ user, onLogout }) {
         }
 
         try {
+          const auditRes = await datavolleyAPI.getAudit(id, 100);
+          if (!cancelled) setAuditEntries(auditRes.data?.entries || []);
+        } catch (err) {
+          console.warn('Impossible de charger l’historique des corrections :', err?.message);
+        }
+
+        try {
           const syncRes = await datavolleyAPI.getSync(id);
           if (!cancelled && syncRes.data && syncRes.data.sync) setSync(syncRes.data.sync);
         } catch (err) {
@@ -1517,13 +1525,14 @@ function DataVolleyDashboard({ user, onLogout }) {
   const refreshRemoteMatchData = useCallback(async () => {
     if (!id || saving || saveTimer.current || bufferRef.current) return;
     try {
-      const [vRes, actRes, syncRes, matchRes, setupsRes, eventsRes] = await Promise.all([
+      const [vRes, actRes, syncRes, matchRes, setupsRes, eventsRes, auditRes] = await Promise.all([
         videosAPI.getOne(id).catch(() => null),
         datavolleyAPI.getActions(id).catch(() => null),
         datavolleyAPI.getSync(id).catch(() => null),
         datavolleyAPI.getMatch(id).catch(() => null),
         datavolleyAPI.getSetups(id).catch(() => null),
         datavolleyAPI.getEvents(id).catch(() => null),
+        datavolleyAPI.getAudit(id, 100).catch(() => null),
       ]);
       if (vRes?.data?.video) setVideo(vRes.data.video);
       if (actRes?.data?.actions && !saveTimer.current && !bufferRef.current) {
@@ -1542,6 +1551,7 @@ function DataVolleyDashboard({ user, onLogout }) {
       if (matchRes?.data?.match) setMatch(matchRes.data.match);
       if (setupsRes?.data?.setups && !rotSaveTimer.current) setSetups(setupsRes.data.setups);
       if (eventsRes?.data?.events) setEvents(eventsRes.data.events);
+      if (auditRes?.data?.entries) setAuditEntries(auditRes.data.entries);
     } catch {
       // ignore transient error
     }
@@ -3487,6 +3497,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                   actions={actions}
                   rallies={rallies}
                   issues={issues}
+                  auditEntries={auditEntries}
                   sync={sync}
                   videoTime={currentTime}
                   onAnchorHere={anchorFirstServe}
@@ -3514,6 +3525,17 @@ function DataVolleyDashboard({ user, onLogout }) {
                   actions (« Click to Rally »), autour des fenêtres elles-mêmes. */}
               {mode === 'analyse' && (
                 <>
+                  {issues.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', margin: '8px 0', padding: '8px 11px', border: '1px solid rgba(245,158,11,.45)', borderRadius: 8, background: 'rgba(245,158,11,.08)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <AlertTriangle size={13} style={{ verticalAlign: 'middle', marginRight: 6, color: '#f59e0b' }} />
+                        Contrôle qualité : {issues.filter((item) => item.severity === 'error').length} erreur(s), {issues.filter((item) => item.severity !== 'error').length} avertissement(s). Un codage incomplet peut fausser l’interprétation des chiffres.
+                      </span>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setMode('correction')}>
+                        Examiner les anomalies
+                      </button>
+                    </div>
+                  )}
                   <DvAnalysisMenu
                     windows={analysisWindows}
                     windowKey={tab}

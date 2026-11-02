@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Check, Clock, Crosshair, Settings, Target } from './icons';
+import { AlertTriangle, Check, Clock, Crosshair, History, Settings, Target } from './icons';
 import DvCodeList from './DvCodeList';
 import AttackDirectionCourt from './AttackDirectionCourt';
 import { DV_ACTIONS, formatTimecode } from '../utils/datavolley';
@@ -15,6 +15,7 @@ export default function DvCorrectionPane({
   actions,
   rallies,
   issues,
+  auditEntries = [],
   sync = {},
   videoTime = 0,
   onAnchorHere,
@@ -40,6 +41,7 @@ export default function DvCorrectionPane({
   const [reviewSkill, setReviewSkill] = useState('A');
   const [reviewIndex, setReviewIndex] = useState(0);
   const [severity, setSeverity] = useState('all');
+  const [showAudit, setShowAudit] = useState(false);
 
   const issueList = useMemo(
     () => issues || codeIssues(actions, { roster, requireTimecode: false, enriched: true }),
@@ -120,6 +122,48 @@ export default function DvCorrectionPane({
           onSeekAction={onSeekAction}
           current={current}
         />
+        <section className="dvx-issues" style={{ marginTop: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <h5 style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0 }}>
+              <History size={14} /> Historique des corrections
+            </h5>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowAudit((value) => !value)}>
+              {showAudit ? 'Masquer' : `Voir (${auditEntries.length})`}
+            </button>
+          </div>
+          <p className="dv-hint" style={{ marginBottom: showAudit ? 8 : 0 }}>
+            Les changements enregistrés indiquent qui a modifié le code et conservent l’ancienne valeur.
+          </p>
+          {showAudit && (auditEntries.length === 0 ? (
+            <p className="dv-hint">Aucune modification historisée pour ce match.</p>
+          ) : (
+            <ol style={{ margin: 0, paddingLeft: 20, maxHeight: 230, overflowY: 'auto' }}>
+              {auditEntries.map((entry) => {
+                const action = actions.find((item) => item.sync_uuid && item.sync_uuid === entry.action_uuid)
+                  || actions.find((item) => Number(item.action_index) === Number(entry.action_index));
+                const beforeCode = entry.before?.code || '—';
+                const afterCode = entry.after?.code || '—';
+                return (
+                  <li key={entry.id} style={{ marginBottom: 8, color: 'var(--text-secondary)', fontSize: 11 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ display: 'block', width: '100%', textAlign: 'left', whiteSpace: 'normal' }}
+                      onClick={() => action && onSeekAction?.(action)}
+                      disabled={!action}
+                      title={action ? 'Aller à l’action actuelle' : 'Action supprimée ou remplacée'}
+                    >
+                      <strong>{entry.operation === 'updated' ? `${beforeCode} → ${afterCode}` : entry.operation === 'deleted' ? `${beforeCode} supprimé` : `${afterCode} ajouté`}</strong>
+                      <span style={{ display: 'block', opacity: 0.8 }}>
+                        {entry.actor_name || 'Utilisateur'} · {entry.created_at ? new Date(`${entry.created_at}Z`).toLocaleString() : 'date inconnue'}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          ))}
+        </section>
         {directionAction && (
           <div className="dvx-direction">
             <h5>

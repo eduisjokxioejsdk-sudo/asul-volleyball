@@ -20,7 +20,7 @@ const proxyDir = path.join(uploadsDir, 'trimmed');
 
 const router = express.Router();
 
-const EVENT_KINDS = ['timeout', 'substitution', 'note', 'sanction', 'delay', 'challenge', 'point_adjust'];
+const EVENT_KINDS = ['timeout', 'substitution', 'note', 'message', 'sanction', 'delay', 'challenge', 'point_adjust'];
 const EVENT_TEAMS = ['home', 'away'];
 
 // --- Helpers ---------------------------------------------------------------
@@ -908,6 +908,13 @@ router.post('/:sessionId/events', authenticateToken, (req, res) => {
     const text = String(payload?.text || '').trim().slice(0, 5).toUpperCase();
     if (!text) return res.status(400).json({ error: 'Code libre vide.' });
     cleanPayload = { text };
+  } else if (kind === 'message') {
+    const text = String(payload?.text || '').trim().slice(0, 1000);
+    if (!text) return res.status(400).json({ error: 'Le message est vide.' });
+    cleanPayload = {
+      text,
+      author: String(req.user?.name || req.user?.email || 'Membre').slice(0, 100),
+    };
   } else if (kind === 'sanction') {
     const card = ['Y', 'R', 'E', 'D'].includes(String(payload?.card || '').toUpperCase())
       ? String(payload.card).toUpperCase()

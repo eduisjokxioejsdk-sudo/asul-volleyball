@@ -45,6 +45,51 @@ function touchMatchForSync(videoId, callback) {
   );
 }
 
+const AUDIT_FIELDS = [
+  'code', 'timecode', 'system_time', 'team', 'player_number', 'action', 'evaluation',
+  'type', 'start_zone', 'end_zone', 'start_subzone', 'end_subzone', 'set_number', 'note',
+  'attack_zone', 'start_x', 'start_y', 'mid_x', 'mid_y', 'end_x', 'end_y',
+];
+
+function actionAuditSnapshot(action) {
+  const snapshot = {};
+  for (const key of AUDIT_FIELDS) snapshot[key] = action?.[key] ?? null;
+  return snapshot;
+}
+
+function insertActionAudit(videoId, before, after, user) {
+  const keyFor = (action, index) => action?.sync_uuid || `row:${action?.action_index ?? index}:${action?.timecode ?? ''}:${index}`;
+  const oldMap = new Map((before || []).map((a, i) => [keyFor(a, i), a]));
+  const newMap = new Map((after || []).map((a, i) => [keyFor(a, i), a]));
+  const keys = new Set([...oldMap.keys(), ...newMap.keys()]);
+  const changes = [];
+  for (const key of keys) {
+    const oldAction = oldMap.get(key);
+    const newAction = newMap.get(key);
+    const oldSnapshot = oldAction ? actionAuditSnapshot(oldAction) : null;
+    const newSnapshot = newAction ? actionAuditSnapshot(newAction) : null;
+    if (JSON.stringify(oldSnapshot) === JSON.stringify(newSnapshot)) continue;
+    changes.push([
+      videoId,
+      newAction?.sync_uuid || oldAction?.sync_uuid || null,
+      newAction?.action_index ?? oldAction?.action_index ?? null,
+      !oldAction ? 'created' : !newAction ? 'deleted' : 'updated',
+      oldSnapshot ? JSON.stringify(oldSnapshot) : null,
+      newSnapshot ? JSON.stringify(newSnapshot) : null,
+      user?.id ?? null,
+      user?.name || user?.email || 'Utilisateur',
+    ]);
+  }
+  if (!changes.length) return;
+  const stmt = db.prepare(
+    `INSERT INTO volley_action_audit
+      (video_id, action_uuid, action_index, operation, before_json, after_json, user_id, actor_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  for (const change of changes) stmt.run(change);
+  stmt.finalize();
+}
+
 // Liste des matchs terminés (partagée entre tous les utilisateurs et postes).
 router.get('/finished', authenticateToken, (req, res) => {
   db.all(
@@ -77,6 +122,26 @@ router.get('/:videoId/actions', authenticateToken, (req, res) => {
   );
 });
 
+router.get('/:videoId/audit', authenticateToken, (req, res) => {
+  const limit = Math.min(250, Math.max(1, Number(req.query.limit) || 100));
+  verifyVideo(req, res, () => {
+    db.all(
+      `SELECT id, action_uuid, action_index, operation, before_json, after_json,
+              user_id, actor_name, created_at
+         FROM volley_action_audit WHERE video_id = ? ORDER BY id DESC LIMIT ?`,
+      [req.params.videoId, limit],
+      (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ entries: (rows || []).map((row) => ({
+          ...row,
+          before: row.before_json ? JSON.parse(row.before_json) : null,
+          after: row.after_json ? JSON.parse(row.after_json) : null,
+        })) });
+      }
+    );
+  });
+});
+
 // Replace all coded actions for a video (transaction)
 router.post('/:videoId/actions', authenticateToken, (req, res) => {
   const { videoId } = req.params;
@@ -101,6 +166,8 @@ router.post('/:videoId/actions', authenticateToken, (req, res) => {
     }
 
     const now = new Date().toISOString();
+    db.all('SELECT * FROM volley_actions WHERE video_id = ? AND COALESCE(deleted, 0) = 0 ORDER BY action_index ASC, id ASC', [videoId], (readErr, oldRows) => {
+    if (readErr) return res.status(500).json({ error: 'Database error' });
     db.run('BEGIN TRANSACTION', (err) => {
       if (err) return res.status(500).json({ error: 'Failed to start transaction' });
 
@@ -117,6 +184,7 @@ router.post('/:videoId/actions', authenticateToken, (req, res) => {
             db.run('COMMIT', (err3) => {
               if (err3) return res.status(500).json({ error: 'Failed to commit transaction' });
               syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+              insertActionAudit(videoId, oldRows, [], req.user);
               emitCollectionChanged('actions');
               return res.json({ message: 'Actions cleared successfully', count: 0 });
             });
@@ -172,12 +240,14 @@ router.post('/:videoId/actions', authenticateToken, (req, res) => {
             db.run('COMMIT', (err4) => {
               if (err4) return res.status(500).json({ error: 'Failed to commit transaction' });
               syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+              insertActionAudit(videoId, oldRows, rows, req.user);
               emitCollectionChanged('actions');
               res.json({ message: 'Actions saved successfully', count: rows.length });
             });
           });
         }
       );
+    });
     });
   });
 });
@@ -210,6 +280,11 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
     }
 
     const now = new Date().toISOString();
+    db.all(
+      'SELECT * FROM volley_actions WHERE video_id = ? AND COALESCE(deleted, 0) = 0 AND COALESCE(set_number, 1) = ? ORDER BY action_index ASC, id ASC',
+      [videoId, setNumber],
+      (readErr, oldRows) => {
+    if (readErr) return res.status(500).json({ error: 'Database error' });
     db.run('BEGIN TRANSACTION', (err) => {
       if (err) return res.status(500).json({ error: 'Failed to start transaction' });
 
@@ -226,6 +301,7 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
             return db.run('COMMIT', (err3) => {
               if (err3) return res.status(500).json({ error: 'Failed to commit transaction' });
               syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+              insertActionAudit(videoId, oldRows, [], req.user);
               emitCollectionChanged('actions');
               return res.json({ message: 'Actions du set effacées', count: 0 });
             });
@@ -280,6 +356,7 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
             db.run('COMMIT', (err4) => {
               if (err4) return res.status(500).json({ error: 'Failed to commit transaction' });
               syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+              insertActionAudit(videoId, oldRows, rows, req.user);
               emitCollectionChanged('actions');
               res.json({ message: 'Actions du set enregistrées', count: rows.length });
             });
@@ -287,6 +364,8 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
         }
       );
     });
+      }
+    );
   });
 });
 
@@ -294,14 +373,22 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
 router.delete('/:videoId/actions', authenticateToken, (req, res) => {
   verifyVideo(req, res, () => {
     const now = new Date().toISOString();
-    db.run(
-      'UPDATE volley_actions SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_id = ?',
-      [now, req.params.videoId],
-      function (err) {
-        if (err) return res.status(500).json({ error: 'Failed to delete actions' });
-        syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
-        emitCollectionChanged('actions');
-        res.json({ message: 'Actions deleted successfully' });
+    db.all(
+      'SELECT * FROM volley_actions WHERE video_id = ? AND COALESCE(deleted, 0) = 0 ORDER BY action_index ASC, id ASC',
+      [req.params.videoId],
+      (readErr, oldRows) => {
+        if (readErr) return res.status(500).json({ error: 'Database error' });
+        db.run(
+          'UPDATE volley_actions SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_id = ?',
+          [now, req.params.videoId],
+          function (err) {
+            if (err) return res.status(500).json({ error: 'Failed to delete actions' });
+            insertActionAudit(req.params.videoId, oldRows, [], req.user);
+            syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+            emitCollectionChanged('actions');
+            res.json({ message: 'Actions deleted successfully' });
+          }
+        );
       }
     );
   });
