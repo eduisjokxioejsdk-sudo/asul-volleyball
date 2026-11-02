@@ -1,8 +1,22 @@
 {
-  "version": "3.6.0",
-  "releasedAt": "2026-11-01",
+  "version": "3.6.1",
+  "releasedAt": "2026-11-02",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.6.1",
+      "date": "2026-11-02",
+      "title": "Partage des clips par lien, annotations, historique des corrections et messages équipe",
+      "items": [
+        "Centre Vidéo : chaque clip du montage peut recevoir une annotation écrite (« Annotation à partager… »), reprise dans le montage MP4 et dans la page de partage",
+        "Centre Vidéo : le montage terminé propose « Partager clips » (l’adresse de partage est copiée) et « Révoquer le lien » — aucun compte n’est nécessaire pour la personne qui reçoit le lien",
+        "Nouvelle page « Clips de match » (adresse /shared-clip/…) : le montage se lit dans le navigateur, la liste affiche le temps fort, le code, l’équipe, le joueur, l’évaluation et les annotations ; un clic sur une ligne amène au clip correspondant",
+        "Data Volley : panneau « Historique des corrections » dans le mode Correction — chaque modification d’action est enregistrée avec son auteur, sa date et le code avant/après, et un clic ramène à l’action concernée",
+        "Data Volley : bandeau de contrôle qualité au-dessus des statistiques, avec le nombre d’erreurs et d’avertissements détectés et le bouton « Examiner les anomalies »",
+        "Match en direct : bloc « Messages équipe » sur la tablette du banc — le message envoyé apparaît chez tous les membres connectés au match, avec l’auteur et l’heure",
+        "Partages fiables : chaque montage reçoit un jeton aléatoire, la révocation coupe aussitôt le lien, et le serveur ne transmet que le fichier du montage (lecture avec avance/retour possible)"
+      ]
+    },
     {
       "version": "3.6.0",
       "date": "2026-11-01",
