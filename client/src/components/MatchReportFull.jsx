@@ -11,7 +11,23 @@
 import { useMemo, useState } from 'react';
 import MatchReportTable from './MatchReportTable';
 import PancakeLogo from './PancakeLogo';
-import ZoneHeatmap from './ZoneHeatmap';
+import ZoneHeatmap, { heatColor } from './ZoneHeatmap';
+import DvTrajectoryBoard from './DvTrajectoryBoard';
+import EvalBar from './EvalBar';
+import CrossMatrixTable from './CrossMatrixTable';
+import CodingQualityBadge from './CodingQualityBadge';
+import { SideOutBreakView, AttackByReceptionView } from './TeamAnalysisViews';
+import { ServeReceptionDuelView, BlockAndSetView } from './TeamAnalysisViews2';
+import ScoreProgressView from './ScoreProgressView';
+import PlayerSheet from './PlayerSheet';
+import ReceptionBoardView from './ReceptionBoardView';
+import SendToTrajectoryButton from './SendToTrajectoryButton';
+import TrajectoryMap from './DvTrajectoryMap';
+import { buildShots } from '../utils/dvTrajectories';
+import { RotationBoard, PlayerDistributionTable } from './DistributionBoard';
+import { computeDistributionByPlayer, computeSetterDistributionByRotation } from '../utils/distribution';
+import { groupActionsIntoRallies } from '../utils/datavolley';
+import { filterActionsBySets } from '../utils/matchReport';
 import { DirectionMap } from './AttackCourt';
 import { DV_EVAL_KEYS, DV_EVALUATIONS, DV_ZONE_LABELS } from '../utils/datavolley';
 import {
@@ -45,6 +61,12 @@ const TABS = [
   { key: 'parette', label: 'Par set' },
   { key: 'joueurs', label: 'Joueurs' },
   { key: 'directions', label: 'Directions' },
+  { key: 'sideout', label: 'Side-out / Break' },
+  { key: 'attrec', label: 'Attaque vs réception' },
+  { key: 'duel', label: 'Service / Réception' },
+  { key: 'contrepasse', label: 'Contre / Passe' },
+  { key: 'score', label: 'Score' },
+  { key: 'fiche', label: 'Fiche joueur' },
 ];
 
 /** Clés des fenêtres portées par le rapport (le menu de gauche les pilote). */
@@ -162,6 +184,7 @@ function EvalTable({ side, skillId, label }) {
           <th>Pts</th>
           <th>Err</th>
           <th>Eff%</th>
+          <th>Répartition</th>
         </tr>
       </thead>
       <tbody>
@@ -178,6 +201,7 @@ function EvalTable({ side, skillId, label }) {
               <td>{agg.points}</td>
               <td>{agg.errors}</td>
               <td>{m.efficiency != null ? `${m.efficiency}%` : '—'}</td>
+              <td><EvalBar byEval={agg.byEval} total={agg.total} /></td>
             </tr>
           );
         })}
@@ -208,6 +232,42 @@ function TypeTable({ side, skillId, actionCode, actions }) {
             {types.map((t) => (
               <td key={t}>{p.skills[skillId].byType[t] || ''}</td>
             ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * Répartition des évaluations par type de frappe (barre empilée) : calculée depuis
+ * les actions brutes, le tableau « par type » ne gardant que les totaux.
+ */
+function TypeEvalBars({ team, actionCode, actions }) {
+  const types = observedTypes(actions, actionCode);
+  if (types.length === 0) return null;
+  const rows = types.map((t) => {
+    const byEval = {};
+    let total = 0;
+    for (const a of actions || []) {
+      if (a.action !== actionCode || a.team !== team || a.type !== t || !a.evaluation) continue;
+      byEval[a.evaluation] = (byEval[a.evaluation] || 0) + 1;
+      total += 1;
+    }
+    return { type: t, byEval, total };
+  }).filter((r) => r.total > 0);
+  if (rows.length === 0) return null;
+  return (
+    <table className="report report-compact" style={{ marginTop: 6 }}>
+      <thead>
+        <tr><th className="name">Type</th><th>Tot</th><th>Répartition des évaluations</th></tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.type}>
+            <td className="name">{r.type} — {describeType(actionCode, r.type).label}</td>
+            <td>{r.total}</td>
+            <td><EvalBar byEval={r.byEval} total={r.total} width={160} /></td>
           </tr>
         ))}
       </tbody>
@@ -368,7 +428,13 @@ function ZoneTable({ side, skillId }) {
             <tr key={`${p.number}-${i}`} className={p.number === 0 ? 'team-row' : ''}>
               <td className="name">{playerLabel(p, side.name)}</td>
               {zones.map((z) => (
-                <td key={z} title={byZone[z] ? `${byZone[z].pct} %` : ''}>{byZone[z]?.count || ''}</td>
+                <td
+                  key={z}
+                  title={byZone[z] ? `${byZone[z].pct} %` : ''}
+                  style={byZone[z] ? { background: heatColor(byZone[z].pct).fill, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } : undefined}
+                >
+                  {byZone[z]?.count || ''}
+                </td>
               ))}
               <td>{total}</td>
             </tr>
@@ -597,6 +663,7 @@ export default function MatchReportFull({
   activeSets = [],
   onToggleSet,
   rawActions = [],
+  distributionContext = {},
   events = [],
   initialTab = 'synthese',
   tab: controlledTab = null,
@@ -633,6 +700,13 @@ export default function MatchReportFull({
 
   /** Cartes de zones affichées dans le sous-onglet « Zones ». */
   const ZONE_SKILLS = ['serve', 'reception', 'attack', 'block'];
+
+  // Actions du rapport imprimé : évaluées et limitées aux sets choisis (comme le reste du bilan).
+  const printActions = (() => {
+    const evaluated = (rawActions || []).filter((a) => a && a.evaluation);
+    const map = distributionContext?.setMap;
+    return map ? filterActionsBySets(evaluated, map, activeSets) : evaluated;
+  })();
 
   const printDocument = () => {
     setPrintAll(true);
@@ -722,9 +796,32 @@ export default function MatchReportFull({
 
         {tab === 'joueurs' && <PlayersTable report={report} />}
 
+        {tab === 'sideout' && (<><h5>Side-out et break par rotation — {sideName}</h5><SideOutBreakView actions={printActions} setups={distributionContext?.setups || {}} team={side} /></>)}
+        {tab === 'attrec' && (<><h5>Efficacité de la 1re attaque selon la réception — {sideName}</h5><AttackByReceptionView actions={printActions} setups={distributionContext?.setups || {}} team={side} /></>)}
+        {tab === 'duel' && (<><h5>Duel service / réception — {sideName}</h5><ServeReceptionDuelView actions={printActions} team={side} /></>)}
+        {tab === 'contrepasse' && (<><h5>Contre et passe — {sideName}</h5><BlockAndSetView actions={printActions} team={side} /></>)}
+        {tab === 'score' && (<><h5>Évolution du score</h5><ScoreProgressView actions={printActions} setups={distributionContext?.setups || {}} names={{ home: report?.home?.name || 'Domicile', away: report?.away?.name || 'Extérieur' }} events={events} /></>)}
+        {tab === 'fiche' && (<><h5>Fiche individuelle</h5><PlayerSheet key={side} actions={printActions} initialTeam={side} names={{ home: report?.home?.name, away: report?.away?.name }} /></>)}
+
         {tab === 'directions' && (
           <>
-            <h5>Directions d’attaque — {sideName}</h5>
+            <CodingQualityBadge actions={printActions} />
+            <h5>Trajectoires (une flèche par action)</h5>
+            <DvTrajectoryBoard
+              key={side}
+              actions={printActions}
+              initialSide={side}
+              names={{ home: report?.home?.name, away: report?.away?.name }}
+              setups={distributionContext?.setups || {}}
+              setterNumbers={distributionContext?.setterNumbers || {}}
+              onSeekAction={distributionContext?.onSeekAction || null}
+            />
+            {context === 'coding' && distributionContext?.video && (
+              <SendToTrajectoryButton actions={printActions} setMap={distributionContext.setMap} video={distributionContext.video} />
+            )}
+            <h5 style={{ marginTop: 18 }}>Tableau croisé départ × arrivée — {sideName}</h5>
+            <CrossMatrixTable key={`cm-${side}`} actions={printActions} team={side} />
+            <h5 style={{ marginTop: 18 }}>Directions d’attaque — {sideName}</h5>
             <p className="dv-hint">
               Zone de départ × zone d’arrivée : chaque chiffre du tableau est l’agrégat d’un couple
               (« 4 → 5 »). Cliquez une cellule ou une flèche pour filtrer la liste des actions.
@@ -757,6 +854,13 @@ export default function MatchReportFull({
             <EvalTable side={report[side]} skillId={current.skill} label={skillLabel(current.skill)} />
             <h5>Par type</h5>
             <TypeTable side={report[side]} skillId={current.skill} actionCode={current.action} actions={rawActions} />
+            <TypeEvalBars team={side} actionCode={current.action} actions={printActions} />
+            {current.skill === 'reception' && (
+              <>
+                <h5>Planche réception — {sideName}</h5>
+                <ReceptionBoardView actions={printActions} team={side} />
+              </>
+            )}
             <h5>Par zone</h5>
             <ZoneTable side={report[side]} skillId={current.skill} />
             <ZoneHeatmap
@@ -833,6 +937,7 @@ export default function MatchReportFull({
                   <h3>{report[k].name}</h3>
                   <EvalTable side={report[k]} skillId={s.id} label={s.label} />
                   <TypeTable side={report[k]} skillId={s.id} actionCode={s.action} actions={rawActions} />
+                  <TypeEvalBars team={k} actionCode={s.action} actions={printActions} />
                   <h4>Zones</h4>
                   <ZoneHeatmap zones={report[k].totals.skills[s.id].byZone} title={s.label} />
                   <ZoneTable side={report[k]} skillId={s.id} />
@@ -868,6 +973,85 @@ export default function MatchReportFull({
               </div>
             ))}
           </section>
+          <section className="report-print-section">
+            <h2>Distribution du passeur (side-out, 6 rotations)</h2>
+            {['home', 'away'].map((k) => {
+              const rallies = groupActionsIntoRallies(printActions);
+              const dctx = distributionContext || {};
+              const setterNums = dctx.setterNumbers || {};
+              const dist = computeSetterDistributionByRotation(
+                printActions, rallies, dctx.setups || {}, setterNums, { phase: 'K1' }
+              );
+              return (
+                <div key={k} style={{ breakInside: 'avoid', marginBottom: 12 }}>
+                  <h3>{report[k].name}</h3>
+                  <RotationBoard distribution={dist[k]} />
+                  <h4>Par attaquant</h4>
+                  <PlayerDistributionTable rows={computeDistributionByPlayer(printActions, rallies, setterNums, { phase: 'K1' })[k]} />
+                </div>
+              );
+            })}
+          </section>
+          <section className="report-print-section">
+            <h2>Side-out et break par rotation</h2>
+            {['home', 'away'].map((k) => (
+              <div key={k} style={{ breakInside: 'avoid' }}>
+                <h3>{report[k].name}</h3>
+                <SideOutBreakView actions={printActions} setups={distributionContext?.setups || {}} team={k} />
+              </div>
+            ))}
+          </section>
+          <section className="report-print-section">
+            <h2>Efficacité de la 1re attaque selon la réception</h2>
+            {['home', 'away'].map((k) => (
+              <div key={k} style={{ breakInside: 'avoid' }}>
+                <h3>{report[k].name}</h3>
+                <AttackByReceptionView actions={printActions} setups={distributionContext?.setups || {}} team={k} />
+              </div>
+            ))}
+          </section>
+          <section className="report-print-section">
+            <h2>Service / réception, contre et passe</h2>
+            {['home', 'away'].map((k) => (
+              <div key={k}>
+                <h3>{report[k].name}</h3>
+                <ServeReceptionDuelView actions={printActions} team={k} />
+                <BlockAndSetView actions={printActions} team={k} />
+              </div>
+            ))}
+          </section>
+          <section className="report-print-section">
+            <h2>Évolution du score</h2>
+            <ScoreProgressView
+              actions={printActions}
+              setups={distributionContext?.setups || {}}
+              names={{ home: report.home.name, away: report.away.name }}
+              events={events}
+            />
+          </section>
+          {['A', 'S'].map((sk) => (
+            <section key={`traj-${sk}`} className="report-print-section">
+              <h2>Trajectoires — {sk === 'A' ? 'Attaque' : 'Service'}</h2>
+              <p className="report-print-legend">
+                Motifs : # trait plein · + tirets longs · ! pointillés · − tiret-point · / points serrés · = tirets espacés.
+              </p>
+              {['home', 'away'].map((k) => {
+                const shots = buildShots(printActions, { team: k, skill: sk });
+                return (
+                  <div key={k} style={{ breakInside: 'avoid', marginBottom: 12 }}>
+                    <h3>{report[k].name}</h3>
+                    {shots.length === 0 ? (
+                      <p>Aucune direction codée.</p>
+                    ) : (
+                      <div style={{ maxWidth: 520 }}>
+                        <TrajectoryMap shots={shots} heat teamSide={k} bw />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </section>
+          ))}
           {events.length > 0 && (
             <section className="report-print-section">
               <h2>Temps morts et remplacements</h2>

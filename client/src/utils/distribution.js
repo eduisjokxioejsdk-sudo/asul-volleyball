@@ -342,8 +342,8 @@ export function computeSetterDistributionByRotation(
     home: emptyByPosition(),
     away: emptyByPosition(),
     meta: {
-      home: { setterDugCount: 0, totalPossessions: 0, byCall: {}, byPhase: { K1: 0, K2: 0, FREEBALL: 0 } },
-      away: { setterDugCount: 0, totalPossessions: 0, byCall: {}, byPhase: { K1: 0, K2: 0, FREEBALL: 0 } },
+      home: { setterDugCount: 0, totalPossessions: 0, byCall: {}, byPassZone: {}, byPhase: { K1: 0, K2: 0, FREEBALL: 0 } },
+      away: { setterDugCount: 0, totalPossessions: 0, byCall: {}, byPassZone: {}, byPhase: { K1: 0, K2: 0, FREEBALL: 0 } },
     },
   };
 
@@ -373,6 +373,9 @@ export function computeSetterDistributionByRotation(
         if (result.meta[side].byPhase[poss.phase] != null) {
           result.meta[side].byPhase[poss.phase] += 1;
         }
+        if (poss.passZone) {
+          result.meta[side].byPassZone[poss.passZone] = (result.meta[side].byPassZone[poss.passZone] || 0) + 1;
+        }
         if (poss.setterCall) {
           result.meta[side].byCall[poss.setterCall] = (result.meta[side].byCall[poss.setterCall] || 0) + 1;
         }
@@ -395,4 +398,113 @@ export function computeSetterDistributionByRotation(
     for (const key of Object.keys(result[side])) finalizeSide(result[side][key]);
   }
   return result;
+}
+
+/**
+ * Distribution par attaquant : pour chaque joueur, nombre de ballons reçus, part
+ * du total de l'équipe, et résultat. Mêmes filtres que la distribution par zone.
+ * @returns {{ home: Array, away: Array }} lignes triées par volume décroissant.
+ */
+export function computeDistributionByPlayer(actions, rallies, setterNumbers = {}, filters = {}) {
+  const list = rallies || groupActionsIntoRallies(actions || []);
+  const maps = { home: new Map(), away: new Map() };
+  for (const rally of list) {
+    const srv = rallyServerTeam(rally);
+    const serverSide = srv === 'team1' ? 'home' : srv === 'team2' ? 'away' : null;
+    for (const poss of extractRallyAttackPossessions(rally.actions, serverSide)) {
+      const side = poss.team === 'away' ? 'away' : 'home';
+      const setterNumber = Number(setterNumbers[side]) || 0;
+      if (!matchesDistributionFilters(poss, filters, setterNumber)) continue;
+      const number = Number(poss.action?.player_number) || 0;
+      if (!number) continue;
+      const row = maps[side].get(number) || { number, count: 0, points: 0, errors: 0, blocked: 0, bySituation: { '+': 0, '0': 0, '-': 0 } };
+      row.count += 1;
+      const ev = poss.action.evaluation;
+      if (ev === '#') row.points += 1;
+      if (ev === '=') row.errors += 1;
+      if (ev === '/') row.blocked += 1;
+      if (row.bySituation[poss.situation] != null) row.bySituation[poss.situation] += 1;
+      maps[side].set(number, row);
+    }
+  }
+  const out = { home: [], away: [] };
+  for (const side of ['home', 'away']) {
+    const rows = [...maps[side].values()];
+    const total = rows.reduce((s, r) => s + r.count, 0);
+    out[side] = rows
+      .map((r) => ({
+        ...r,
+        pct: total ? Math.round((r.count / total) * 100) : 0,
+        killPct: r.count ? Math.round((r.points / r.count) * 100) : 0,
+        eff: r.count ? Math.round(((r.points - r.errors - r.blocked) / r.count) * 100) : 0,
+      }))
+      .sort((a, b) => b.count - a.count || a.number - b.number);
+  }
+  return out;
+}
+
+/**
+ * Tendances du passeur : répartition des ballons selon le résultat du point
+ * précédent de l'équipe (point gagné / perdu) et taux de resollicitation d'un
+ * attaquant juste après son échec (attaque en faute ou contrée).
+ * @returns {{ home: Object, away: Object }}
+ *   chaque côté : { afterWin, afterLoss: { total, rows:[{number,count,pct}] },
+ *                     afterFail: { total, same, samePct } }
+ */
+export function computeSetterTendencies(actions, rallies, filters = {}) {
+  const list = rallies || groupActionsIntoRallies(actions || []);
+  const blank = () => ({
+    afterWin: { total: 0, byPlayer: new Map() },
+    afterLoss: { total: 0, byPlayer: new Map() },
+    afterFail: { total: 0, same: 0, samePct: 0 },
+    lastAttack: null,
+    lastResult: null,
+  });
+  const st = { home: blank(), away: blank() };
+  const phaseFilter = filters.phase || 'ALL';
+
+  for (const rally of list) {
+    const srv = rallyServerTeam(rally);
+    const serverSide = srv === 'team1' ? 'home' : srv === 'team2' ? 'away' : null;
+    for (const poss of extractRallyAttackPossessions(rally.actions, serverSide)) {
+      const side = poss.team === 'away' ? 'away' : 'home';
+      const s = st[side];
+      const number = Number(poss.action?.player_number) || 0;
+      if (!number) continue;
+      if (phaseFilter === 'ALL' || poss.phase === phaseFilter) {
+        const bucket = s.lastResult === 'win' ? s.afterWin : s.lastResult === 'loss' ? s.afterLoss : null;
+        if (bucket) {
+          bucket.total += 1;
+          bucket.byPlayer.set(number, (bucket.byPlayer.get(number) || 0) + 1);
+        }
+      }
+      if (s.lastAttack && (s.lastAttack.ev === '=' || s.lastAttack.ev === '/')) {
+        s.afterFail.total += 1;
+        if (s.lastAttack.number === number) s.afterFail.same += 1;
+      }
+      s.lastAttack = { number, ev: poss.action.evaluation };
+    }
+    if (rally.winner) {
+      const winSide = rally.winner === 'team2' ? 'away' : 'home';
+      st[winSide].lastResult = 'win';
+      st[winSide === 'home' ? 'away' : 'home'].lastResult = 'loss';
+    }
+  }
+
+  const rowsOf = (b) => ({
+    total: b.total,
+    rows: [...b.byPlayer.entries()]
+      .map(([number, count]) => ({ number, count, pct: b.total ? Math.round((count / b.total) * 100) : 0 }))
+      .sort((a, b2) => b2.count - a.count || a.number - b2.number),
+  });
+  const out = {};
+  for (const side of ['home', 'away']) {
+    const f = st[side].afterFail;
+    out[side] = {
+      afterWin: rowsOf(st[side].afterWin),
+      afterLoss: rowsOf(st[side].afterLoss),
+      afterFail: { ...f, samePct: f.total ? Math.round((f.same / f.total) * 100) : 0 },
+    };
+  }
+  return out;
 }

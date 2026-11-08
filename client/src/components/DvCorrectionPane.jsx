@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Clock, Crosshair, History, Settings, Target } from './icons';
 import DvCodeList from './DvCodeList';
 import AttackDirectionCourt from './AttackDirectionCourt';
+import CodingQualityBadge from './CodingQualityBadge';
 import { DV_ACTIONS, formatTimecode } from '../utils/datavolley';
 import { codeIssues, countIssuesByType, filterIssues, nextIssue } from '../utils/codingTools';
 
@@ -164,6 +165,7 @@ export default function DvCorrectionPane({
             </ol>
           ))}
         </section>
+        <CodingQualityBadge actions={actions} />
         {directionAction && (
           <div className="dvx-direction">
             <h5>

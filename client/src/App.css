@@ -2862,8 +2862,63 @@ html, body, #root, .app, .page-shell {
     color: #333;
   }
 
+  /* A4 paysage : les planches (terrains, tableaux croisés) y sont plus lisibles. */
   @page {
-    margin: 14mm;
+    size: A4 landscape;
+    margin: 12mm 12mm 16mm;
+  }
+
+  /* Les couleurs (barres d'évaluation, cases colorées, flèches) doivent sortir à l'impression. */
+  .report-print,
+  .report-print * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Cases colorées : ne pas écraser le fond posé en ligne par les tableaux croisés. */
+  .report-print td[style*='background'] {
+    background-clip: padding-box;
+  }
+
+  /* Un visuel ne se coupe pas entre deux pages. */
+  .report-print svg,
+  .report-print table,
+  .report-print .zone-heatmap,
+  .report-print tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Cartes SVG : fond foncé conservé, taille raisonnable en paysage. */
+  .report-print svg {
+    max-height: 120mm;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .report-print thead {
+    display: table-header-group;
+  }
+
+  /* Pied de page : numéro de page via le compteur CSS de la zone de marge (Chrome / Edge). */
+  @page {
+    @bottom-center {
+      content: 'Pancake Stats — page ' counter(page) ' / ' counter(pages);
+      font-size: 9px;
+      color: #555;
+    }
+  }
+
+  .report-print-legend {
+    font-size: 9px;
+    color: #333;
+    margin: 0 0 6px;
+  }
+
+  /* Boutons et sélecteurs de filtres : inutiles sur papier. */
+  .report-print button,
+  .report-print select {
+    display: none !important;
   }
 }
 /* Temps morts et remplacements : boutons du panneau Score + liste (frise). */

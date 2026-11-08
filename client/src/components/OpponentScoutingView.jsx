@@ -19,14 +19,28 @@ export default function OpponentScoutingView({
   opponentName = 'Notre Équipe',
   matchesCount = 1,
   onPrint = null,
+  context = null,
 }) {
   const [activeRotation, setActiveRotation] = useState('ALL'); // 'ALL' | '1'..'6'
   const [phaseFilter, setPhaseFilter] = useState('ALL'); // 'ALL' | 'K1' | 'K2'
 
   // 1. Filtrer les actions de l'équipe cible
+  // Les actions n'ont pas de champ rotation / phase : on les lit dans le contexte
+  // calculé par match (voir utils/multiMatch.buildMultiContext).
   const teamActions = useMemo(() => {
-    return actions.filter((a) => a && a.team === 'home');
-  }, [actions]);
+    return actions
+      .filter((a) => a && a.team === 'home')
+      .map((a) => {
+        const ctx = context?.get(a.uid ?? a.id ?? a.action_index);
+        if (!ctx) return a;
+        return {
+          ...a,
+          rotation: ctx.rotation ? ctx.rotation.replace('P', '') : a.rotation,
+          phase: ctx.phase || a.phase,
+          situation: ctx.situation || a.situation,
+        };
+      });
+  }, [actions, context]);
 
   // 2. Analyse des Récepteurs (Cibles au service)
   const receptionAnalysis = useMemo(() => {

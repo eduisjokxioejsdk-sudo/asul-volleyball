@@ -14,6 +14,8 @@ import AppNavigation from '../components/AppNavigation';
 import PancakeLogo from '../components/PancakeLogo';
 import MatchReportFull, { REPORT_TABS } from '../components/MatchReportFull';
 import OpponentScoutingView from '../components/OpponentScoutingView';
+import MultiMatchTeamView from '../components/MultiMatchTeamView';
+import { prepareMatches, buildMultiContext, allActions } from '../utils/multiMatch';
 import { DistributionCourt } from '../components/AttackCourt';
 import { videosAPI, datavolleyAPI } from '../services/api';
 import { computeScouting } from '../utils/scouting';
@@ -45,6 +47,7 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
   const [videos, setVideos] = useState([]);
   const [selectedVideoIds, setSelectedVideoIds] = useState([]);
   const [matchActionsMap, setMatchActionsMap] = useState({}); // { [videoId]: actions[] }
+  const [matchExtras, setMatchExtras] = useState({}); // { [videoId]: { setups, events } }
   const [targetTeam, setTargetTeam] = useState('');
   const [activeView, setActiveView] = useState('gameplan'); // 'gameplan' | 'fullreport' | 'distribution'
   const [reportTab, setReportTab] = useState('synthese');
@@ -89,17 +92,24 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
       setLoadingActions(true);
       try {
         const newMap = { ...matchActionsMap };
+        const extrasMap = {};
         await Promise.all(
           missingIds.map(async (vid) => {
             try {
-              const res = await datavolleyAPI.getActions(vid);
+              const [res, setupsRes, eventsRes] = await Promise.all([
+                datavolleyAPI.getActions(vid),
+                datavolleyAPI.getSetups(vid).catch(() => ({ data: {} })),
+                datavolleyAPI.getEvents(vid).catch(() => ({ data: {} })),
+              ]);
               newMap[vid] = res.data?.actions || [];
+              extrasMap[vid] = { setups: setupsRes.data?.setups || {}, events: eventsRes.data?.events || [] };
             } catch {
               newMap[vid] = [];
             }
           })
         );
         if (!cancelled) {
+          setMatchExtras((prev) => ({ ...prev, ...extrasMap }));
           setMatchActionsMap(newMap);
         }
       } finally {
@@ -179,6 +189,21 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
 
     return result;
   }, [targetTeam, selectedVideoIds, videos, matchActionsMap]);
+
+  // Matchs préparés : chacun garde ses échanges, sets et rotations (cumul fiable).
+  const preparedMatches = useMemo(() => {
+    const list = selectedVideoIds
+      .map((vid) => {
+        const video = videos.find((x) => x.id === vid);
+        if (!video) return null;
+        const extras = matchExtras[vid] || {};
+        return { video, actions: matchActionsMap[vid] || [], setups: extras.setups || {}, events: extras.events || [] };
+      })
+      .filter(Boolean);
+    return prepareMatches(list, targetTeam);
+  }, [selectedVideoIds, videos, matchActionsMap, matchExtras, targetTeam]);
+
+  const multiContext = useMemo(() => buildMultiContext(preparedMatches), [preparedMatches]);
 
   // Rallies groupés sur l'ensemble cumulé
   const cumulativeRallies = useMemo(() => {
@@ -409,6 +434,14 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
           </button>
           <button
             type="button"
+            className={`btn ${activeView === 'team' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setActiveView('team')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <ChartColumn size={14} /> Analyses équipe cumulées
+          </button>
+          <button
+            type="button"
             className={`btn ${activeView === 'distribution' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setActiveView('distribution')}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
@@ -420,11 +453,12 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
         {/* Contenu selon la vue active */}
         {activeView === 'gameplan' && (
           <OpponentScoutingView
-            actions={normalizedActions}
+            actions={allActions(preparedMatches)}
             rallies={cumulativeRallies}
             teamName={targetTeam}
             opponentName="Adversaires Cumulés"
             matchesCount={selectedVideoIds.length}
+            context={multiContext}
             onPrint={() => window.print()}
           />
         )}
@@ -443,6 +477,10 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
               onTab={setReportTab}
             />
           </div>
+        )}
+
+        {activeView === 'team' && (
+          <MultiMatchTeamView prepared={preparedMatches} targetTeam={targetTeam} />
         )}
 
         {activeView === 'distribution' && (

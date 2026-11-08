@@ -256,6 +256,8 @@ function formatCode(fields) {
   } else {
     if (f.type) parts.push(f.type);
     if (f.action === 'S') {
+      // Départ explicite avec une sous-zone : le lecteur exige deux zones avant A-D.
+      if (f.end_zone && f.end_subzone) parts.push(f.start_zone || '1');
       if (f.end_zone) parts.push(f.end_zone);
     } else {
       if (f.start_zone) parts.push(f.start_zone);

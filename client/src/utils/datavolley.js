@@ -738,7 +738,10 @@ export function formatCode(fields) {
   } else {
     if (f.type) parts.push(f.type);
     if (f.action === 'S') {
-      if (f.end_zone) parts.push(f.end_zone); // la zone 1 de départ est implicite
+      // La zone 1 de départ est implicite... sauf avec une sous-zone : le lecteur
+      // n'accepte une sous-zone qu'après DEUX zones, on écrit donc le départ.
+      if (f.end_zone && f.end_subzone) parts.push(f.start_zone || '1');
+      if (f.end_zone) parts.push(f.end_zone);
     } else {
       if (f.start_zone) parts.push(f.start_zone);
       if (f.end_zone) parts.push(f.end_zone);

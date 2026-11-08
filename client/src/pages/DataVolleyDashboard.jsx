@@ -10,6 +10,8 @@ import { extractYouTubeId } from '../utils/youtube';
 import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS } from '../utils/rotation';
 import {
   computeSetterDistributionByRotation,
+  computeDistributionByPlayer,
+  computeSetterTendencies,
   attackZoneOf,
   normalizeAttackZone,
   DISTRIBUTION_PHASES,
@@ -61,7 +63,8 @@ import AttackDirectionCourt from '../components/AttackDirectionCourt';
 import LineupEditor from '../components/LineupEditor';
 import PointTimeline from '../components/PointTimeline';
 import { DvKeyPad, DvSyntaxHelp } from '../components/DvKeypad';
-import { AttackCourtPicker, DistributionCourt } from '../components/AttackCourt';
+import { RotationBoard, PlayerDistributionTable, SetterTendencies, SetterFan } from '../components/DistributionBoard';
+import { AttackCourtPicker, DistributionCourt, HIDDEN_DISTRIBUTION_ZONES } from '../components/AttackCourt';
 import { buildTimelineEvents, buildTimelinePoints } from '../utils/matchTimeline';
 import {
   AlertTriangle,
@@ -317,6 +320,7 @@ function DataVolleyDashboard({ user, onLogout }) {
     defenderRole: 'ALL',
   });
   const [distShowAllZones, setDistShowAllZones] = useState(false);
+  const [distView, setDistView] = useState('court');
 
   // TV Overlay, Calibration Homographique 4 coins & Multi-Caméras (Angle 1 / Angle 2)
   const [showTvOverlay, setShowTvOverlay] = useState(true);
@@ -1320,6 +1324,14 @@ function DataVolleyDashboard({ user, onLogout }) {
   );
 
   // Distribution du passeur par rotation (onglet Distribution).
+  const setterTrends = useMemo(
+    () => computeSetterTendencies(statsActions, statsRallies, distFilters),
+    [statsActions, statsRallies, distFilters]
+  );
+  const playerDist = useMemo(
+    () => computeDistributionByPlayer(statsActions, statsRallies, setterNumbers, distFilters),
+    [statsActions, statsRallies, setterNumbers, distFilters]
+  );
   const setterDist = useMemo(
     () => computeSetterDistributionByRotation(statsActions, statsRallies, setups, setterNumbers, distFilters),
     [statsActions, statsRallies, setups, setterNumbers, distFilters]
@@ -2614,6 +2626,7 @@ function DataVolleyDashboard({ user, onLogout }) {
             activeSets={reportSets}
             onToggleSet={toggleReportSet}
             rawActions={actions}
+            distributionContext={{ setups, setterNumbers, setMap: actionSetMap, video, onSeekAction: seekToAction }}
             events={events}
           />
         </div>
@@ -3569,6 +3582,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                       activeSets={reportSets}
                       onToggleSet={toggleReportSet}
                       rawActions={actions}
+            distributionContext={{ setups, setterNumbers, setMap: actionSetMap, video, onSeekAction: seekToAction }}
                       events={events}
                       tab={tab}
                       onTab={setTab}
@@ -3766,11 +3780,11 @@ function DataVolleyDashboard({ user, onLogout }) {
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                           {DISTRIBUTION_PHASES.map((ph) => (
                             <button
-                              key={ph.key}
+                              key={ph.id}
                               type="button"
-                              className={`btn btn-sm ${distFilters.phase === ph.key ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => setDistFilters((f) => ({ ...f, phase: ph.key }))}
-                              title={ph.hint}
+                              className={`btn btn-sm ${distFilters.phase === ph.id ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setDistFilters((f) => ({ ...f, phase: ph.id }))}
+                              title={ph.label}
                               style={{ fontSize: 10, padding: '2px 6px' }}
                             >
                               {ph.label}
@@ -3786,10 +3800,10 @@ function DataVolleyDashboard({ user, onLogout }) {
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                           {PASS_ZONE_FILTERS.map((pz) => (
                             <button
-                              key={pz.key}
+                              key={pz.id}
                               type="button"
-                              className={`btn btn-sm ${distFilters.passZone === pz.key ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => setDistFilters((f) => ({ ...f, passZone: pz.key }))}
+                              className={`btn btn-sm ${distFilters.passZone === pz.id ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setDistFilters((f) => ({ ...f, passZone: pz.id }))}
                               style={{ fontSize: 10, padding: '2px 6px' }}
                             >
                               {pz.label}
@@ -3833,11 +3847,11 @@ function DataVolleyDashboard({ user, onLogout }) {
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                           {DEFENDER_ROLE_FILTERS.map((dr) => (
                             <button
-                              key={dr.key}
+                              key={dr.id}
                               type="button"
-                              className={`btn btn-sm ${distFilters.defenderRole === dr.key ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => setDistFilters((f) => ({ ...f, defenderRole: dr.key }))}
-                              title={dr.hint}
+                              className={`btn btn-sm ${distFilters.defenderRole === dr.id ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setDistFilters((f) => ({ ...f, defenderRole: dr.id }))}
+                              title={dr.label}
                               style={{ fontSize: 10, padding: '2px 6px' }}
                             >
                               {dr.label}
@@ -3863,7 +3877,7 @@ function DataVolleyDashboard({ user, onLogout }) {
                         <h5 style={{ margin: 0 }}>
                           {teamLabel(distTeam)}{distPos !== 'Total' ? ` — passeur en ${distPos}` : ''}
                         </h5>
-                        {setterDist[distTeam]?.[distPos]?.setterDugCount > 0 && (
+                        {setterDist.meta?.[distTeam]?.setterDugCount > 0 && (
                           <span
                             style={{
                               fontSize: 11,
@@ -3874,14 +3888,22 @@ function DataVolleyDashboard({ user, onLogout }) {
                               color: '#fbbf24',
                             }}
                           >
-                            Passeur a défendu le 1er ballon : {setterDist[distTeam][distPos].setterDugCount} fois (Passe de secours)
+                            Passeur a défendu le 1er ballon : {setterDist.meta[distTeam].setterDugCount} fois (Passe de secours)
                           </span>
                         )}
                       </div>
-                      <DistributionCourt
+                      <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+                        {[['court', 'Terrain'], ['fan', 'Éventail du passeur'], ['board', 'Planche des 6 rotations'], ['players', 'Par attaquant']].map(([key, label]) => (
+                          <button key={key} type="button" className={`btn btn-sm ${distView === key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDistView(key)}>{label}</button>
+                        ))}
+                      </div>
+                      {distView === 'fan' && <SetterFan side={setterDist[distTeam]?.[distPos]} passZones={setterDist.meta?.[distTeam]?.byPassZone} />}
+                      {distView === 'board' && <RotationBoard distribution={setterDist[distTeam]} />}
+                      {distView === 'players' && (<><PlayerDistributionTable rows={playerDist[distTeam]} /><h5 style={{ marginTop: 14 }}>Tendances du passeur</h5><SetterTendencies data={setterTrends[distTeam]} /></>)}
+                      {distView === 'court' && <DistributionCourt
                         distribution={setterDist[distTeam]?.[distPos]}
-                        showAllZones={distShowAllZones}
-                      />
+                        hidden={distShowAllZones ? [] : HIDDEN_DISTRIBUTION_ZONES}
+                      />}
                     </div>
                   </motion.div>
                 )}
