@@ -86,10 +86,12 @@ function declaredNames(src) {
 /** Identifiants « à risque » : setters React (setXxx) appelés ou passés sans
  *  passer par un objet (localStorage.setItem, x.setMap… sont exclus).
  *  C'est exactement la classe de bug qui produit une page noire (référence
- *  supprimée lors d'un refactor) ou un plantage au clic. */
+ *  supprimée lors d'un refactor) ou un plantage au clic.
+ *  Les NOMS D'ATTRIBUTS JSX (`setMap={...}`, `setValue="…"`) sont des props et
+ *  non des références : le `=` qui suit les distingue d'un vrai appel. */
 function riskyReferences(src) {
   const found = new Map();
-  for (const m of src.matchAll(/(?<![.\w$?])set[A-Z][\w$]*\b(?!\s*:)/g)) {
+  for (const m of src.matchAll(/(?<![.\w$?])set[A-Z][\w$]*\b(?!\s*:)(?!\s*=\s*[{"'`])/g)) {
     if (BUILTIN_SETTERS.has(m[0])) continue;
     if (!found.has(m[0])) found.set(m[0], src.slice(0, m.index).split('\n').length);
   }

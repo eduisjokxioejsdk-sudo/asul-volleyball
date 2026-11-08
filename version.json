@@ -1,8 +1,23 @@
 {
-  "version": "3.7.0",
-  "releasedAt": "2026-11-02",
+  "version": "3.8.0",
+  "releasedAt": "2026-11-08",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.8.0",
+      "date": "2026-11-08",
+      "title": "Rapports DataVolley : planches de trajectoires, matrices, analyses d’équipe et cumul multi-matchs",
+      "items": [
+        "Rapport de match : six nouvelles fenêtres — Side-out / Break, Attaque vs réception, Service / Réception, Contre / Passe, Score et Fiche joueur — en plus des onglets déjà présents",
+        "Planches de trajectoires par action : une flèche par service et par attaque, tracée depuis les coordonnées codées (sinon depuis les zones et sous-zones), avec filtres par équipe, joueur, set, rotation, phase et évaluation, et couleur selon la qualité DataVolley",
+        "Nouvelles matrices : départ × arrivée (attaque) par zone ou par sous-zone d’arrivée, et planche Réception (zone de réception × qualité, par réceptionneur) ; l’efficacité suit la formule DataVolley (# − = − /) / total",
+        "Analyses d’équipe : side-out / break, attaque selon la réception, duel service / réception, contre et passe, progression du score (points d’avance, séries) et money-time en fin de set",
+        "Fiche joueur : synthèse individuelle par joueur (service, réception, attaque, contre, défense, distribution) ouverte directement depuis le rapport",
+        "Analyse multi-matchs : cumul de plusieurs matchs sans jamais fusionner les actions avant de reformer les échanges — scores, sets et rotations restent justes ; l’équipe analysée est ramenée côté domicile, avec vues cumulées et montage des trajectoires de tous les matchs",
+        "Trajectoires : bouton « Envoyer vers une fiche de trajectoires » qui crée une nouvelle fiche avec les flèches des services et attaques codées (aucune fiche existante modifiée), et badge de qualité de codage dans le mode Correction",
+        "Format DataVolley : un service avec sous-zone écrit maintenant la zone de départ explicite, à la lecture comme à l’export, pour rester relisible par DataVolley 4"
+      ]
+    },
     {
       "version": "3.7.0",
       "date": "2026-11-02",
