@@ -9,6 +9,8 @@ import { computeMoneyTimeSplit } from './dvAnalytics4.js';
 import { sumCounters } from './multiMatch.js';
 import { attackByReception, serveReceptionDuel } from './dvAnalytics2.js';
 import { computeBlockAnalysis, computeSetAnalysis } from './dvAnalytics3.js';
+import { buildDistributionPossessions } from './distributionModel.js';
+import { buildDistributionReportFromPossessions } from './distributionReport.js';
 
 const SIDES = ['home', 'away'];
 
@@ -103,4 +105,12 @@ export function cumulativeBlockAndSet(prepared) {
     }
   }
   return { block, set };
+}
+
+/** Distribution cumulée : possessions contextuelles par match, agrégation unique ensuite. */
+export function cumulativeDistributionReport(prepared, filters = {}) {
+  const possessions = (prepared || []).flatMap((m) =>
+    buildDistributionPossessions(m.actions, { rallies: m.rallies, setups: m.setups })
+  );
+  return buildDistributionReportFromPossessions(possessions, filters);
 }

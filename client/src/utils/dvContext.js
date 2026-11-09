@@ -5,9 +5,10 @@
 // distribution donnent des nombres identiques à filtres égaux.
 // ============================================================================
 
-import { groupActionsIntoRallies, rallyServerTeam } from './datavolley.js';
-import { computePerRallySetterPositions, positionOfPlayer } from './rotation.js';
-import { extractRallyAttackPossessions, isMoneyTime } from './distribution.js';
+import { groupActionsIntoRallies } from './datavolley.js';
+import { computePerRallySetterPositions } from './rotation.js';
+import { isMoneyTime } from './distribution.js';
+import { buildDistributionPossessions } from './distributionModel.js';
 
 export const actionKey = (a) => a?.uid ?? a?.id ?? a?.action_index;
 
@@ -23,40 +24,33 @@ export function buildActionContext(actions, setups = {}, setterNumbers = {}, ral
 
   list.forEach((rally, idx) => {
     const state = perRally[idx] || {};
-    const srv = rallyServerTeam(rally);
-    const serverSide = srv === 'team1' ? 'home' : srv === 'team2' ? 'away' : null;
     const setNumber = state.setNumber || 1;
-    const rotationOf = (side) => {
-      let pos = side === 'home' ? state.homeSetterPos : state.awaySetterPos;
-      const setter = Number(setterNumbers?.[side]) || 0;
-      if (!pos && setter > 0) {
-        pos = positionOfPlayer(side === 'home' ? state.homeLineup : state.awayLineup, setter);
-      }
-      return pos || null;
-    };
     const moneyTime = isMoneyTime(state.scoreBefore, setNumber);
-
     for (const a of rally.actions || []) {
-      const side = a.team === 'away' ? 'away' : 'home';
       map.set(actionKey(a), {
         phase: null,
         situation: null,
         setNumber,
-        rotation: rotationOf(side),
+        rotation: null,
         moneyTime,
         passZone: '',
         setterCall: '',
       });
     }
-    for (const poss of extractRallyAttackPossessions(rally.actions, serverSide)) {
-      const ctx = map.get(actionKey(poss.action));
-      if (!ctx) continue;
-      ctx.phase = poss.phase;
-      ctx.situation = poss.situation;
-      ctx.passZone = poss.passZone || '';
-      ctx.setterCall = poss.setterCall || '';
-    }
   });
+
+  // Même modèle que la distribution : passeur réel, phase et situation de la
+  // possession. `setterNumbers` reste dans la signature pour compatibilité.
+  for (const poss of buildDistributionPossessions(actions, { rallies: list, setups })) {
+    const ctx = map.get(poss.actionKey);
+    if (!ctx) continue;
+    ctx.phase = poss.phase;
+    ctx.situation = poss.situation;
+    ctx.rotation = poss.rotation;
+    ctx.passZone = poss.passZone || '';
+    ctx.setterCall = poss.setterCall || '';
+    ctx.moneyTime = poss.moneyTime;
+  }
   return map;
 }
 

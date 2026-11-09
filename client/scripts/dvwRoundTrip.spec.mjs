@@ -7,6 +7,7 @@ import { computeScouting } from '../src/utils/scouting.js';
 import { buildShots } from '../src/utils/dvTrajectories.js';
 import { attackCrossMatrix } from '../src/utils/dvMatrices.js';
 import { computeSideOutBreak } from '../src/utils/dvAnalytics.js';
+import { buildDistributionReport } from '../src/utils/distributionReport.js';
 
 let bad = 0;
 const check = (l, ok, d = '') => { if (!ok) bad += 1; console.log('  ' + (ok ? 'ok  ' : 'FAIL') + ' ' + l + (ok ? '' : ' ' + d)); };
@@ -65,5 +66,9 @@ for (const t of ['home', 'away']) {
   check(`tableau croisé ${t} identique`, JSON.stringify(attackCrossMatrix(actions, t).cells) === JSON.stringify(attackCrossMatrix(back, t).cells));
 }
 check('side-out / break identiques', JSON.stringify(computeSideOutBreak(actions, {}).home.Total) === JSON.stringify(computeSideOutBreak(back, {}).home.Total));
+const dist1 = buildDistributionReport(actions, null, {}, {}, { phase: 'ALL' });
+const dist2 = buildDistributionReport(back, null, {}, {}, { phase: 'ALL' });
+const withoutActionRefs = (value) => JSON.stringify(value, (key, item) => (key === 'actions' ? undefined : item));
+check('distribution identique après aller-retour (rotations, appels, combinaisons, exclusions)', withoutActionRefs(dist1) === withoutActionRefs(dist2));
 if (bad) process.exit(1);
 console.log('TOUT EST OK');

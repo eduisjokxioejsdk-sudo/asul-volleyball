@@ -104,7 +104,7 @@ export function AttackCourtPicker({ onPick, selected }) {
 }
 
 // Demi-terrain d'analyse : chaque zone affiche 3 colonnes (+, 0, −) = nb + % + eff%.
-export function DistributionCourt({ distribution, hidden = HIDDEN_DISTRIBUTION_ZONES }) {
+export function DistributionCourt({ distribution, hidden = [], onPick = null }) {
   const zones = ATTACK_ZONES.filter((z) => !hidden.includes(z.id));
   const geometry = buildCourtGeometry(zones);
 
@@ -135,7 +135,11 @@ export function DistributionCourt({ distribution, hidden = HIDDEN_DISTRIBUTION_Z
                 const cx = r.x + 2 + colW * si + colW / 2;
                 const effColor = cell.eff >= 35 ? '#10b981' : cell.eff < 0 ? '#f43f5e' : '#a1a1aa';
                 return (
-                  <g key={sit}>
+                  <g
+                    key={sit}
+                    onClick={onPick && cell.count > 0 ? () => onPick({ zone: z.id, situation: sit, cell }) : undefined}
+                    style={onPick && cell.count > 0 ? { cursor: 'pointer' } : undefined}
+                  >
                     <text x={cx} y={r.y + 28} textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--text-muted)">
                       {sit}
                     </text>

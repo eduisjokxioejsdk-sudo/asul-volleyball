@@ -6,54 +6,39 @@
 // ============================================================================
 
 import { useState } from 'react';
-import { ATTACK_ZONES, SITUATIONS } from '../utils/distribution';
+import { SITUATIONS } from '../utils/distribution';
 import { DV_ZONE_GRID } from '../utils/datavolley';
 
 const POSITIONS = ['Total', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
 const CELL = 34;
 const NET = 12;
 
-/** Fusionne les situations choisies d'une rotation en une cellule par zone. */
-function mergeZones(side, situations) {
-  const out = {};
-  let total = 0;
-  for (const z of ATTACK_ZONES) {
-    const m = { count: 0, points: 0, errors: 0, blocked: 0 };
-    for (const sit of situations) {
-      const c = side?.[sit]?.[z.id];
-      if (!c) continue;
-      m.count += c.count;
-      m.points += c.points;
-      m.errors += c.errors;
-      m.blocked += c.blocked;
-    }
-    out[z.id] = m;
-    total += m.count;
-  }
-  return { zones: out, total };
-}
-
-function MiniFan({ side, situations }) {
-  const { zones, total } = mergeZones(side, situations);
-  const max = Math.max(1, ...Object.values(zones).map((z) => z.count));
+function MiniFan({ data, onPick = null }) {
+  const total = data?.total || 0;
+  const allZones = DV_ZONE_GRID.flat();
+  const max = Math.max(1, ...allZones.map((z) => data?.[z]?.count || 0));
   return (
     <svg viewBox={`0 0 ${CELL * 3} ${NET + CELL * 3}`} style={{ width: '100%', display: 'block' }}>
       <rect width={CELL * 3} height={NET} fill="rgba(200,150,92,0.16)" />
       {DV_ZONE_GRID.map((row, r) =>
         row.map((zone, c) => {
-          const m = zones[zone];
-          const pct = total ? Math.round((m.count / total) * 100) : 0;
-          const eff = m.count ? Math.round(((m.points - m.errors - m.blocked) / m.count) * 100) : 0;
-          const alpha = m.count ? 0.1 + 0.6 * (m.count / max) : 0.03;
+          const m = data?.[zone];
+          const count = m?.count || 0;
+          const alpha = count ? 0.1 + 0.6 * (count / max) : 0.03;
           return (
-            <g key={zone} transform={`translate(${c * CELL},${NET + r * CELL})`}>
+            <g
+              key={zone}
+              transform={`translate(${c * CELL},${NET + r * CELL})`}
+              onClick={onPick && count > 0 ? () => onPick({ zone, cell: m }) : undefined}
+              style={onPick && count > 0 ? { cursor: 'pointer' } : undefined}
+            >
               <rect width={CELL} height={CELL} fill={`rgba(200,150,92,${alpha})`} stroke="rgba(232,224,213,0.15)" />
               <text x="3" y="8" fontSize="6" fill="rgba(255,255,255,0.55)">{zone}</text>
-              {m.count > 0 && (
+              {count > 0 && (
                 <>
-                  <text x={CELL / 2} y="19" textAnchor="middle" fontSize="9" fontWeight="800" fill="#fff">{pct}%</text>
-                  <text x={CELL / 2} y="29" textAnchor="middle" fontSize="6" fill={eff >= 35 ? '#34d399' : eff < 0 ? '#fb7185' : '#d4d4d8'}>
-                    {m.count} · {eff}%
+                  <text x={CELL / 2} y="19" textAnchor="middle" fontSize="9" fontWeight="800" fill="#fff">{m.pct}%</text>
+                  <text x={CELL / 2} y="29" textAnchor="middle" fontSize="6" fill={m.eff >= 35 ? '#34d399' : m.eff < 0 ? '#fb7185' : '#d4d4d8'}>
+                    {count} · {m.eff}%
                   </text>
                 </>
               )}
@@ -61,13 +46,15 @@ function MiniFan({ side, situations }) {
           );
         })
       )}
+      <text x={CELL * 1.5} y={NET + CELL * 3 - 2} textAnchor="middle" fontSize="5.5" fill="rgba(255,255,255,0.65)">
+        {total} attaque(s)
+      </text>
     </svg>
   );
 }
 
-export function RotationBoard({ distribution }) {
+export function RotationBoard({ distribution, onPick = null }) {
   const [sit, setSit] = useState('ALL');
-  const situations = sit === 'ALL' ? SITUATIONS : [sit];
   return (
     <div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -81,7 +68,7 @@ export function RotationBoard({ distribution }) {
         {POSITIONS.map((pos) => (
           <div key={pos}>
             <strong style={{ fontSize: 12 }}>{pos === 'Total' ? 'Toutes rotations' : `Passeur en ${pos}`}</strong>
-            <MiniFan side={distribution?.[pos]} situations={situations} />
+            <MiniFan data={distribution?.[pos]?.[sit]} onPick={onPick ? (picked) => onPick({ ...picked, rotation: pos, situation: sit }) : null} />
           </div>
         ))}
       </div>
@@ -171,70 +158,59 @@ export function SetterTendencies({ data }) {
  * Éventail du passeur : une flèche du passeur (au filet, entre les zones 2 et 3)
  * vers chaque zone d'attaque. Épaisseur = part des ballons, couleur = efficacité.
  */
-export function SetterFan({ side, passZones = {}, situations: situationsProp = null }) {
+export function SetterFan({ side, passZones = {} }) {
   const [sit, setSit] = useState('ALL');
-  const situations = situationsProp || (sit === 'ALL' ? SITUATIONS : [sit]);
-  const { zones, total } = mergeZones(side, situations);
+  const data = side?.[sit];
+  const total = data?.total || 0;
   const W = CELL * 3;
   const H = NET + CELL * 3;
   const topPass = Object.entries(passZones || {}).sort((a, b) => b[1] - a[1])[0];
   const passCell = topPass ? DV_ZONE_GRID.flatMap((row, r) => row.map((z, c) => ({ z, r, c }))).find((x) => x.z === topPass[0]) : null;
-  const origin = passCell
-    ? { x: passCell.c * CELL + CELL / 2, y: NET + passCell.r * CELL + CELL / 2 }
-    : { x: W * 0.72, y: NET + 2 };
-  const max = Math.max(1, ...Object.values(zones).map((z) => z.count));
+  const origin = passCell ? { x: passCell.c * CELL + CELL / 2, y: NET + passCell.r * CELL + CELL / 2 } : null;
+  const max = Math.max(1, ...DV_ZONE_GRID.flat().map((z) => data?.[z]?.count || 0));
   return (
     <div>
-      {!situationsProp && (
-        <div style={{ display: 'flex', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
-          {['ALL', ...SITUATIONS].map((s) => (
-            <button key={s} type="button" className={`btn btn-sm ${sit === s ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSit(s)}>
-              {s === 'ALL' ? 'Toutes réceptions' : `Réception ${s}`}
-            </button>
-          ))}
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
+        {['ALL', ...SITUATIONS].map((s) => (
+          <button key={s} type="button" className={`btn btn-sm ${sit === s ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSit(s)}>
+            {s === 'ALL' ? 'Toutes réceptions' : `Réception ${s}`}
+          </button>
+        ))}
+      </div>
       <p className="dv-hint" style={{ margin: '0 0 6px' }}>
         {passCell
-          ? `Le passeur est placé sur la zone de passe la plus fréquente (zone ${topPass[0]}, ${topPass[1]} passe(s)).`
-          : 'Zone de passe inconnue : le passeur est placé au filet.'}
+          ? `Origine : zone de passe la plus fréquente parmi les passes codées (zone ${topPass[0]}, ${topPass[1]}).`
+          : 'Aucune zone de passe codée : aucune origine de flèche n’est affichée.'}
       </p>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', maxWidth: 420, display: 'block' }}>
-      <rect width={W} height={H} fill="rgba(32,30,27,0.85)" />
-      <rect width={W} height={NET} fill="rgba(200,150,92,0.16)" />
-      {DV_ZONE_GRID.map((row, r) =>
-        row.map((zone, c) => {
-          const m = zones[zone];
-          const cx = c * CELL + CELL / 2;
-          const cy = NET + r * CELL + CELL / 2;
-          const pct = total ? Math.round((m.count / total) * 100) : 0;
-          const eff = m.count ? Math.round(((m.points - m.errors - m.blocked) / m.count) * 100) : 0;
-          const color = eff >= 35 ? '#34d399' : eff < 0 ? '#fb7185' : '#fbbf24';
-          return (
-            <g key={zone}>
-              <rect x={c * CELL} y={NET + r * CELL} width={CELL} height={CELL} fill="none" stroke="rgba(232,224,213,0.12)" />
-              {m.count > 0 && (
-                <>
-                  <line
-                    x1={origin.x}
-                    y1={origin.y}
-                    x2={cx}
-                    y2={cy - 4}
-                    stroke={color}
-                    strokeWidth={0.8 + 4 * (m.count / max)}
-                    strokeLinecap="round"
-                    opacity="0.8"
-                  />
-                  <text x={cx} y={cy + 6} textAnchor="middle" fontSize="9" fontWeight="800" fill="#fff">{pct}%</text>
-                  <text x={cx} y={cy + 14} textAnchor="middle" fontSize="5.5" fill="rgba(255,255,255,0.75)">{m.count} · eff {eff}%</text>
-                </>
-              )}
-            </g>
-          );
-        })
+      {!passCell ? <MiniFan data={data} /> : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', maxWidth: 420, display: 'block' }}>
+          <rect width={W} height={H} fill="rgba(32,30,27,0.85)" />
+          <rect width={W} height={NET} fill="rgba(200,150,92,0.16)" />
+          {DV_ZONE_GRID.map((row, r) =>
+            row.map((zone, c) => {
+              const m = data?.[zone];
+              const count = m?.count || 0;
+              const cx = c * CELL + CELL / 2;
+              const cy = NET + r * CELL + CELL / 2;
+              const color = m?.eff >= 35 ? '#34d399' : m?.eff < 0 ? '#fb7185' : '#fbbf24';
+              return (
+                <g key={zone}>
+                  <rect x={c * CELL} y={NET + r * CELL} width={CELL} height={CELL} fill="none" stroke="rgba(232,224,213,0.12)" />
+                  {count > 0 && (
+                    <>
+                      <line x1={origin.x} y1={origin.y} x2={cx} y2={cy - 4} stroke={color} strokeWidth={0.8 + 4 * (count / max)} strokeLinecap="round" opacity="0.8" />
+                      <text x={cx} y={cy + 6} textAnchor="middle" fontSize="9" fontWeight="800" fill="#fff">{m.pct}%</text>
+                      <text x={cx} y={cy + 14} textAnchor="middle" fontSize="5.5" fill="rgba(255,255,255,0.75)">{count} · eff {m.eff}%</text>
+                    </>
+                  )}
+                </g>
+              );
+            })
+          )}
+          <circle cx={origin.x} cy={origin.y} r="3.5" fill="var(--accent)" stroke="#fff" strokeWidth="0.8" />
+          <text x="3" y={H - 3} fontSize="6" fill="rgba(255,255,255,0.65)">{total} attaque(s)</text>
+        </svg>
       )}
-      <circle cx={origin.x} cy={origin.y} r="3.5" fill="var(--accent)" stroke="#fff" strokeWidth="0.8" />
-      </svg>
     </div>
   );
 }

@@ -129,3 +129,16 @@ const pb = prepared.map((m) => computeBlockAnalysis(m.actions));
 c8('contre : total cumulé = somme', cb.block.home.total === pb.reduce((s, r) => s + r.home.total, 0));
 c8('contre : % points recalculé (<= 100)', cb.block.home.pointsPct <= 100);
 if (bad8) process.exit(1);
+
+// --- Distribution cumulée : mêmes compteurs que la somme des matchs ---
+import { cumulativeDistributionReport } from '../src/utils/multiMatchAnalytics.js';
+import { buildDistributionReport } from '../src/utils/distributionReport.js';
+let bad9 = 0;
+const c9 = (l, ok) => { if (!ok) bad9 += 1; console.log('  ' + (ok ? 'ok  ' : 'FAIL') + ' ' + l); };
+const cd9 = cumulativeDistributionReport(prepared, { phase: 'K1' });
+const rd9 = prepared.map((m) => buildDistributionReport(m.actions, m.rallies, m.setups, {}, { phase: 'K1' }));
+c9('distribution : inclus = somme des matchs', cd9.meta.home.included === rd9.reduce((s, r) => s + r.meta.home.included, 0));
+c9('distribution : brutes = somme des matchs', cd9.meta.home.rawAttacks === rd9.reduce((s, r) => s + r.meta.home.rawAttacks, 0));
+c9('distribution : zones = somme des matchs', ['4','3','2','7','8','9','5','6','1'].every((z) => cd9.home.Total.ALL[z].count === rd9.reduce((s, r) => s + r.home.Total.ALL[z].count, 0)));
+c9('distribution : exclusions = somme des matchs', cd9.meta.home.excluded.UNKNOWN_SITUATION === rd9.reduce((s, r) => s + r.meta.home.excluded.UNKNOWN_SITUATION, 0));
+if (bad9) process.exit(1);

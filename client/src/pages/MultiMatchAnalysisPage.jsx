@@ -16,10 +16,11 @@ import MatchReportFull, { REPORT_TABS } from '../components/MatchReportFull';
 import OpponentScoutingView from '../components/OpponentScoutingView';
 import MultiMatchTeamView from '../components/MultiMatchTeamView';
 import { prepareMatches, buildMultiContext, allActions } from '../utils/multiMatch';
-import { DistributionCourt } from '../components/AttackCourt';
+import { RotationBoard } from '../components/DistributionBoard';
+import { DistributionCoverage, DistributionCodeTable } from '../components/DistributionMetaViews';
+import { cumulativeDistributionReport } from '../utils/multiMatchAnalytics';
 import { videosAPI, datavolleyAPI } from '../services/api';
 import { computeScouting } from '../utils/scouting';
-import { computeSetterDistributionByRotation } from '../utils/distribution';
 import { downloadTextFile, rowsToCsv } from '../utils/download';
 import { reportToRows, computeMatchReport } from '../utils/matchReport';
 import { groupActionsIntoRallies } from '../utils/datavolley';
@@ -235,17 +236,9 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
   }, [normalizedActions, targetTeam]);
 
   // Distribution du passeur cumulée
-  const cumulativeDist = useMemo(() => {
-    const scoredActions = normalizedActions.filter((a) => a && a.evaluation);
-    const scoredRallies = groupActionsIntoRallies(scoredActions);
-    return computeSetterDistributionByRotation(
-      scoredActions,
-      scoredRallies,
-      {},
-      { home: null, away: null },
-      { phase: 'K1', passZone: 'ALL', setterCall: 'ALL', defenderRole: 'ALL' }
-    );
-  }, [normalizedActions]);
+  const cumulativeDist = useMemo(() => cumulativeDistributionReport(preparedMatches, {
+    phase: 'K1', passZone: 'ALL', setterCall: 'ALL', defenderRole: 'ALL',
+  }), [preparedMatches]);
 
   // Export CSV Cumulé
   const exportCumulativeCsv = () => {
@@ -491,7 +484,10 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
             <p style={{ margin: '0 0 14px 0', fontSize: 12, color: '#a1a1aa' }}>
               Répartition spatiale cumulée de toutes les attaques pour l'ensemble des rencontres analysées.
             </p>
-            <DistributionCourt distribution={cumulativeDist.home?.Total} showAllZones />
+            <DistributionCoverage meta={cumulativeDist.meta?.home} />
+            <RotationBoard distribution={cumulativeDist.home} />
+            <DistributionCodeTable title="Setter Calls Distribution (cumul)" data={cumulativeDist.calls?.home} />
+            <DistributionCodeTable title="Combination Analysis (cumul)" data={cumulativeDist.combos?.home} />
           </div>
         )}
       </main>

@@ -105,7 +105,7 @@ for (const team of ['home', 'away']) {
     const viaCtx = buildShots(actions, { team, skill: 'A', phase, context: ctx }).length;
     const dist = computeSetterDistributionByRotation(actions, rallies, {}, {}, { phase })[team].Total;
     let viaDist = 0;
-    for (const sit of ['+', '0', '-']) for (const z of Object.values(dist[sit])) viaDist += z.count;
+    for (const sit of ['+', '0', '-']) viaDist += dist[sit].total;
     const withEnd = actions.filter((a) => a.team === team && a.action === 'A' && a.end_zone && ctx.get(a.uid ?? a.id ?? a.action_index)?.phase === phase).length;
     c2(`${team} ${phase} : trajectoires = actions avec arrivée`, viaCtx === withEnd, `${viaCtx} vs ${withEnd}`);
     c2(`${team} ${phase} : distribution <= attaques de la phase`, viaDist <= actions.filter((a) => a.team === team && a.action === 'A' && ctx.get(a.uid ?? a.id ?? a.action_index)?.phase === phase).length);

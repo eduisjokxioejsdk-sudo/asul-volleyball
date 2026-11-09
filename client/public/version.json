@@ -1,8 +1,20 @@
 {
-  "version": "3.8.1",
+  "version": "3.9.0",
   "releasedAt": "2026-11-09",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.9.0",
+      "date": "2026-11-09",
+      "title": "Distribution du passeur : moteur unifié, rotations réelles et analyses par appel et combinaison",
+      "items": [
+        "Nouveau moteur de distribution : chaque attaque est rattachée à son premier contact et à la passe qui la précède ; la rotation vient du passeur réellement associé à l’attaque, sans attributions positives ou rotations inventées",
+        "Nouvelles vues Distribution : comparaison des six rotations avec les neuf zones, Setter Calls Distribution, Combination Analysis et compteurs de couverture détaillant attaques affichées, filtrées et exclues",
+        "Trajectoires, distribution, rapport imprimé et plan de jeu utilisent maintenant le même modèle de possession ; les pourcentages et efficacités sont centralisés dans le moteur, sans recalcul divergent dans les composants",
+        "Cumul multi-matchs : les possessions sont calculées séparément pour chaque match avant agrégation, ce qui conserve sets, scores et rotations propres à chaque rencontre",
+        "Validation : nouvelle fixture de distribution, contrôle d’égalité du cumul multi-matchs et vérification de la distribution après export puis relecture .dvw"
+      ]
+    },
     {
       "version": "3.8.1",
       "date": "2026-11-09",

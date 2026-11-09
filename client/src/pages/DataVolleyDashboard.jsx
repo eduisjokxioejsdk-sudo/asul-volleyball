@@ -10,7 +10,6 @@ import { extractYouTubeId } from '../utils/youtube';
 import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS } from '../utils/rotation';
 import {
   computeSetterDistributionByRotation,
-  computeDistributionByPlayer,
   computeSetterTendencies,
   attackZoneOf,
   normalizeAttackZone,
@@ -64,6 +63,7 @@ import LineupEditor from '../components/LineupEditor';
 import PointTimeline from '../components/PointTimeline';
 import { DvKeyPad, DvSyntaxHelp } from '../components/DvKeypad';
 import { RotationBoard, PlayerDistributionTable, SetterTendencies, SetterFan } from '../components/DistributionBoard';
+import { DistributionCoverage, DistributionCodeTable } from '../components/DistributionMetaViews';
 import { AttackCourtPicker, DistributionCourt, HIDDEN_DISTRIBUTION_ZONES } from '../components/AttackCourt';
 import { buildTimelineEvents, buildTimelinePoints } from '../utils/matchTimeline';
 import {
@@ -320,8 +320,9 @@ function DataVolleyDashboard({ user, onLogout }) {
     setterCall: 'ALL',
     defenderRole: 'ALL',
   });
-  const [distShowAllZones, setDistShowAllZones] = useState(false);
+  const [distShowAllZones, setDistShowAllZones] = useState(true);
   const [distView, setDistView] = useState('court');
+  const [distDetail, setDistDetail] = useState(null);
 
   // TV Overlay, Calibration Homographique 4 coins & Multi-Caméras (Angle 1 / Angle 2)
   const [showTvOverlay, setShowTvOverlay] = useState(true);
@@ -1328,10 +1329,6 @@ function DataVolleyDashboard({ user, onLogout }) {
   const setterTrends = useMemo(
     () => computeSetterTendencies(statsActions, statsRallies, distFilters),
     [statsActions, statsRallies, distFilters]
-  );
-  const playerDist = useMemo(
-    () => computeDistributionByPlayer(statsActions, statsRallies, setterNumbers, distFilters),
-    [statsActions, statsRallies, setterNumbers, distFilters]
   );
   const setterDist = useMemo(
     () => computeSetterDistributionByRotation(statsActions, statsRallies, setups, setterNumbers, distFilters),
@@ -3893,18 +3890,60 @@ function DataVolleyDashboard({ user, onLogout }) {
                           </span>
                         )}
                       </div>
+                      <DistributionCoverage meta={setterDist.meta?.[distTeam]} />
                       <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-                        {[['court', 'Terrain'], ['fan', 'Éventail du passeur'], ['board', 'Planche des 6 rotations'], ['players', 'Par attaquant']].map(([key, label]) => (
+                        {[
+                          ['court', 'Terrain'],
+                          ['board', 'Rotations'],
+                          ['calls', 'Appels passeur'],
+                          ['combos', 'Combinaisons'],
+                          ['advanced', 'Analyse avancée'],
+                        ].map(([key, label]) => (
                           <button key={key} type="button" className={`btn btn-sm ${distView === key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDistView(key)}>{label}</button>
                         ))}
                       </div>
-                      {distView === 'fan' && <SetterFan side={setterDist[distTeam]?.[distPos]} passZones={setterDist.meta?.[distTeam]?.byPassZone} />}
-                      {distView === 'board' && <RotationBoard distribution={setterDist[distTeam]} />}
-                      {distView === 'players' && (<><PlayerDistributionTable rows={playerDist[distTeam]} /><h5 style={{ marginTop: 14 }}>Tendances du passeur</h5><SetterTendencies data={setterTrends[distTeam]} /></>)}
+                      {distView === 'board' && (
+                        <RotationBoard
+                          distribution={setterDist[distTeam]}
+                          onPick={(p) => setDistDetail({ title: `Zone ${p.zone} · ${p.rotation} · ${p.situation}`, actions: p.cell.actions })}
+                        />
+                      )}
+                      {distView === 'calls' && (
+                        <DistributionCodeTable title="Setter Calls Distribution" data={setterDist.calls?.[distTeam]} rotation={distPos} onPick={(p) => setDistDetail({ title: `Appel ${p.code}`, actions: p.actions })} />
+                      )}
+                      {distView === 'combos' && (
+                        <DistributionCodeTable title="Combination Analysis" data={setterDist.combos?.[distTeam]} rotation={distPos} onPick={(p) => setDistDetail({ title: `Combinaison ${p.code}`, actions: p.actions })} />
+                      )}
+                      {distView === 'advanced' && (
+                        <>
+                          <h5>Répartition par attaquant</h5>
+                          <PlayerDistributionTable rows={setterDist.players?.[distTeam]} />
+                          <h5 style={{ marginTop: 14 }}>Tendances du passeur</h5>
+                          <SetterTendencies data={setterTrends[distTeam]} />
+                          <h5 style={{ marginTop: 14 }}>Éventail du passeur</h5>
+                          <SetterFan side={setterDist[distTeam]?.[distPos]} passZones={setterDist.meta?.[distTeam]?.byPassZone} />
+                        </>
+                      )}
                       {distView === 'court' && <DistributionCourt
                         distribution={setterDist[distTeam]?.[distPos]}
                         hidden={distShowAllZones ? [] : HIDDEN_DISTRIBUTION_ZONES}
+                        onPick={(p) => setDistDetail({ title: `Zone ${p.zone} · ${distPos} · ${p.situation}`, actions: p.cell.actions })}
                       />}
+                      {distDetail && (
+                        <div style={{ marginTop: 12, padding: 10, border: '1px solid #27272a', background: '#09090b' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                            <strong>{distDetail.title} — {distDetail.actions.length} attaque(s)</strong>
+                            <button type="button" className="btn btn-sm btn-secondary" onClick={() => setDistDetail(null)}>Fermer</button>
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
+                            {distDetail.actions.map((a) => (
+                              <button key={a.uid ?? a.id ?? a.action_index} type="button" className="btn btn-sm btn-secondary" onClick={() => seekToAction(a)} title="Voir cette attaque dans la vidéo">
+                                {a.code || `n°${a.player_number} ${a.evaluation || ''}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}

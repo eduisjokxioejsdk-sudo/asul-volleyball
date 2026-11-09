@@ -25,7 +25,8 @@ import SendToTrajectoryButton from './SendToTrajectoryButton';
 import TrajectoryMap from './DvTrajectoryMap';
 import { buildShots } from '../utils/dvTrajectories';
 import { RotationBoard, PlayerDistributionTable } from './DistributionBoard';
-import { computeDistributionByPlayer, computeSetterDistributionByRotation } from '../utils/distribution';
+import { computeSetterDistributionByRotation } from '../utils/distribution';
+import { DistributionCoverage, DistributionCodeTable } from './DistributionMetaViews';
 import { groupActionsIntoRallies } from '../utils/datavolley';
 import { filterActionsBySets } from '../utils/matchReport';
 import { DirectionMap } from './AttackCourt';
@@ -985,9 +986,12 @@ export default function MatchReportFull({
               return (
                 <div key={k} style={{ breakInside: 'avoid', marginBottom: 12 }}>
                   <h3>{report[k].name}</h3>
+                  <DistributionCoverage meta={dist.meta?.[k]} />
                   <RotationBoard distribution={dist[k]} />
+                  <DistributionCodeTable title="Setter Calls Distribution" data={dist.calls?.[k]} />
+                  <DistributionCodeTable title="Combination Analysis" data={dist.combos?.[k]} />
                   <h4>Par attaquant</h4>
-                  <PlayerDistributionTable rows={computeDistributionByPlayer(printActions, rallies, setterNums, { phase: 'K1' })[k]} />
+                  <PlayerDistributionTable rows={dist.players?.[k]} />
                 </div>
               );
             })}

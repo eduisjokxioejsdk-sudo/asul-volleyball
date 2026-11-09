@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { computePerRallySetterPositions, positionOfPlayer } from './rotation.js';
+import { buildDistributionReport } from './distributionReport.js';
 import { groupActionsIntoRallies, decomposeCode, rallyServerTeam } from './datavolley.js';
 
 // Zones d'attaque officielles DataVolley (grille 3 × 3, filet en haut).
@@ -328,7 +329,7 @@ function matchesDistributionFilters(possession, filters = {}, setterNumber = 0) 
  *   - filters.setterCall : 'ALL' | 'K1' | 'K2' | 'K7' | 'KE' | ...
  *   - filters.defenderRole : 'ALL' | 'SETTER_DUG' (passe de secours) | 'OTHER_DUG'
  */
-export function computeSetterDistributionByRotation(
+function computeSetterDistributionByRotationLegacy(
   actions,
   rallies,
   setups = {},
@@ -405,7 +406,7 @@ export function computeSetterDistributionByRotation(
  * du total de l'équipe, et résultat. Mêmes filtres que la distribution par zone.
  * @returns {{ home: Array, away: Array }} lignes triées par volume décroissant.
  */
-export function computeDistributionByPlayer(actions, rallies, setterNumbers = {}, filters = {}) {
+function computeDistributionByPlayerLegacy(actions, rallies, setterNumbers = {}, filters = {}) {
   const list = rallies || groupActionsIntoRallies(actions || []);
   const maps = { home: new Map(), away: new Map() };
   for (const rally of list) {
@@ -507,4 +508,14 @@ export function computeSetterTendencies(actions, rallies, filters = {}) {
     };
   }
   return out;
+}
+
+/** API publique : rapport unique calculé par le nouveau modèle de possession. */
+export function computeSetterDistributionByRotation(actions, rallies, setups = {}, setterNumbers = {}, filters = {}) {
+  return buildDistributionReport(actions, rallies, setups, setterNumbers, filters);
+}
+
+/** Distribution par attaquant issue du même rapport (plus de moteur parallèle). */
+export function computeDistributionByPlayer(actions, rallies, setterNumbers = {}, filters = {}) {
+  return buildDistributionReport(actions, rallies, {}, setterNumbers, filters).players;
 }
