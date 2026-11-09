@@ -1,8 +1,18 @@
 {
-  "version": "3.9.0",
+  "version": "3.9.1",
   "releasedAt": "2026-11-09",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.9.1",
+      "date": "2026-11-09",
+      "title": "Codage : le champ des codes garde le focus après un clic sur la vidéo",
+      "items": [
+        "Le champ de saisie DataVolley reprend automatiquement le focus après un clic sur la vidéo, un bouton, un terrain ou le fond de page — y compris avec un lecteur vidéo intégré",
+        "Les vrais champs de formulaire, zones de texte et fenêtres de dialogue conservent le focus : la reprise ne gêne pas la saisie volontaire",
+        "Nouvelle politique de focus testée : vidéo, iframe et boutons redonnent la main aux codes ; listes, champs texte et dialogues sont préservés"
+      ]
+    },
     {
       "version": "3.9.0",
       "date": "2026-11-09",

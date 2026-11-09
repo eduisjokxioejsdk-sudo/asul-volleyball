@@ -16,6 +16,7 @@ import {
   loadKeyboardProfile,
   handleRemappedKeyDown,
 } from '../utils/keyboardRemap';
+import { restoreCodingFocus } from '../utils/focusPolicy';
 
 const describeDefault = (it) => {
   if (it.valid) return describeCode(it.code);
@@ -81,6 +82,7 @@ export default function CodingConsole({
   const chunks = bufferChunks || [];
   const rawValue = buffer !== undefined ? buffer : chunks.map((c) => c.code).join('');
   const inputRef = useRef(null);
+  const canEditBuffer = !!onChangeBuffer;
   const [remapModalOpen, setRemapModalOpen] = useState(false);
   const [keymapProfile, setKeymapProfile] = useState(() => loadKeyboardProfile());
 
@@ -89,6 +91,42 @@ export default function CodingConsole({
     window.addEventListener(KEYBOARD_REMAP_EVENT, onProfileUpdated);
     return () => window.removeEventListener(KEYBOARD_REMAP_EVENT, onProfileUpdated);
   }, []);
+
+  // Le champ des codes garde la priorité après un clic sur la vidéo, un bouton ou
+  // le fond de page. Les champs de formulaire et les fenêtres de dialogue sont
+  // préservés. Deux tentatives couvrent le cas d'un lecteur intégré (iframe),
+  // qui peut prendre le focus juste après le clic.
+  useEffect(() => {
+    if (disabled || !canEditBuffer) return undefined;
+    const input = inputRef.current;
+    if (!input) return undefined;
+
+    let timers = [];
+    const scheduleFocus = () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers = [];
+      for (const delay of [0, 90]) {
+        timers.push(setTimeout(() => {
+          restoreCodingFocus(input, document.activeElement);
+        }, delay));
+      }
+    };
+
+    const onBlur = () => scheduleFocus();
+    input.addEventListener('blur', onBlur);
+    window.addEventListener('pointerdown', scheduleFocus, true);
+    window.addEventListener('pointerup', scheduleFocus, true);
+    window.addEventListener('focus', scheduleFocus);
+    scheduleFocus();
+
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      input.removeEventListener('blur', onBlur);
+      window.removeEventListener('pointerdown', scheduleFocus, true);
+      window.removeEventListener('pointerup', scheduleFocus, true);
+      window.removeEventListener('focus', scheduleFocus);
+    };
+  }, [disabled, canEditBuffer]);
 
   const handleInputKeyDown = (e) => {
     if (disabled) return;
