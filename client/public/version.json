@@ -1,8 +1,17 @@
 {
-  "version": "3.8.0",
-  "releasedAt": "2026-11-08",
+  "version": "3.8.1",
+  "releasedAt": "2026-11-09",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.8.1",
+      "date": "2026-11-09",
+      "title": "Correction : affichage de la distribution du passeur dans l’analyse DataVolley",
+      "items": [
+        "Analyse DataVolley : l’onglet Distribution s’affiche de nouveau — l’erreur « DV_SETTER_CALLS is not defined » bloquait tout le panneau au moment de l’ouvrir, quel que soit le match",
+        "Les filtres par appel passeur (K1, K2, K3 … KP) sont opérationnels : la distribution se restreint aux ballons passés sur l’appel choisi, en plus des filtres par phase, zone de réception et rôle du défenseur"
+      ]
+    },
     {
       "version": "3.8.0",
       "date": "2026-11-08",
