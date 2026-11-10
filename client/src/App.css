@@ -6239,7 +6239,8 @@ body {
   font-size: 12px;
 }
 
-/* Pastilles des matchs rÃ©unis par le rapport (une par fiche). */
+/* Pastilles des matchs réunis par le rapport (une par fiche). Chaque pastille
+   s'inclut ou se retire du rapport ; l'œil ouvre la fiche en consultation. */
 .tj-report-matches {
   display: flex;
   align-items: center;
@@ -6247,23 +6248,63 @@ body {
   flex-wrap: wrap;
 }
 
-.tj-report-match {
+.tj-report-match-tools {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+}
+
+.tj-report-match {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-secondary);
   font-size: 12px;
-  cursor: pointer;
   transition: all var(--transition-fast);
+}
+
+.tj-report-match.included {
+  border-color: var(--border-accent);
+  color: var(--text-primary);
+  background: rgba(200, 161, 101, 0.12);
+}
+
+.tj-report-match.excluded {
+  opacity: 0.55;
 }
 
 .tj-report-match:hover {
   border-color: var(--border-accent);
   color: var(--text-primary);
+}
+
+.tj-report-match-toggle,
+.tj-report-match-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tj-report-match-toggle:hover,
+.tj-report-match-open:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.tj-report-match-open {
+  border-left: 1px solid var(--border-subtle);
+  border-radius: 0 999px 999px 0;
 }
 
 .tj-report-table td.name,

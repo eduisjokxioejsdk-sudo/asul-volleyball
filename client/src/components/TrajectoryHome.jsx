@@ -229,7 +229,7 @@ export default function TrajectoryHome({ user }) {
               Ouvrir le rapport cumulé →
             </button>
             <span style={{ fontSize: 12.5, color: '#a1a1aa' }}>
-              Réunit toutes les fiches de cette équipe, joueur par joueur.
+              Réunit les fiches de cette équipe (toutes, ou seulement les matchs choisis), joueur par joueur.
             </span>
           </div>
 

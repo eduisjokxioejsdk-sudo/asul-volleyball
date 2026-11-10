@@ -325,6 +325,20 @@ export function filterShots(shots, hidden) {
 }
 
 /**
+ * Lignes de flèches appartenant aux matchs sélectionnés pour un rapport cumulé.
+ * Sert au rapport d'équipe : on peut réunir toutes les fiches ou seulement
+ * quelques matchs choisis.
+ * @param {Array} rows lignes venues du serveur (chacune porte `match_id`)
+ * @param {Iterable<number|string>} matchIds ids des matchs inclus
+ */
+export function shotsOfMatches(rows, matchIds) {
+  const wanted = new Set([...(matchIds || [])].map(Number));
+  const list = rows || [];
+  if (wanted.size === 0) return [];
+  return list.filter((row) => wanted.has(Number(row.match_id)));
+}
+
+/**
  * Postes de départ d'une attaque : les trois zones de l'avant (4, 3, 2) et le
  * regroupement des zones arrière (5, 6, 1, 7, 8, 9). Sert au tri des attaques
  * selon l'endroit d'où part la flèche.

@@ -1,18 +1,18 @@
 {
-  "version": "3.10.0",
+  "version": "3.11.0",
   "releasedAt": "2026-11-10",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
     {
-      "version": "3.10.0",
+      "version": "3.11.0",
       "date": "2026-11-10",
-      "title": "Vidéos : bibliothèque 100 % YouTube, identique sur tous les comptes",
+      "title": "Trajectoires : rapport cumulé sur tous les matchs ou une sélection",
       "items": [
-        "Toutes les vidéos de match sont désormais des liens YouTube (publics ou non répertoriés) : la bibliothèque est exactement la même sur tous les comptes et tous les postes, sans fichier à transférer",
-        "L’import de fichier vidéo local est supprimé partout : nouveau match, CAM 1 / CAM 2 après coup, Centre Vidéo, Entraînement et playlists. Un lien YouTube est obligatoire pour la CAM 1, la CAM 2 reste optionnelle",
-        "Les fichiers vidéo importés autrefois sur un poste sont effacés au démarrage ; les vidéos sans lien YouTube sont retirées de la bibliothèque et la suppression se propage aux autres postes",
-        "Nouvelle route POST /api/videos/purge-local pour relancer le nettoyage à la demande ; l’ancien import d’angle local répond 410 avec la marche à suivre",
-        "L’export MP4 local (FFmpeg) est retiré : il nécessitait un fichier vidéo sur le poste. Les clips déjà exportés et partagés restent consultables"
+        "Rapport cumulé d’une équipe : chaque fiche de match peut être incluse ou retirée du calcul (pastilles cochables, boutons « Tous » et « Aucun »), sans modifier les fiches elles-mêmes",
+        "Le tableau de synthèse, les terrains par joueur, les compteurs de flèches et l’export ZIP ne prennent en compte que les matchs sélectionnés ; l’en-tête affiche « X / Y matchs »",
+        "Chaque pastille de match conserve un accès direct à la fiche en consultation (icône œil) ; la sélection revient à toutes les fiches quand on change d’équipe",
+        "Aucun match sélectionné : le rapport est remplacé par un message avec un bouton « Tout sélectionner » ; l’export est désactivé",
+        "Validation : nouvel utilitaire de filtrage des flèches par match et contrôles associés dans le test du rapport de trajectoires"
       ]
     },
     {

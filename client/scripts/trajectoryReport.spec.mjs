@@ -9,6 +9,7 @@ import {
   playerReport,
   resultsForKind,
   shotsOfKind,
+  shotsOfMatches,
   shotsReport,
   sumCounts,
   teamReport,
@@ -42,6 +43,19 @@ check('« Tout » réunit services et attaques', shotsOfKind(shots, 'all').lengt
 check('services seuls', shotsOfKind(shots, 'serve').length === 3);
 check('attaques seules', shotsOfKind(shots, 'attack').length === 4);
 check('liste absente acceptée', shotsOfKind(null, 'all').length === 0);
+
+console.log('\n== Sélection des matchs du rapport cumulé ==');
+const matchRows = [
+  { id: 1, match_id: 10, kind: 'serve', result: 'point' },
+  { id: 2, match_id: 11, kind: 'attack', result: 'point' },
+  { id: 3, match_id: 10, kind: 'attack', result: 'out' },
+];
+check('un seul match sélectionné', shotsOfMatches(matchRows, [10]).length === 2, `${shotsOfMatches(matchRows, [10]).length}`);
+check('deux matchs sélectionnés', shotsOfMatches(matchRows, [10, 11]).length === 3);
+check('aucun match sélectionné', shotsOfMatches(matchRows, []).length === 0);
+check('aucun match sélectionné (liste absente)', shotsOfMatches(matchRows, null).length === 0);
+check('identifiants en chaîne acceptés', shotsOfMatches(matchRows, ['11']).length === 1);
+check('lignes absentes acceptées', shotsOfMatches(null, [10]).length === 0);
 
 console.log('\n== Somme des compteurs ==');
 check('somme d’un dictionnaire', sumCounts({ a: 2, b: 3 }) === 5);

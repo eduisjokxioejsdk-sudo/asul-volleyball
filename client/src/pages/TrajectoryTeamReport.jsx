@@ -25,10 +25,11 @@ import {
   rosterOf,
   shotFromRow,
   shotsOfKind,
+  shotsOfMatches,
   teamReport,
 } from '../utils/trajectory';
 import { downloadTrajectoryZip } from '../utils/trajectoryExport';
-import { ChartColumn, FileDown, House, Plane, Route, Users } from '../components/icons';
+import { ChartColumn, Check, Eye, FileDown, House, Plane, Route, Users } from '../components/icons';
 
 /** Onglets du rapport : « Tout » réunit services et attaques. */
 const KIND_TABS = [{ id: 'all', label: 'Tout' }, ...TRAJECTORY_KINDS];
@@ -46,6 +47,8 @@ export default function TrajectoryTeamReport() {
   const [kind, setKind] = useState('all');
   const [hidden, setHidden] = useState([]); // issues masquées par le filtre
   const [zone, setZone] = useState('all'); // poste de départ des attaques affichées
+  // Matchs retirés du rapport cumulé (vide = toutes les fiches de l'équipe).
+  const [excludedMatchIds, setExcludedMatchIds] = useState([]);
   const [flash, setFlash] = useState(null);
   const [exporting, setExporting] = useState(false);
 
@@ -66,6 +69,9 @@ export default function TrajectoryTeamReport() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Changer d'équipe repart de toutes ses fiches (aucun match exclu).
+  useEffect(() => { setExcludedMatchIds([]); }, [teamId]);
+
   // Le sélecteur d'équipe permet de changer de rapport sans revenir à l'accueil.
   useEffect(() => {
     teamsAPI.getAll()
@@ -85,7 +91,25 @@ export default function TrajectoryTeamReport() {
   const team = data?.team || null;
   const teamName = team?.name || `Équipe ${teamId}`;
   const roster = useMemo(() => rosterOf(team), [team]);
-  const allShots = useMemo(() => (data?.shots || []).map(shotFromRow), [data]);
+
+  // Sélection des matchs réunis : par défaut toutes les fiches de l'équipe.
+  // Décocher un match retire ses flèches du tableau, des terrains et de l'export,
+  // sans jamais modifier les fiches elles-mêmes.
+  const matches = useMemo(() => data?.matches || [], [data]);
+  const excludedSet = useMemo(() => new Set(excludedMatchIds.map(Number)), [excludedMatchIds]);
+  const includedMatches = useMemo(
+    () => matches.filter((m) => !excludedSet.has(Number(m.id))),
+    [matches, excludedSet]
+  );
+  const includedMatchIds = useMemo(
+    () => includedMatches.map((m) => m.id),
+    [includedMatches]
+  );
+  const allShots = useMemo(
+    () => shotsOfMatches(data?.shots, includedMatchIds).map(shotFromRow),
+    [data, includedMatchIds]
+  );
+  const allIncluded = includedMatches.length === matches.length;
   // Le tableau de synthèse suit le tri par poste de départ : les services
   // restent comptés, seules les attaques se limitent au poste choisi.
   const reportShots = useMemo(
@@ -108,13 +132,31 @@ export default function TrajectoryTeamReport() {
   const toggleResult = (resultId) =>
     setHidden((prev) => (prev.includes(resultId) ? prev.filter((x) => x !== resultId) : [...prev, resultId]));
 
+  // --- Sélection des matchs du rapport cumulé --------------------------------
+  const toggleMatch = (matchId) =>
+    setExcludedMatchIds((prev) =>
+      prev.includes(matchId) ? prev.filter((id) => id !== matchId) : [...prev, matchId]
+    );
+
+  const selectAllMatches = () => setExcludedMatchIds([]);
+
+  const selectNoMatches = () => setExcludedMatchIds(matches.map((m) => m.id));
+
   // Exporte le rapport en dossier ZIP (visualiseur hors ligne, lecture seule).
   const exportZip = useCallback(async () => {
-    if (!team || exporting) return;
+    if (!team || exporting || includedMatches.length === 0) return;
     setExporting(true);
     try {
+      const suffix = allIncluded
+        ? 'toutes les fiches'
+        : `${includedMatches.length} / ${matches.length} matchs`;
       await downloadTrajectoryZip(
-        { name: `Rapport global — ${teamName}`, home_team: team, away_team: null, team1_name: teamName },
+        {
+          name: `Rapport cumulé — ${teamName} (${suffix})`,
+          home_team: team,
+          away_team: null,
+          team1_name: teamName,
+        },
         allShots
       );
       notify(true, 'Dossier ZIP téléchargé.');
@@ -123,7 +165,7 @@ export default function TrajectoryTeamReport() {
     } finally {
       setExporting(false);
     }
-  }, [team, teamName, allShots, exporting, notify]);
+  }, [team, teamName, allShots, exporting, notify, includedMatches.length, matches.length, allIncluded]);
 
   // --- Rendu ----------------------------------------------------------------
   if (loading) {
@@ -163,10 +205,14 @@ export default function TrajectoryTeamReport() {
           <motion.button className="back-btn" onClick={() => navigate('/dashboard')} whileHover={{ x: -2 }} whileTap={{ scale: 0.98 }}>←</motion.button>
           <div className="dv-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <PancakeLogo size={18} />
-            <strong>Rapport global — {teamName}</strong>
-            <span className="live-status active">Toutes les fiches</span>
+            <strong>Rapport cumulé — {teamName}</strong>
+            <span className={`live-status ${includedMatches.length > 0 ? 'active' : ''}`}>
+              {allIncluded
+                ? 'Toutes les fiches'
+                : `${includedMatches.length} / ${matches.length} fiches`}
+            </span>
             <span className="dv-teams">
-              <Route size={12} /> {data.matches.length} match{data.matches.length > 1 ? 's' : ''}
+              <Route size={12} /> {includedMatches.length} / {matches.length} match{matches.length > 1 ? 's' : ''}
             </span>
           </div>
           <select
@@ -183,8 +229,8 @@ export default function TrajectoryTeamReport() {
           <button
             className="btn btn-secondary btn-sm"
             onClick={exportZip}
-            disabled={exporting}
-            title="Télécharger un dossier ZIP du rapport (lecture seule)"
+            disabled={exporting || includedMatches.length === 0}
+            title="Télécharger un dossier ZIP du rapport cumulé (matchs sélectionnés uniquement, lecture seule)"
           >
             <FileDown size={14} /> {exporting ? 'Export…' : 'Télécharger'}
           </button>
@@ -212,7 +258,7 @@ export default function TrajectoryTeamReport() {
                 ))}
               </div>
               <span className="tj-toolbar-team">
-                {teamName} · {data.matches.length} match{data.matches.length > 1 ? 's' : ''} · {allShots.length} flèche{allShots.length > 1 ? 's' : ''}
+                {teamName} · {includedMatches.length} / {matches.length} match{matches.length > 1 ? 's' : ''} inclus · {allShots.length} flèche{allShots.length > 1 ? 's' : ''}
               </span>
               <div className="tj-toolbar-spacer" />
               {kind !== 'serve' && (
@@ -229,10 +275,12 @@ export default function TrajectoryTeamReport() {
             {flash && <div className={`live-msg ${flash.ok ? 'ok' : 'err'}`}>{flash.text}</div>}
 
             <p className="dv-hint">
-              Rapport global : toutes les fiches de <strong>{teamName}</strong> sont réunies. L’onglet « Tout » rassemble
-              les services et les attaques de chaque joueur ; les autres onglets isolent un type de frappe. « Poste de
-              départ » limite les attaques à la zone d’où part la flèche (4, 3, 2 ou arrière), dans le tableau comme sur
-              les terrains. Cliquez sur un terrain pour l’agrandir.
+              Rapport cumulé : toutes les fiches cochées de <strong>{teamName}</strong> sont réunies (par défaut,
+              toutes). Décochez un match pour l’exclure du tableau, des terrains et de l’export ZIP — les fiches
+              elles-mêmes ne sont pas modifiées. L’onglet « Tout » rassemble les services et les attaques de chaque
+              joueur ; les autres onglets isolent un type de frappe. « Poste de départ » limite les attaques à la zone
+              d’où part la flèche (4, 3, 2 ou arrière), dans le tableau comme sur les terrains. Cliquez sur un terrain
+              pour l’agrandir.
             </p>
 
             {data.matches.length === 0 ? (
@@ -248,103 +296,159 @@ export default function TrajectoryTeamReport() {
             ) : (
               <>
                 <div className="tj-report-matches">
-                  <span className="tj-report-bar-label"><ChartColumn size={14} /> Matchs réunis :</span>
-                  {data.matches.map((m) => (
+                  <span className="tj-report-bar-label"><ChartColumn size={14} /> Matchs inclus :</span>
+                  <div className="tj-report-match-tools">
                     <button
-                      key={m.id}
                       type="button"
-                      className="tj-report-match"
-                      onClick={() => navigate(`/trajectories/${m.id}/consult`)}
-                      title={`Ouvrir la fiche « ${m.name} » en consultation`}
+                      className="btn btn-secondary btn-sm"
+                      onClick={selectAllMatches}
+                      disabled={allIncluded}
+                      title="Réunir toutes les fiches de l’équipe"
                     >
-                      {m.team_side === 'home' ? <House size={12} /> : <Plane size={12} />}
-                      {m.name}
-                      <span className="live-status active">{m.shot_count || 0}</span>
+                      Tous
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={selectNoMatches}
+                      disabled={includedMatches.length === 0}
+                      title="Retirer tous les matchs du rapport"
+                    >
+                      Aucun
+                    </button>
+                  </div>
+                  {matches.map((m) => {
+                    const included = !excludedSet.has(Number(m.id));
+                    return (
+                      <span
+                        key={m.id}
+                        className={`tj-report-match ${included ? 'included' : 'excluded'}`}
+                      >
+                        <button
+                          type="button"
+                          className="tj-report-match-toggle"
+                          onClick={() => toggleMatch(m.id)}
+                          aria-pressed={included}
+                          title={
+                            included
+                              ? `Retirer « ${m.name} » du rapport cumulé`
+                              : `Inclure « ${m.name} » dans le rapport cumulé`
+                          }
+                        >
+                          <Check size={12} style={{ opacity: included ? 1 : 0.22 }} />
+                          {m.team_side === 'home' ? <House size={12} /> : <Plane size={12} />}
+                          {m.name}
+                          <span className={`live-status ${included ? 'active' : ''}`}>{m.shot_count || 0}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="tj-report-match-open"
+                          onClick={() => navigate(`/trajectories/${m.id}/consult`)}
+                          title={`Ouvrir la fiche « ${m.name} » en consultation`}
+                          aria-label={`Ouvrir la fiche ${m.name}`}
+                        >
+                          <Eye size={12} />
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
 
-                <div className="tj-recap">
-                  <span className="tj-recap-label">
-                    {kindLabel} — {teamName} · {shownShots.length} flèche{shownShots.length > 1 ? 's' : ''} affichée{shownShots.length > 1 ? 's' : ''}
-                  </span>
-                  {filterResults.filter((r) => recap[r.id] > 0).map((r) => (
-                    <span key={r.id} className="tj-chip" style={{ borderColor: r.color, color: r.color }}>
-                      {r.label} {recap[r.id]}
-                    </span>
-                  ))}
-                  {shownShots.length === 0 && (
-                    <span className="dv-hint">
-                      {kindShots.length === 0
-                        ? 'Aucune flèche marquée pour l’instant.'
-                        : 'Toutes les flèches sont masquées par le filtre.'}
-                    </span>
-                  )}
-                </div>
-
-                <div className="report-wrap">
-                  <table className="report report-compact tj-report-table">
-                    <thead>
-                      <tr className="group-row">
-                        <th className="name">Joueur</th>
-                        <th>Services</th>
-                        <th>Attaque</th>
-                        <th>Total</th>
-                        {TRAJECTORY_RESULTS.map((r) => (
-                          <th key={r.id} style={{ color: r.color }}>{r.short}</th>
-                        ))}
-                        <th>Réussite</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summary.players.map((p) => (
-                        <tr key={p.player_number}>
-                          <td className="name">{p.player_number} · {p.name || `N°${p.player_number}`}</td>
-                          <td>{p.serveTotal}</td>
-                          <td>{p.attackTotal}</td>
-                          <td><strong>{p.total}</strong></td>
-                          {TRAJECTORY_RESULTS.map((r) => (
-                            <td key={r.id}>{p.counts[r.id] || ''}</td>
-                          ))}
-                          <td>{p.total ? `${Math.round(p.successRate * 100)} %` : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="team-row">
-                        <td className="name">Total équipe</td>
-                        <td>{summary.serveTotal}</td>
-                        <td>{summary.attackTotal}</td>
-                        <td><strong>{summary.total}</strong></td>
-                        {TRAJECTORY_RESULTS.map((r) => (
-                          <td key={r.id}>{summary.counts[r.id] || ''}</td>
-                        ))}
-                        <td>{summary.total ? `${Math.round(summary.successRate * 100)} %` : '—'}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-
-                {summary.players.length === 0 ? (
+                {includedMatches.length === 0 ? (
                   <div className="tj-empty">
-                    <p>Aucun joueur dans l’effectif de <strong>{teamName}</strong>.</p>
-                    <button className="btn btn-secondary" onClick={() => navigate('/teams')}>
-                      <Users size={14} /> Ouvrir les équipes
+                    <p>
+                      Aucun match sélectionné : cochez au moins un match ci-dessus pour afficher le rapport cumulé de
+                      <strong> {teamName}</strong>.
+                    </p>
+                    <button className="btn btn-primary" onClick={selectAllMatches}>
+                      <Check size={14} /> Tout sélectionner
                     </button>
                   </div>
                 ) : (
-                  <div className="tj-grid">
-                    {summary.players.map((p) => (
-                      <TrajectoryCourt
-                        key={`${kind}-${p.player_number}`}
-                        player={{ number: p.player_number, name: p.name, role: p.role }}
-                        kind={kind}
-                        teams={{ left: teamName, right: 'Adversaire' }}
-                        shots={shownShots.filter((s) => Number(s.player_number) === p.player_number)}
-                        readOnly
-                      />
+                  <>
+                  <div className="tj-recap">
+                    <span className="tj-recap-label">
+                      {kindLabel} — {teamName} · {shownShots.length} flèche{shownShots.length > 1 ? 's' : ''} affichée{shownShots.length > 1 ? 's' : ''}
+                    </span>
+                    {filterResults.filter((r) => recap[r.id] > 0).map((r) => (
+                      <span key={r.id} className="tj-chip" style={{ borderColor: r.color, color: r.color }}>
+                        {r.label} {recap[r.id]}
+                      </span>
                     ))}
+                    {shownShots.length === 0 && (
+                      <span className="dv-hint">
+                        {kindShots.length === 0
+                          ? 'Aucune flèche marquée pour l’instant.'
+                          : 'Toutes les flèches sont masquées par le filtre.'}
+                      </span>
+                    )}
                   </div>
+  
+                  <div className="report-wrap">
+                    <table className="report report-compact tj-report-table">
+                      <thead>
+                        <tr className="group-row">
+                          <th className="name">Joueur</th>
+                          <th>Services</th>
+                          <th>Attaque</th>
+                          <th>Total</th>
+                          {TRAJECTORY_RESULTS.map((r) => (
+                            <th key={r.id} style={{ color: r.color }}>{r.short}</th>
+                          ))}
+                          <th>Réussite</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {summary.players.map((p) => (
+                          <tr key={p.player_number}>
+                            <td className="name">{p.player_number} · {p.name || `N°${p.player_number}`}</td>
+                            <td>{p.serveTotal}</td>
+                            <td>{p.attackTotal}</td>
+                            <td><strong>{p.total}</strong></td>
+                            {TRAJECTORY_RESULTS.map((r) => (
+                              <td key={r.id}>{p.counts[r.id] || ''}</td>
+                            ))}
+                            <td>{p.total ? `${Math.round(p.successRate * 100)} %` : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="team-row">
+                          <td className="name">Total équipe</td>
+                          <td>{summary.serveTotal}</td>
+                          <td>{summary.attackTotal}</td>
+                          <td><strong>{summary.total}</strong></td>
+                          {TRAJECTORY_RESULTS.map((r) => (
+                            <td key={r.id}>{summary.counts[r.id] || ''}</td>
+                          ))}
+                          <td>{summary.total ? `${Math.round(summary.successRate * 100)} %` : '—'}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+  
+                  {summary.players.length === 0 ? (
+                    <div className="tj-empty">
+                      <p>Aucun joueur dans l’effectif de <strong>{teamName}</strong>.</p>
+                      <button className="btn btn-secondary" onClick={() => navigate('/teams')}>
+                        <Users size={14} /> Ouvrir les équipes
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="tj-grid">
+                      {summary.players.map((p) => (
+                        <TrajectoryCourt
+                          key={`${kind}-${p.player_number}`}
+                          player={{ number: p.player_number, name: p.name, role: p.role }}
+                          kind={kind}
+                          teams={{ left: teamName, right: 'Adversaire' }}
+                          shots={shownShots.filter((s) => Number(s.player_number) === p.player_number)}
+                          readOnly
+                        />
+                      ))}
+                    </div>
+                )}
+                  </>
                 )}
               </>
             )}
