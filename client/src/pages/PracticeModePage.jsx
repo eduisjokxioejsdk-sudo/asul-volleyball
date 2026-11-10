@@ -11,6 +11,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import AppNavigation from '../components/AppNavigation';
 import PancakeLogo from '../components/PancakeLogo';
 import { teamsAPI, videosAPI, practiceAPI } from '../services/api';
+import SmartVideoPlayer from '../components/SmartVideoPlayer';
+import { extractYouTubeId } from '../utils/youtube';
 import { downloadTextFile, rowsToCsv } from '../utils/download';
 import { handleRemappedKeyDown } from '../utils/keyboardRemap';
 import useCodingKeyboard from '../hooks/useCodingKeyboard';
@@ -95,8 +97,6 @@ export default function PracticeModePage({ user, onLogout }) {
 
   // Vidéo
   const videoRef = useRef(null);
-  const [localVideoUrl, setLocalVideoUrl] = useState(null);
-  const [localVideoName, setLocalVideoName] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -155,28 +155,17 @@ export default function PracticeModePage({ user, onLogout }) {
     return serverVideos.find((v) => Number(v.id) === Number(activeSession.video_id));
   }, [activeSession, serverVideos]);
 
-  // URL effective de lecture vidéo
-  const videoPlaybackUrl = useMemo(() => {
-    if (localVideoUrl) return localVideoUrl;
-    if (currentServerVideo) {
-      if (currentServerVideo.filepath_proxy) {
-        const proxyFilename = currentServerVideo.filepath_proxy.split(/[\\/]/).pop();
-        return videosAPI.getProxyUrl(proxyFilename);
-      }
-      if (currentServerVideo.filename) {
-        return videosAPI.getFileUrl(currentServerVideo.filename);
-      }
-    }
-    return null;
-  }, [localVideoUrl, currentServerVideo]);
+  // Lien YouTube de la vidéo de la séance : la bibliothèque des matchs est
+  // désormais 100 % YouTube, identique sur tous les comptes et tous les postes.
+  const videoYoutubeUrl = currentServerVideo?.youtube_url || null;
+  const hasSessionVideo = Boolean(extractYouTubeId(videoYoutubeUrl));
+
 
   // Ouvrir une séance
   const openSession = async (session) => {
     setLoadingSession(true);
     setActiveSession(session);
     setActiveTab('coding');
-    setLocalVideoUrl(null);
-    setLocalVideoName('');
     setCodeInput('');
     setCurrentTime(0);
     setIsPlaying(false);
@@ -198,8 +187,6 @@ export default function PracticeModePage({ user, onLogout }) {
   // Fermer la séance et revenir à l'accueil
   const closeSession = () => {
     setActiveSession(null);
-    setLocalVideoUrl(null);
-    setLocalVideoName('');
     setActions([]);
   };
 
@@ -285,16 +272,6 @@ export default function PracticeModePage({ user, onLogout }) {
       }
     } catch (err) {
       console.error('Erreur association vidéo serveur:', err);
-    }
-  };
-
-  // Chargement d'un fichier vidéo local (sans upload serveur)
-  const handleLocalVideoUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setLocalVideoUrl(url);
-      setLocalVideoName(file.name);
     }
   };
 
@@ -1166,7 +1143,7 @@ export default function PracticeModePage({ user, onLogout }) {
                     borderRadius: 6,
                   }}
                 >
-                  {videoPlaybackUrl ? (
+                  {hasSessionVideo ? (
                     <div>
                       <div
                         style={{
@@ -1179,10 +1156,11 @@ export default function PracticeModePage({ user, onLogout }) {
                           alignItems: 'center',
                         }}
                       >
-                        <video
+                        <SmartVideoPlayer
                           ref={videoRef}
-                          src={videoPlaybackUrl}
-                          style={{ width: '100%', maxHeight: 360, objectFit: 'contain' }}
+                          youtubeUrl={videoYoutubeUrl}
+                          controls
+                          style={{ width: '100%', height: 360, background: '#000' }}
                           onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
                           onLoadedMetadata={() =>
                             setVideoDuration(videoRef.current?.duration || 0)
@@ -1277,8 +1255,6 @@ export default function PracticeModePage({ user, onLogout }) {
                             type="button"
                             className="btn btn-secondary btn-xs"
                             onClick={() => {
-                              setLocalVideoUrl(null);
-                              setLocalVideoName('');
                               handleSelectServerVideo(null);
                             }}
                             title="Changer de vidéo"
@@ -1304,7 +1280,7 @@ export default function PracticeModePage({ user, onLogout }) {
                         Vidéo de la séance (optionnelle)
                       </h4>
                       <p style={{ margin: '0 0 14px', fontSize: 12, color: '#a1a1aa' }}>
-                        Ajoutez une vidéo pour synchroniser automatiquement le timecode de chaque répétition.
+                        Associez un match YouTube pour synchroniser automatiquement le timecode de chaque répétition.
                       </p>
 
                       <div
@@ -1316,32 +1292,17 @@ export default function PracticeModePage({ user, onLogout }) {
                           flexWrap: 'wrap',
                         }}
                       >
-                        {/* Option 1: Vidéo locale */}
-                        <label
-                          className="btn btn-primary btn-sm"
-                          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                        >
-                          <Plus size={13} />
-                          <span>Choisir un fichier vidéo local</span>
-                          <input
-                            type="file"
-                            accept="video/*"
-                            onChange={handleLocalVideoUpload}
-                            style={{ display: 'none' }}
-                          />
-                        </label>
-
-                        {/* Option 2: Vidéo du serveur */}
+                        {/* Vidéo du serveur : un match YouTube partagé */}
                         {serverVideos.length > 0 && (
                           <select
                             style={{ fontSize: 12, maxWidth: 240 }}
                             value={activeSession.video_id || ''}
                             onChange={(e) => handleSelectServerVideo(e.target.value)}
                           >
-                            <option value="">— Vidéo du serveur —</option>
+                            <option value="">— Match YouTube —</option>
                             {serverVideos.map((v) => (
                               <option key={v.id} value={v.id}>
-                                {v.display_name || v.original_name || v.filename}
+                                {v.display_name || v.original_name}
                               </option>
                             ))}
                           </select>

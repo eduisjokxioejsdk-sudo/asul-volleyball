@@ -10,9 +10,9 @@
 //     et de les lire enchaînés ou de les exporter en montage FFmpeg.
 // ============================================================================
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronsLeft, ChevronsRight, Clock, Pause, Play, Repeat, Trash } from './icons';
-import { playlistsAPI, videosAPI } from '../services/api';
+import { playlistsAPI } from '../services/api';
 import { formatTimecode, getAdaptiveMargins } from '../utils/datavolley';
 import SmartVideoPlayer from './SmartVideoPlayer';
 import { extractYouTubeId } from '../utils/youtube';
@@ -42,6 +42,8 @@ export default function PlaylistManagerModal({
   const [creating, setCreating] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [activeClipIndex, setActiveClipIndex] = useState(0);
+  // Lecteur du clip en cours : ref unifiée <video> / YouTube.
+  const clipPlayerRef = useRef(null);
 
   const notify = (msg) => {
     setStatusMsg(msg);
@@ -280,9 +282,9 @@ export default function PlaylistManagerModal({
 
   const items = selectedPlaylist?.items || [];
   const activeClip = items[activeClipIndex] || null;
-  const activeClipUrl = activeClip?.filename ? videosAPI.getFileUrl(activeClip.filename) : null;
+  // Les clips sont lus depuis YouTube : plus aucun fichier vidéo local.
   const activeClipYt = activeClip?.youtube_url || null;
-  const hasPlayableClip = Boolean(activeClipUrl || extractYouTubeId(activeClipYt));
+  const hasPlayableClip = Boolean(extractYouTubeId(activeClipYt));
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -355,16 +357,18 @@ export default function PlaylistManagerModal({
             {activeClip && hasPlayableClip ? (
               <div style={{ marginBottom: 14 }}>
                 <SmartVideoPlayer
-                  key={`${activeClip.id}-${activeClip.video_id}-${activeClipYt || activeClipUrl}`}
-                  src={activeClipUrl}
+                  ref={clipPlayerRef}
+                  key={`${activeClip.id}-${activeClip.video_id}-${activeClipYt || ''}`}
                   youtubeUrl={activeClipYt}
                   controls
                   autoPlay
                   style={{ width: '100%', maxHeight: 340, background: '#000', borderRadius: 8 }}
-                  onLoadedMetadata={(e) => {
+                  onLoadedMetadata={() => {
                     const start = Math.max(0, (Number(activeClip.timecode) || 0) - (Number(activeClip.lead_in) || 3));
+                    const player = clipPlayerRef.current;
+                    if (!player) return;
                     try {
-                      e.currentTarget.currentTime = start;
+                      player.currentTime = start;
                     } catch {}
                   }}
                   onTimeUpdate={(e) => {
@@ -374,7 +378,7 @@ export default function PlaylistManagerModal({
                         setActiveClipIndex((i) => i + 1);
                       } else {
                         try {
-                          e.currentTarget.pause();
+                          clipPlayerRef.current?.pause();
                         } catch {}
                       }
                     }

@@ -163,8 +163,8 @@ Toutes les données (base de données + vidéos) sont stockées sur votre machin
 | Donnée | Emplacement sur le PC |
 | --- | --- |
 | Base de données SQLite | `server/asul.db` |
-| Vidéos uploadées | `server/uploads/` |
-| Vidéos de lecture légère (proxy) | `server/uploads/trimmed/` |
+| Vidéos de match | ❌ plus de fichier local : chaque match pointe vers un **lien YouTube** |
+| Enregistrements du direct | `server/uploads/live/` (replay du direct uniquement) |
 
 ### Démarrer l'application (1 clic)
 
@@ -272,17 +272,21 @@ le point avant de le revoir à l'écran.
 - **Flux caméra du direct** : API navigateur `getUserMedia` + `MediaRecorder` côté
   téléphone, buffer de rediffusion différée côté serveur, `MediaSource` côté PC
   (aucune dépendance supplémentaire)
-- **Stockage** : 100% local sur le PC (SQLite + fichiers vidéo)
+- **Stockage** : 100% local sur le PC (SQLite) ; les vidéos de match sont des liens YouTube
 - **Partage des équipes à distance** : Supabase (offre gratuite) via son API REST — voir `SYNC.md`
 
-## 🗂️ Stockage des vidéos
+## 🗂️ Vidéos de match
 
-Les vidéos sont enregistrées **sur le disque du poste, uniquement** :
+Une vidéo de match est **toujours un lien YouTube** (public ou non répertorié) :
+la bibliothèque est donc identique sur tous les comptes et tous les postes, sans
+fichier à transférer. La CAM 1 est obligatoire, la CAM 2 (second angle) est
+optionnelle.
 
-- Vidéos originales : `server/uploads/`
-- Vidéos découpées : `server/uploads/trimmed/`
-
-Aucune vidéo ne transite par un service externe.
+Au démarrage, le serveur efface les anciens fichiers vidéo importés sur le poste
+(`server/uploads/`, `server/uploads/trimmed/`) et retire de la bibliothèque les
+vidéos qui n'ont pas de lien YouTube. Les enregistrements du direct
+(`server/uploads/live/`) et les clips déjà exportés (`server/uploads/montages/`)
+ne sont pas touchés.
 
 ## 📝 License
 

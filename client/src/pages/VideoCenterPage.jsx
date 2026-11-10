@@ -15,14 +15,13 @@ import PancakeLogo from '../components/PancakeLogo';
 import VideoTvOverlay from '../components/VideoTvOverlay';
 import PlaylistManagerModal from '../components/PlaylistManagerModal';
 import useDualScreenVideo from '../hooks/useDualScreenVideo';
-import { videosAPI, datavolleyAPI, teamsAPI, montageAPI } from '../services/api';
+import { videosAPI, datavolleyAPI, teamsAPI } from '../services/api';
 import useCollectionChanged, { useOnCollectionsChanged } from '../hooks/useCollectionChanged';
 import SmartVideoPlayer from '../components/SmartVideoPlayer';
 import { extractYouTubeId } from '../utils/youtube';
 import { formatTimecode, groupActionsIntoRallies, buildPointSegments } from '../utils/datavolley';
 import { computeMatchState } from '../utils/rotation';
-import { codeIssues } from '../utils/codingTools';
-import { Play, Pause, Clock, ArrowLeft, ChevronLeft, ChevronRight, Trash, FileDown, Tv, Camera, MonitorPlay, Upload } from '../components/icons';
+import { Play, Pause, Clock, ArrowLeft, ChevronLeft, ChevronRight, Trash, Tv, Camera, MonitorPlay, Upload } from '../components/icons';
 
 const ACTION_TYPES = [
   { key: 'ALL', label: 'Toutes les actions' },
@@ -108,12 +107,6 @@ export default function VideoCenterPage({ user, onLogout }) {
     onRemotePlayState: handleRemotePlayState,
   });
 
-  // Export MP4 de la playlist filtrée (Feature 11)
-  const [exportingMp4, setExportingMp4] = useState(false);
-  const [exportJob, setExportJob] = useState(null); // { id, status, progress, step }
-  const [exportError, setExportError] = useState('');
-  const [clipNotes, setClipNotes] = useState({});
-  const [shareCopied, setShareCopied] = useState(false);
 
   // Filtres de consultation
   const [filterAction, setFilterAction] = useState('ALL');
@@ -173,10 +166,6 @@ export default function VideoCenterPage({ user, onLogout }) {
 
   const openVideoConsultation = async (video) => {
     setSelectedVideo(video);
-    setClipNotes({});
-    setExportJob(null);
-    setExportError('');
-    setExportingMp4(false);
     setCurrentTime(0);
     setActiveActionIndex(-1);
     setFilterAction('ALL');
@@ -196,8 +185,6 @@ export default function VideoCenterPage({ user, onLogout }) {
   const closeVideoConsultation = () => {
     setSelectedVideo(null);
     setActions([]);
-    setClipNotes({});
-    setExportJob(null);
     setIsPlaying(false);
   };
 
@@ -296,11 +283,6 @@ export default function VideoCenterPage({ user, onLogout }) {
     });
   }, [actions, filterAction, filterQuality, filterTeam, filterPlayer]);
 
-  const actionQualityIssues = useMemo(
-    () => codeIssues(actions, { requireTimecode: true, requireEvaluation: true, enriched: true }),
-    [actions]
-  );
-
   // Points (rallies) et segments vidéo correspondants — alimente le modal
   // de playlists multi-matchs (props `rallies` / `segments` attendues).
   const playlistRallies = useMemo(
@@ -374,17 +356,12 @@ export default function VideoCenterPage({ user, onLogout }) {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const videoUrl = selectedVideo?.filename ? videosAPI.getFileUrl(selectedVideo.filename) : null;
-  const proxyFilename = selectedVideo?.filepath_proxy ? selectedVideo.filepath_proxy.split(/[\\/]/).pop() : null;
-  const proxyUrl = proxyFilename ? videosAPI.getProxyUrl(proxyFilename) : null;
-  const playbackUrl = proxyUrl || videoUrl;
   const youtubeUrl = selectedVideo?.youtube_url || null;
-  const hasPrimaryVideo = Boolean(playbackUrl || extractYouTubeId(youtubeUrl));
+  const hasPrimaryVideo = Boolean(extractYouTubeId(youtubeUrl));
 
-  const angle2Url = selectedVideo?.filename_angle2 ? videosAPI.getFileUrl(selectedVideo.filename_angle2) : null;
   const angle2YoutubeUrl = selectedVideo?.youtube_url_angle2 || null;
-  // La CAM 2 existe dès qu'un fichier local ou un lien YouTube est enregistré.
-  const hasAngle2 = Boolean(angle2Url || extractYouTubeId(angle2YoutubeUrl));
+  // La CAM 2 existe dès qu'un lien YouTube est enregistré.
+  const hasAngle2 = Boolean(extractYouTubeId(angle2YoutubeUrl));
   const angle2Offset = Number(selectedVideo?.angle2_offset || 0);
 
   const syncAngle2 = (t, shouldPlay = null) => {
@@ -441,7 +418,7 @@ export default function VideoCenterPage({ user, onLogout }) {
     const fromRemote = Date.now() - remoteCmdAtRef.current < 150;
     broadcastSync({
       videoId: selectedVideo.id,
-      src: playbackUrl || youtubeUrl,
+      src: youtubeUrl,
       currentTime: fromRemote ? undefined : currentTime,
       playing: isPlaying,
       playbackRate: playbackSpeed,
@@ -451,126 +428,7 @@ export default function VideoCenterPage({ user, onLogout }) {
         lastCode: overlayState.activeAction?.code || '',
       },
     });
-  }, [popoutActive, hasPrimaryVideo, playbackUrl, youtubeUrl, selectedVideo, currentTime, isPlaying, playbackSpeed, overlayState, broadcastSync]);
-
-  // Export MP4 de la sélection filtrée via FFmpeg (Feature 11)
-  const handleExportFilteredMp4 = async () => {
-    if (!selectedVideo) return;
-    const validClips = filteredActions.filter((a) => a.timecode != null);
-    if (validClips.length === 0) {
-      setExportError('Aucune action filtrée ne possède de timecode vidéo.');
-      return;
-    }
-    setExportError('');
-    setExportingMp4(true);
-    try {
-      const filterDesc = [
-        filterTeam !== 'ALL' ? (filterTeam === 'home' ? team1 : team2) : '2 Équipes',
-        filterPlayer !== 'ALL' ? `Joueur ${filterPlayer.split(':')[1]}` : null,
-        filterAction !== 'ALL' ? `Action ${filterAction}` : null,
-        filterQuality !== 'ALL' ? `Éval ${filterQuality}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · ');
-
-      const clipsPayload = validClips.map((a, idx) => {
-        const tc = Number(a.timecode) || 0;
-        const actionKey = String(a.sync_uuid || a.uid || a.id || a.action_index || idx);
-        return {
-          startTime: Math.max(0, tc - 2.5),
-          endTime: tc + 3.5,
-          title: `${a.code || ''} — ${playerDisplayName(a)}`,
-          subtitle: `Clip #${idx + 1} · ${a.team === 'away' ? team2 : team1} · ${formatTimecode(tc)}`,
-          actionId: a.sync_uuid || a.id || null,
-          actionIndex: a.action_index ?? idx,
-          setNumber: a.set_number || 1,
-          rallyNumber: a.rally_number ?? null,
-          timecode: tc,
-          code: a.code || '',
-          evaluation: a.evaluation || '',
-          team: a.team || 'home',
-          playerNumber: a.player_number ?? null,
-          action: a.action || '',
-          note: clipNotes[actionKey] || '',
-          qualityFlags: actionQualityIssues
-            .filter((issue) => issue.uid != null ? issue.uid === a.uid : Number(issue.action_index) === Number(a.action_index))
-            .map((issue) => issue.label),
-        };
-      });
-
-      const res = await montageAPI.create(selectedVideo.id, {
-        title: `Playlist_${team1}_vs_${team2}_${validClips.length}clips`,
-        description: filterDesc,
-        clips: clipsPayload,
-        options: {
-          resolution: '720p',
-          includeIntro: true,
-          includeOverlay: true,
-          leadIn: 0,
-          leadOut: 0,
-        },
-      });
-
-      const mId = res.data?.montageId;
-      if (mId) {
-        setExportJob({ id: mId, shareToken: res.data?.shareToken, status: 'processing', progress: 5, step: 'Démarrage FFmpeg…' });
-      }
-    } catch (err) {
-      setExportError(err?.response?.data?.error || 'Erreur lors du lancement de l’export MP4.');
-      setExportingMp4(false);
-    }
-  };
-
-  const copyShareLink = async () => {
-    if (!exportJob?.shareToken) return;
-    const url = `${window.location.origin}/shared-clip/${exportJob.shareToken}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2500);
-    } catch {
-      window.prompt('Copiez ce lien de partage :', url);
-    }
-  };
-
-  const revokeShareLink = async () => {
-    if (!exportJob?.id || !selectedVideo?.id || !exportJob.shareToken) return;
-    try {
-      await montageAPI.revokeShare(selectedVideo.id, exportJob.id);
-      setExportJob((previous) => ({ ...previous, shareToken: null, shareRevoked: true }));
-      setShareCopied(false);
-    } catch (err) {
-      setExportError(err?.response?.data?.error || 'Révocation du lien impossible.');
-    }
-  };
-
-  useEffect(() => {
-    if (!exportJob || !selectedVideo || exportJob.status === 'completed' || exportJob.status === 'error') {
-      return undefined;
-    }
-    const timer = setInterval(async () => {
-      try {
-        const res = await montageAPI.getOne(selectedVideo.id, exportJob.id);
-        const m = res.data?.montage;
-        if (!m) return;
-        setExportJob({
-          id: m.id,
-          status: m.status,
-          progress: m.progress || 0,
-          step: m.progress_step || '',
-          error: m.error_message || '',
-          shareToken: m.share_token || exportJob.shareToken,
-        });
-        if (m.status === 'completed' || m.status === 'error') {
-          setExportingMp4(false);
-          clearInterval(timer);
-        }
-      } catch {
-        // ignore transient polling error
-      }
-    }, 1200);
-    return () => clearInterval(timer);
-  }, [exportJob, selectedVideo]);
+  }, [popoutActive, hasPrimaryVideo, youtubeUrl, selectedVideo, currentTime, isPlaying, playbackSpeed, overlayState, broadcastSync]);
 
   const team1 = selectedVideo?.team1_name || 'Domicile';
   const team2 = selectedVideo?.team2_name || 'Extérieur';
@@ -599,7 +457,7 @@ export default function VideoCenterPage({ user, onLogout }) {
                 <div>
                   <h1 className="pk-mode-header-title">Centre Vidéo · Consultation & Séquençage</h1>
                   <p className="pk-mode-header-sub">
-                    Retrouvez toutes les vidéos importées dans Data Volley. Filtrez par équipe, puis ouvrez un match pour filtrer par joueur, action et évaluation.
+                    Retrouvez tous les matchs YouTube créés dans Data Volley. Filtrez par équipe, puis ouvrez un match pour filtrer par joueur, action et évaluation — la vidéo est identique sur tous les comptes et tous les postes.
                   </p>
                 </div>
               </div>
@@ -615,7 +473,7 @@ export default function VideoCenterPage({ user, onLogout }) {
                   onClick={() => navigate('/datavolley')}
                   title="Importer une vidéo de match depuis Data Volley (elle apparaîtra ensuite ici)"
                 >
-                  <Upload size={13} /> Importer une vidéo
+                  <Upload size={13} /> Nouveau match YouTube
                 </button>
               </div>
             </header>
@@ -669,7 +527,7 @@ export default function VideoCenterPage({ user, onLogout }) {
                 <p style={{ fontSize: 15, fontWeight: 700, color: '#f4f4f5', marginBottom: 6 }}>
                   Aucune vidéo ne correspond aux filtres sélectionnés.
                 </p>
-                <p>Les vidéos uploadées dans l’onglet Data Volley s’affichent automatiquement ici.</p>
+                <p>Les matchs YouTube créés dans l’onglet Data Volley s’affichent automatiquement ici.</p>
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
@@ -677,7 +535,7 @@ export default function VideoCenterPage({ user, onLogout }) {
                   onClick={() => navigate('/datavolley')}
                   title="Ouvrir Data Volley pour importer une vidéo de match"
                 >
-                  <Upload size={13} /> Importer une vidéo dans Data Volley
+                  <Upload size={13} /> Créer un match YouTube
                 </button>
               </div>
             ) : (
@@ -795,7 +653,6 @@ export default function VideoCenterPage({ user, onLogout }) {
                     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                       <SmartVideoPlayer
                         ref={videoRef}
-                        src={playbackUrl}
                         youtubeUrl={youtubeUrl}
                         className="vc-active-player"
                         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
@@ -836,16 +693,17 @@ export default function VideoCenterPage({ user, onLogout }) {
                       {/* CAM 2 : fichier local ou lien YouTube, même lecteur que la CAM 1. */}
                       <SmartVideoPlayer
                         ref={videoAngle2Ref}
-                        src={angle2Url}
                         youtubeUrl={angle2YoutubeUrl}
                         className="vc-active-player"
                         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                         controls={cameraView === '2'}
                         muted={cameraView === 'split'}
                         onLoadedMetadata={(e) => {
+                          const player = videoAngle2Ref.current;
+                          if (!player) return;
                           const target = Math.max(0, (Number(currentTime) || 0) + angle2Offset);
                           try {
-                            e.currentTarget.currentTime = target;
+                            player.currentTime = target;
                           } catch {
                             // ignore
                           }
@@ -955,7 +813,7 @@ export default function VideoCenterPage({ user, onLogout }) {
                       onClick={() =>
                         openSecondScreen({
                           videoId: selectedVideo.id,
-                          src: playbackUrl || youtubeUrl,
+                          src: youtubeUrl,
                           currentTime,
                           playing: isPlaying,
                           playbackRate: playbackSpeed,
@@ -984,50 +842,6 @@ export default function VideoCenterPage({ user, onLogout }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <button
                         type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={handleExportFilteredMp4}
-                        disabled={exportingMp4 || filteredActions.length === 0}
-                        title="Découper et concaténer automatiquement les séquences filtrées en un fichier MP4 téléchargeable (avec bandeau code & joueur)"
-                      >
-                        <FileDown size={13} />{' '}
-                        {exportingMp4
-                          ? `Export MP4 (${exportJob?.progress || 0}%)…`
-                          : `Exporter la sélection en MP4 (${filteredActions.length})`}
-                      </button>
-                      {exportJob?.status === 'completed' && (
-                        <>
-                          <button
-                            type="button"
-                            className="btn btn-success btn-sm"
-                            onClick={() =>
-                              montageAPI
-                                .download(
-                                  selectedVideo.id,
-                                  exportJob.id,
-                                  `${exportJob.title || 'montage'}.mp4`
-                                )
-                                .catch(() => setExportError('Erreur lors du téléchargement du MP4.'))
-                            }
-                            title="Télécharger le montage (requête authentifiée)"
-                          >
-                            <FileDown size={13} /> Télécharger le MP4
-                          </button>
-                          {exportJob.shareToken ? (
-                            <>
-                              <button type="button" className="btn btn-secondary btn-sm" onClick={copyShareLink}>
-                                {shareCopied ? 'Lien copié' : 'Partager clips'}
-                              </button>
-                              <button type="button" className="btn btn-secondary btn-sm" onClick={revokeShareLink}>
-                                Révoquer le lien
-                              </button>
-                            </>
-                          ) : exportJob.shareRevoked ? (
-                            <span style={{ color: '#a1a1aa', fontSize: 11 }}>Lien révoqué</span>
-                          ) : null}
-                        </>
-                      )}
-                      <button
-                        type="button"
                         className="btn btn-secondary btn-sm"
                         onClick={prevAction}
                         disabled={filteredActions.length === 0}
@@ -1044,24 +858,6 @@ export default function VideoCenterPage({ user, onLogout }) {
                       </button>
                     </div>
                   </div>
-                  {(exportingMp4 || exportError || exportJob?.status === 'error') && (
-                    <div
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: 11,
-                        fontFamily: 'JetBrains Mono, monospace',
-                        background: '#09090b',
-                        borderBottom: '1px solid #27272a',
-                        color: exportError || exportJob?.status === 'error' ? '#f43f5e' : '#f59e0b',
-                      }}
-                    >
-                      {exportError ||
-                        (exportJob?.status === 'error'
-                          ? `Échec export MP4 : ${exportJob.error || 'Erreur FFmpeg'}`
-                          : `Génération MP4 en cours : ${exportJob?.progress || 0}% — ${exportJob?.step || ''}`)}
-                    </div>
-                  )}
-
                   {filteredActions.length === 0 ? (
                     <div style={{ padding: 24, textAlign: 'center', color: '#71717a' }}>
                       Aucune action ne correspond aux filtres sélectionnés (Équipe / Joueur / Action / Évaluation).
@@ -1070,7 +866,6 @@ export default function VideoCenterPage({ user, onLogout }) {
                     <div className="shelf-clips-list">
                       {filteredActions.map((act, i) => {
                         const isCurrent = activeActionIndex === i;
-                        const actionKey = String(act.sync_uuid || act.uid || act.id || act.action_index || i);
                         const qualMeta = QUALITY_FILTERS.find((q) => q.key === act.evaluation) || {
                           color: '#0ea5e9',
                         };
@@ -1095,17 +890,6 @@ export default function VideoCenterPage({ user, onLogout }) {
                             <span className="clip-desc">
                               {act.team === 'away' ? team2 : team1} · <strong>{playerDisplayName(act)}</strong>
                             </span>
-                            <textarea
-                              value={clipNotes[actionKey] || ''}
-                              onChange={(event) => setClipNotes((prev) => ({ ...prev, [actionKey]: event.target.value }))}
-                              onClick={(event) => event.stopPropagation()}
-                              onKeyDown={(event) => event.stopPropagation()}
-                              maxLength={1000}
-                              rows={1}
-                              aria-label={`Annotation du clip ${act.code || ''}`}
-                              placeholder="Annotation à partager…"
-                              style={{ flex: '1 1 180px', minWidth: 140, resize: 'vertical', fontSize: 11, padding: '5px 7px' }}
-                            />
                           </div>
                         );
                       })}

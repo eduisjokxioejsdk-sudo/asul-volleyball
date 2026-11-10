@@ -157,37 +157,37 @@ function preparePlayableVideo(videoId, { force = false } = {}) {
   return job;
 }
 
-// Configure multer for video uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const uniqueName = `${uuidv4()}${ext}`;
-    cb(null, uniqueName);
-  },
-});
+// ---------------------------------------------------------------------------
+// Import d'une vidéo de match : uniquement un lien YouTube.
+//
+// Tous les comptes et tous les postes doivent voir exactement la même
+// bibliothèque : un fichier vidéo posé sur un PC n'est pas partageable et n'est
+// donc plus accepté (ni à la création du match, ni après coup pour une caméra).
+// ---------------------------------------------------------------------------
 
-const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mpeg', '.mpg', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
+const rejectLocalFile = (req, file, cb) =>
+  cb(
+    new Error(
+      'Les vidéos locales ne sont plus prises en charge : hébergez la vidéo sur YouTube et collez son lien (public ou non répertorié).'
+    )
+  );
 
 const upload = multer({
-  storage,
-  fileFilter: (req, file, cb) => {
-    const allowedMimes = ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska', 'video/webm'];
-    const ext = path.extname(file.originalname || '').toLowerCase();
-    const okMime = allowedMimes.includes(file.mimetype);
-    const okExt = ALLOWED_VIDEO_EXTENSIONS.includes(ext);
-    if (okMime || okExt) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Format vidéo non pris en charge : ${ext || file.mimetype}. Formats acceptés : mp4, mpeg, mov, avi, mkv, webm, m4v.`));
-    }
-  },
-  limits: { fileSize: 100 * 1024 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  fileFilter: rejectLocalFile,
+  limits: { fileSize: 1024 * 1024 },
 });
 
-// Upload a video (or create a match with a YouTube link or 0, 1, or 2 camera angles)
+/** Vrai si la valeur ressemble à un lien YouTube (ou à un ID brut de 11 caractères). */
+function isYouTubeLink(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (/^[a-zA-Z0-9_-]{11}$/.test(raw)) return true;
+  return /(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/i.test(raw);
+}
+
+// Crée un match à partir d'un lien YouTube pour la CAM 1 (obligatoire) et,
+// éventuellement, un second lien pour la CAM 2.
 router.post('/upload', authenticateToken, (req, res) => {
   upload.fields([
     { name: 'video', maxCount: 1 },
@@ -196,9 +196,6 @@ router.post('/upload', authenticateToken, (req, res) => {
     if (err) {
       return res.status(400).json({ error: err.message });
     }
-
-    const file1 = req.files?.video?.[0] || null;
-    const file2 = req.files?.video_angle2?.[0] || null;
 
     const team1_name = req.body.team1_name || 'Équipe 1';
     const team2_name = req.body.team2_name || 'Équipe 2';
@@ -212,12 +209,27 @@ router.post('/upload', authenticateToken, (req, res) => {
     const away_team_id = req.body.away_team_id ? Number(req.body.away_team_id) : null;
     const angle2_offset = req.body.angle2_offset ? Number(req.body.angle2_offset) : 0;
 
-    const filename = file1 ? file1.filename : '';
-    const original_name = file1 ? file1.originalname : display_name;
-    const filepath = file1 ? file1.path : '';
-    const filename_angle2 = file2 ? file2.filename : null;
-    const filepath_angle2 = file2 ? file2.path : null;
-    const status = file1 || youtube_url ? 'uploaded' : 'pending_video';
+    if (!youtube_url) {
+      return res.status(400).json({
+        error:
+          'CAM 1 : un lien YouTube est obligatoire. Hébergez la vidéo sur YouTube (public ou non répertorié) puis collez le lien.',
+      });
+    }
+    if (!isYouTubeLink(youtube_url)) {
+      return res.status(400).json({
+        error: 'CAM 1 : lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...',
+      });
+    }
+    if (youtube_url_angle2 && !isYouTubeLink(youtube_url_angle2)) {
+      return res.status(400).json({
+        error: 'CAM 2 : lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...',
+      });
+    }
+
+    // Plus aucun fichier local : le nom affiché et l'identité du match viennent
+    // du libellé saisi (équipes + journée).
+    const original_name = display_name;
+    const status = 'uploaded';
     const nowIso = new Date().toISOString();
     const videoSyncUuid = uuidv4();
 
@@ -245,18 +257,14 @@ router.post('/upload', authenticateToken, (req, res) => {
           filename_angle2, filepath_angle2, angle2_offset,
           team1_name, team2_name, home_team_id, away_team_id, home_team_uuid, away_team_uuid,
           status, sync_uuid, dirty, deleted, local_updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
+        ) VALUES (?, '', ?, ?, ?, ?, ?, '', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
         [
           req.user.id,
-          filename,
           original_name,
           display_name,
           journee,
           youtube_url,
           youtube_url_angle2,
-          filepath,
-          filename_angle2,
-          filepath_angle2,
           angle2_offset,
           team1_name,
           team2_name,
@@ -295,20 +303,19 @@ router.post('/upload', authenticateToken, (req, res) => {
 
           emitCollectionChanged('videos');
           emitCollectionChanged('matches');
-          if (file1) preparePlayableVideo(videoId).catch(() => {});
           res.status(201).json({
             id: videoId,
             sync_uuid: videoSyncUuid,
             user_id: req.user.id,
-            filename,
+            filename: '',
             original_name,
             display_name,
             journee,
             youtube_url,
             youtube_url_angle2,
-            filepath,
-            filename_angle2,
-            filepath_angle2,
+            filepath: '',
+            filename_angle2: null,
+            filepath_angle2: null,
             angle2_offset,
             team1_name,
             team2_name,
@@ -323,70 +330,35 @@ router.post('/upload', authenticateToken, (req, res) => {
   });
 });
 
-// Upload or replace Angle 1 or Angle 2 after match creation ("après coup")
+// Import d'un angle après coup : supprimé (les fichiers locaux ne sont plus
+// acceptés). Un lien YouTube se règle depuis la fenêtre « Vidéos du match ».
 router.post('/:id/upload-angle', authenticateToken, (req, res) => {
-  upload.single('video')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    if (!req.file) {
-      return res.status(400).json({ error: 'Aucun fichier vidéo fourni.' });
-    }
-
-    const angle = String(req.body.angle || '2') === '1' ? '1' : '2';
-    const nowIso = new Date().toISOString();
-
-    db.get('SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0', [req.params.id], (getErr, video) => {
-      if (getErr) return res.status(500).json({ error: 'Database error' });
-      if (!video) return res.status(404).json({ error: 'Video not found' });
-
-      if (angle === '1') {
-        if (video.filepath) fs.remove(video.filepath).catch(() => {});
-        if (video.filepath_proxy) fs.remove(video.filepath_proxy).catch(() => {});
-        playableDiagnoses.delete(video.id);
-        db.run(
-          `UPDATE videos
-              SET filename = ?, original_name = COALESCE(NULLIF(original_name, ''), ?), filepath = ?,
-                  filepath_proxy = NULL, proxy_status = NULL, proxy_error = NULL,
-                  status = 'uploaded', dirty = 1, local_updated_at = ?
-            WHERE id = ?`,
-          [req.file.filename, req.file.originalname, req.file.path, nowIso, video.id],
-          (upErr) => {
-            if (upErr) return res.status(500).json({ error: 'Failed to update Angle 1' });
-            preparePlayableVideo(video.id).catch(() => {});
-            syncHub.videos.syncNow({ reason: 'upload-angle' }).catch(() => {});
-            db.get('SELECT * FROM videos WHERE id = ?', [video.id], (e2, updated) => {
-              emitCollectionChanged('videos');
-              res.json({ video: updated });
-            });
-          }
-        );
-      } else {
-        if (video.filepath_angle2) fs.remove(video.filepath_angle2).catch(() => {});
-        const offset = req.body.angle2_offset !== undefined ? Number(req.body.angle2_offset) : (video.angle2_offset || 0);
-        db.run(
-          `UPDATE videos
-              SET filename_angle2 = ?, filepath_angle2 = ?, angle2_offset = ?, dirty = 1, local_updated_at = ?
-            WHERE id = ?`,
-          [req.file.filename, req.file.path, offset, nowIso, video.id],
-          (upErr) => {
-            if (upErr) return res.status(500).json({ error: 'Failed to update Angle 2' });
-            syncHub.videos.syncNow({ reason: 'upload-angle' }).catch(() => {});
-            db.get('SELECT * FROM videos WHERE id = ?', [video.id], (e2, updated) => {
-              emitCollectionChanged('videos');
-              res.json({ video: updated });
-            });
-          }
-        );
-      }
-    });
+  res.status(410).json({
+    error:
+      'Import de fichier vidéo supprimé : collez un lien YouTube pour la CAM 1 ou la CAM 2 dans « Vidéos du match ».',
   });
 });
 
-// Get all videos (partagées entre tous les utilisateurs et postes)
+// Nettoyage immédiat des vidéos locales du poste (fichiers + vidéos sans lien
+// YouTube). Le même nettoyage est exécuté automatiquement au démarrage.
+router.post('/purge-local', authenticateToken, (req, res) => {
+  const { purgeLocalVideos } = require('../localVideoCleanup');
+  purgeLocalVideos()
+    .then((result) => {
+      syncHub.videos.syncNow({ reason: 'purge-local' }).catch(() => {});
+      res.json(result);
+    })
+    .catch((err) => res.status(500).json({ error: err.message || 'Nettoyage impossible.' }));
+});
+
+// Get all videos (uniquement les matchs YouTube, partagés entre tous les
+// comptes et tous les postes : la bibliothèque est identique partout)
 router.get('/', authenticateToken, (req, res) => {
   db.all(
-    'SELECT * FROM videos WHERE COALESCE(deleted, 0) = 0 ORDER BY created_at DESC, id DESC',
+    `SELECT * FROM videos
+      WHERE COALESCE(deleted, 0) = 0
+        AND TRIM(COALESCE(youtube_url, '')) <> ''
+      ORDER BY created_at DESC, id DESC`,
     [],
     (err, rows) => {
       if (err) {
@@ -400,7 +372,9 @@ router.get('/', authenticateToken, (req, res) => {
 // Get a specific video
 router.get('/:id', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    `SELECT * FROM videos
+      WHERE id = ? AND COALESCE(deleted, 0) = 0
+        AND TRIM(COALESCE(youtube_url, '')) <> ''`,
     [req.params.id],
     (err, video) => {
       if (err) {
@@ -577,15 +551,35 @@ router.patch('/:id', authenticateToken, (req, res) => {
       }
       if (youtube_url !== undefined) {
         const cleanYt = youtube_url ? String(youtube_url).trim() || null : null;
+        // La CAM 1 est la source du match : elle ne peut pas être vidée (sinon
+        // le match disparaîtrait de la bibliothèque partagée). Pour supprimer
+        // le match, utilisez la suppression.
+        if (!cleanYt) {
+          return res.status(400).json({
+            error:
+              'CAM 1 : un lien YouTube est obligatoire. Pour retirer ce match de la bibliothèque, supprimez-le.',
+          });
+        }
+        if (!isYouTubeLink(cleanYt)) {
+          return res.status(400).json({
+            error: 'CAM 1 : lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...',
+          });
+        }
         updates.push('youtube_url = ?');
         values.push(cleanYt);
-        if (cleanYt && video.status === 'pending_video' && status === undefined) {
+        if (video.status === 'pending_video' && status === undefined) {
           updates.push("status = 'uploaded'");
         }
       }
       if (youtube_url_angle2 !== undefined) {
+        const cleanAngle2 = youtube_url_angle2 ? String(youtube_url_angle2).trim() || null : null;
+        if (cleanAngle2 && !isYouTubeLink(cleanAngle2)) {
+          return res.status(400).json({
+            error: 'CAM 2 : lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...',
+          });
+        }
         updates.push('youtube_url_angle2 = ?');
-        values.push(youtube_url_angle2 ? String(youtube_url_angle2).trim() || null : null);
+        values.push(cleanAngle2);
       }
       if (team1_name !== undefined) {
         updates.push('team1_name = ?');
@@ -718,7 +712,9 @@ router.get('/folders/all', authenticateToken, (req, res) => {
     `SELECT f.*, COUNT(v.id) as video_count 
      FROM folders f
      LEFT JOIN video_folders vf ON f.id = vf.folder_id
-     LEFT JOIN videos v ON v.id = vf.video_id AND COALESCE(v.deleted, 0) = 0
+     LEFT JOIN videos v ON v.id = vf.video_id
+       AND COALESCE(v.deleted, 0) = 0
+       AND TRIM(COALESCE(v.youtube_url, '')) <> ''
      GROUP BY f.id
      ORDER BY f.name ASC`,
     [],
@@ -742,6 +738,7 @@ router.get('/folders/:id/videos', authenticateToken, (req, res) => {
         `SELECT v.* FROM videos v
          INNER JOIN video_folders vf ON v.id = vf.video_id
          WHERE vf.folder_id = ? AND COALESCE(v.deleted, 0) = 0
+           AND TRIM(COALESCE(v.youtube_url, '')) <> ''
          ORDER BY v.created_at DESC`,
         [req.params.id],
         (vErr, videos) => {

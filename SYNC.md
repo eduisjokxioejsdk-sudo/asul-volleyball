@@ -12,8 +12,8 @@ fonctionnement hors ligne.
 | **Équipes** (joueurs, libéro) | SQLite locale **+** base Supabase | ✅ oui |
 | **Fiches de trajectoire** (flèches) | SQLite locale **+** base Supabase | ✅ oui |
 | **Codage DataVolley** (actions, matchs, événements, six, attribution de sets) | SQLite locale **+** base Supabase | ✅ oui |
-| **Vidéos** (métadonnées) | SQLite locale **+** base Supabase | ✅ oui |
-| Vidéos (fichiers) | disque du poste | ❌ non (trop lourdes) |
+| **Vidéos** (liens YouTube, équipes, journée) | SQLite locale **+** base Supabase | ✅ oui |
+| Fichiers vidéo | ❌ plus utilisés (la bibliothèque est 100 % YouTube) | — |
 | Matchs en direct | SQLite locale du poste **hôte** | ❌ non (réseau local uniquement) |
 
 ---
@@ -229,15 +229,21 @@ votre base.
 ## 8. Autres collections partagées (trajectoires, vidéos, codage)
 
 Le moteur de synchronisation est **générique** (`server/src/syncEngine.js`) : les
-mêmes principes s'appliquent aux **trajectoires**, aux **métadonnées vidéo** (jamais
-les fichiers), au **codage DataVolley** (actions, événements, six de départ,
-attribution de sets) et aux **matchs**. Tout est partagé via Supabase, sauf les
-fichiers vidéo (trop lourds).
+mêmes principes s'appliquent aux **trajectoires**, aux **vidéos** (lien YouTube,
+jamais de fichier), au **codage DataVolley** (actions, événements, six de départ,
+attribution de sets) et aux **matchs**. Tout est partagé via Supabase.
+
+Chaque match référence un **lien YouTube** (public ou non répertorié) : la
+bibliothèque est donc identique sur tous les comptes et tous les postes. Au
+démarrage, le serveur efface les fichiers vidéo importés autrefois sur le poste
+et retire de la bibliothèque les vidéos qui n'ont pas de lien YouTube (la
+suppression est propagée aux autres postes). `POST /api/videos/purge-local`
+relance ce nettoyage à la demande.
 
 | Collection | Endpoints de partage | Événement temps réel |
 | --- | --- | --- |
 | Trajectoires | `/api/trajectories/sync`, `/sync/status`, `/sync/config` | `trajectories:changed` |
-| Vidéos (métadonnées) | `/api/videos/sync`, `/sync/status`, `/sync/config` | `videos:changed` |
+| Vidéos (liens YouTube) | `/api/videos/sync`, `/sync/status`, `/sync/config` | `videos:changed` |
 | Codage DataVolley (actions) | `/api/datavolley/sync`, `/sync/status`, `/sync/config` | `actions:changed`, `claims:changed` |
 
 * **Configuration partagée** : l'URL et la clé Supabase sont les mêmes pour toutes

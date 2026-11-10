@@ -46,9 +46,10 @@ export function extractYouTubeId(input) {
 }
 
 /**
- * Indique si une vidéo possède une source lisible (fichier local ou lien YouTube).
+ * Indique si une vidéo possède une source lisible : un lien YouTube.
+ * (Les fichiers vidéo locaux ne sont plus utilisés.)
  */
 export function hasPlayableSource(video) {
   if (!video) return false;
-  return Boolean(video.filename || extractYouTubeId(video.youtube_url));
+  return Boolean(extractYouTubeId(video.youtube_url));
 }

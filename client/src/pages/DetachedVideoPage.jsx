@@ -161,9 +161,16 @@ export default function DetachedVideoPage() {
             youtubeUrl={extractYouTubeId(videoSrc) ? videoSrc : null}
             controls
             style={{ width: '100%', height: 'calc(100vh - 54px)', objectFit: 'contain' }}
-            onLoadedMetadata={(e) => {
+            onLoadedMetadata={() => {
               const initT = Number(searchParams.get('t')) || 0;
-              if (initT > 0) e.currentTarget.currentTime = initT;
+              const player = videoRef.current;
+              if (player && initT > 0) {
+                try {
+                  player.currentTime = initT;
+                } catch {
+                  // Lecteur pas encore prêt : la position sera reprise ensuite.
+                }
+              }
             }}
             onTimeUpdate={(e) => {
               const t = e.currentTarget.currentTime;

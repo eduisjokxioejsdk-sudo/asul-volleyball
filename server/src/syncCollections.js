@@ -466,6 +466,10 @@ const videosCollection = makeFlatCollection({
     origin_id: originId,
   }),
   applyRemote: async (entry) => {
+    // Une vidéo de match est toujours un lien YouTube : une entrée sans lien
+    // (créée par une ancienne version sur un autre poste) est ignorée au lieu
+    // de réapparaître dans la bibliothèque.
+    if (!entry.deleted && !String(entry.youtube_url || '').trim()) return null;
     const now = new Date().toISOString();
     const deleted = entry.deleted ? 1 : 0;
     const teamMap = await teamUuidToId();

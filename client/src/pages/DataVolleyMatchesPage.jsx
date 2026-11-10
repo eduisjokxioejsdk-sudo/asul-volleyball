@@ -35,22 +35,10 @@ function normalizeJournee(value) {
 }
 
 /**
- * Bloc d'import d'une caméra : un seul menu par caméra, avec deux options —
- * lien YouTube partagé (aucun transfert de fichier) ou fichier vidéo local.
+ * Bloc d'import d'une caméra : un lien YouTube partagé, visible sur tous les
+ * comptes et tous les postes (aucun fichier à transférer).
  */
-export function CameraUploadBlock({
-  title,
-  accent,
-  hint,
-  mode,
-  onMode,
-  youtubeUrl,
-  onYoutubeUrl,
-  youtubePlaceholder,
-  file,
-  onFile,
-  extra,
-}) {
+export function CameraUploadBlock({ title, accent, hint, youtubeUrl, onYoutubeUrl, extra }) {
   return (
     <div
       className="form-group"
@@ -59,57 +47,35 @@ export function CameraUploadBlock({
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
           gap: 8,
-          flexWrap: 'wrap',
           marginBottom: 8,
         }}
       >
         <span style={{ fontWeight: 700, color: accent }}>{title}</span>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            type="button"
-            className={`btn btn-sm ${mode === 'youtube' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => onMode('youtube')}
-            title="Coller un lien YouTube (public ou non répertorié)"
-          >
-            ▶ YouTube
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${mode === 'file' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => onMode('file')}
-            title="Importer un fichier vidéo depuis ce PC"
-          >
-            📁 Fichier MP4
-          </button>
-        </div>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            padding: '1px 6px',
+            border: '1px solid #ef4444',
+            color: '#f87171',
+            background: 'rgba(239, 68, 68, 0.12)',
+          }}
+        >
+          ▶ YOUTUBE
+        </span>
       </div>
 
-      {mode === 'youtube' ? (
-        <>
-          <input
-            type="url"
-            className="form-control"
-            placeholder={youtubePlaceholder || 'https://www.youtube.com/watch?v=... ou https://youtu.be/...'}
-            value={youtubeUrl}
-            onChange={(e) => onYoutubeUrl(e.target.value)}
-          />
-          <span style={{ fontSize: 11, color: '#a1a1aa', display: 'block', marginTop: 4 }}>{hint}</span>
-        </>
-      ) : (
-        <>
-          <input
-            type="file"
-            accept="video/*"
-            className="form-control"
-            onChange={(e) => onFile(e.target.files[0] || null)}
-          />
-          <span style={{ fontSize: 11, color: '#a1a1aa', display: 'block', marginTop: 4 }}>
-            {file ? `Fichier sélectionné : ${file.name}` : 'Aucun fichier sélectionné (MP4, MOV, MKV).'}
-          </span>
-        </>
+      <input
+        type="url"
+        className="form-control"
+        placeholder="https://www.youtube.com/watch?v=... ou https://youtu.be/..."
+        value={youtubeUrl}
+        onChange={(e) => onYoutubeUrl(e.target.value)}
+      />
+      {hint && (
+        <span style={{ fontSize: 11, color: '#a1a1aa', display: 'block', marginTop: 4 }}>{hint}</span>
       )}
 
       {extra}
@@ -132,18 +98,12 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
   const [newFolderColor, setNewFolderColor] = useState('#c8a165');
 
   const [showUpload, setShowUpload] = useState(false);
-  const [uploadFile, setUploadFile] = useState(null);
-  const [uploadFileAngle2, setUploadFileAngle2] = useState(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [youtubeUrlAngle2, setYoutubeUrlAngle2] = useState('');
-  // Mode d'import par caméra : « youtube » (lien partagé) ou « file » (fichier local).
-  const [cam1Mode, setCam1Mode] = useState('youtube');
-  const [cam2Mode, setCam2Mode] = useState('youtube');
   const [angle2Offset, setAngle2Offset] = useState(0);
   const [homeTeamId, setHomeTeamId] = useState('');
   const [awayTeamId, setAwayTeamId] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
 
   const [showQuickTeam, setShowQuickTeam] = useState(false);
@@ -226,13 +186,19 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
       setUploadError('Les deux équipes du match doivent être différentes.');
       return;
     }
-    if (cam1Mode === 'youtube' && youtubeUrl.trim() && !extractYouTubeId(youtubeUrl)) {
+    if (!youtubeUrl.trim()) {
+      setUploadError(
+        'CAM 1 : un lien YouTube est obligatoire. Hébergez la vidéo sur YouTube (public ou non répertorié) puis collez le lien.'
+      );
+      return;
+    }
+    if (!extractYouTubeId(youtubeUrl)) {
       setUploadError(
         'CAM 1 : lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...'
       );
       return;
     }
-    if (cam2Mode === 'youtube' && youtubeUrlAngle2.trim() && !extractYouTubeId(youtubeUrlAngle2)) {
+    if (youtubeUrlAngle2.trim() && !extractYouTubeId(youtubeUrlAngle2)) {
       setUploadError(
         'CAM 2 : lien YouTube invalide. Exemple : https://www.youtube.com/watch?v=... ou https://youtu.be/...'
       );
@@ -243,16 +209,13 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
     const awayTeam = teams.find((t) => String(t.id) === String(awayTeamId));
 
     setUploading(true);
-    setUploadProgress(0);
 
     try {
       const formData = new FormData();
-      // CAM 1 : soit un fichier vidéo local, soit un lien YouTube partagé.
-      if (cam1Mode === 'file' && uploadFile) formData.append('video', uploadFile);
-      if (cam1Mode === 'youtube' && youtubeUrl.trim()) formData.append('youtube_url', youtubeUrl.trim());
-      // CAM 2 : même choix, indépendant de la CAM 1.
-      if (cam2Mode === 'file' && uploadFileAngle2) formData.append('video_angle2', uploadFileAngle2);
-      if (cam2Mode === 'youtube' && youtubeUrlAngle2.trim()) {
+      // Uniquement des liens YouTube : la bibliothèque est identique sur tous
+      // les comptes et tous les postes.
+      formData.append('youtube_url', youtubeUrl.trim());
+      if (youtubeUrlAngle2.trim()) {
         formData.append('youtube_url_angle2', youtubeUrlAngle2.trim());
       }
       formData.append('angle2_offset', String(Number(angle2Offset) || 0));
@@ -261,18 +224,14 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
       formData.append('team1_name', homeTeam?.name || 'Équipe 1');
       formData.append('team2_name', awayTeam?.name || 'Équipe 2');
 
-      await videosAPI.upload(formData, (pct) => setUploadProgress(pct));
+      await videosAPI.upload(formData);
       setShowUpload(false);
-      setUploadFile(null);
-      setUploadFileAngle2(null);
       setYoutubeUrl('');
       setYoutubeUrlAngle2('');
       setAngle2Offset(0);
-      setCam1Mode('youtube');
-      setCam2Mode('youtube');
       loadAll();
     } catch (err) {
-      setUploadError(err.response?.data?.error || `Erreur upload : ${err.message}`);
+      setUploadError(err.response?.data?.error || `Erreur création : ${err.message}`);
     } finally {
       setUploading(false);
     }
@@ -385,7 +344,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
             <div>
               <h1 className="pk-mode-header-title">Data Volley · Matchs & Codage Vidéo</h1>
               <p className="pk-mode-header-sub">
-                Partagez vos matchs via un lien YouTube (public ou non répertorié) ou un fichier MP4 local, puis codez et consultez les stats sur tous les postes.
+                Partagez vos matchs via un lien YouTube (public ou non répertorié), puis codez et consultez les stats sur tous les comptes et tous les postes.
               </p>
             </div>
           </div>
@@ -402,7 +361,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                 setShowUpload(true);
               }}
             >
-              <Plus size={15} /> Nouveau match (YouTube ou fichier vidéo)
+              <Plus size={15} /> Nouveau match YouTube
             </button>
           </div>
         </header>
@@ -496,10 +455,10 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                 : 'Aucun match enregistré.'}
             </p>
             <p style={{ marginBottom: 16 }}>
-              Créez un match avec un lien YouTube (public ou non répertorié) ou un fichier MP4 pour commencer le codage DataVolley et partager automatiquement les statistiques avec tous les postes.
+              Créez un match avec un lien YouTube (public ou non répertorié) : la vidéo et les statistiques sont visibles sur tous les comptes et tous les postes.
             </p>
             <button type="button" className="btn btn-primary" onClick={() => setShowUpload(true)}>
-              + Nouveau match (YouTube ou vidéo)
+              + Nouveau match (YouTube)
             </button>
           </div>
         ) : (
@@ -507,9 +466,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
             {displayedVideos.map((video) => {
               const isFinished = finishedMatches.some((m) => m.id === video.id);
               const hasYt = Boolean(extractYouTubeId(video.youtube_url));
-              const hasLocal = Boolean(video.filename);
-              // CAM 2 peut être un fichier local ou un lien YouTube (stocké à part).
-              const hasCam2 = Boolean(video.filename_angle2 || extractYouTubeId(video.youtube_url_angle2));
+              const hasCam2 = Boolean(extractYouTubeId(video.youtube_url_angle2));
               return (
                 <div
                   key={video.id}
@@ -608,27 +565,10 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                           padding: '1px 5px',
                           fontSize: 10,
                           border: '1px solid #3f3f46',
-                          color:
-                            hasCam2
-                              ? '#38bdf8'
-                              : hasLocal
-                              ? '#10b981'
-                              : hasYt
-                              ? '#a1a1aa'
-                              : '#f59e0b',
+                          color: hasCam2 ? '#38bdf8' : hasYt ? '#10b981' : '#f59e0b',
                         }}
                       >
-                        {hasLocal && hasCam2
-                          ? '2 CAMÉRAS LOCALES'
-                          : hasCam2
-                          ? video.filename_angle2
-                            ? 'CAM 1 + CAM 2'
-                            : 'CAM 2 CLOUD'
-                          : hasLocal
-                          ? '1 CAMÉRA LOCALE'
-                          : hasYt
-                          ? 'CLOUD PRÊT'
-                          : 'SANS VIDÉO'}
+                        {hasCam2 ? '2 CAMÉRAS YOUTUBE' : hasYt ? 'CAM 1 YOUTUBE' : 'SANS VIDÉO'}
                       </span>
                     </span>
 
@@ -656,7 +596,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
           </div>
         )}
 
-        {/* Modal d'import de match avec lien YouTube et/ou fichiers vidéo */}
+        {/* Modal de création d’un match avec liens YouTube (CAM 1 / CAM 2) */}
         {showUpload && (
           <div className="modal-backdrop" onClick={() => setShowUpload(false)}>
             <div className="modal-card modal-dark-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
@@ -679,28 +619,19 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                 <CameraUploadBlock
                   title="1. CAM 1 — Vue principale"
                   accent="#c8a165"
-                  hint="Hébergez la vidéo sur YouTube en mode « Non répertorié » : tous les postes la voient, sans transfert de fichier."
-                  mode={cam1Mode}
-                  onMode={setCam1Mode}
+                  hint="Hébergez la vidéo sur YouTube en mode « Non répertorié » : tous les comptes et tous les postes la voient, sans transfert de fichier."
                   youtubeUrl={youtubeUrl}
                   onYoutubeUrl={setYoutubeUrl}
-                  file={uploadFile}
-                  onFile={setUploadFile}
                 />
 
                 <CameraUploadBlock
-                  title="2. CAM 2 — Second angle synchronisé"
+                  title="2. CAM 2 — Second angle synchronisé (optionnel)"
                   accent="#38bdf8"
-                  hint="Même choix pour le second angle : lien YouTube (public ou non répertorié) ou fichier vidéo local."
-                  mode={cam2Mode}
-                  onMode={setCam2Mode}
+                  hint="Même principe pour le second angle : un lien YouTube (public ou non répertorié)."
                   youtubeUrl={youtubeUrlAngle2}
                   onYoutubeUrl={setYoutubeUrlAngle2}
-                  file={uploadFileAngle2}
-                  onFile={setUploadFileAngle2}
                   extra={
-                    (cam2Mode === 'file' && uploadFileAngle2) ||
-                    (cam2Mode === 'youtube' && youtubeUrlAngle2.trim()) ? (
+                    youtubeUrlAngle2.trim() ? (
                       <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 11, color: '#a1a1aa' }}>Décalage CAM 2 vs CAM 1 (en secondes) :</span>
                         <input
@@ -809,11 +740,8 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
 
                 {uploading && (
                   <div style={{ marginBottom: 16, marginTop: 12 }}>
-                    <div style={{ height: 8, background: '#27272a', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#c8a165' }} />
-                    </div>
-                    <span className="pk-mono" style={{ fontSize: 12, color: '#a1a1aa', marginTop: 4, display: 'block' }}>
-                      Enregistrement en cours : {uploadProgress}%
+                    <span className="pk-mono" style={{ fontSize: 12, color: '#a1a1aa', display: 'block' }}>
+                      Enregistrement du match en cours…
                     </span>
                   </div>
                 )}
@@ -822,15 +750,12 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                   <button type="button" className="btn btn-secondary" onClick={() => setShowUpload(false)} disabled={uploading}>
                     Annuler
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={uploading || !homeTeamId || !awayTeamId}>
-                    {uploading
-                      ? 'Enregistrement...'
-                      : (cam1Mode === 'file' && uploadFile) ||
-                        (cam2Mode === 'file' && uploadFileAngle2) ||
-                        (cam1Mode === 'youtube' && youtubeUrl.trim()) ||
-                        (cam2Mode === 'youtube' && youtubeUrlAngle2.trim())
-                      ? 'Créer et partager le match'
-                      : 'Créer le match (vidéos après coup)'}
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={uploading || !homeTeamId || !awayTeamId || !youtubeUrl.trim()}
+                  >
+                    {uploading ? 'Enregistrement...' : 'Créer et partager le match'}
                   </button>
                 </div>
               </form>

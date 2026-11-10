@@ -135,10 +135,30 @@ db.waitReady(() => {
   // Initialise Socket.IO pour le mode "match en direct" (multi-appareils).
   initSocket(server);
 
-  // Synchronisation cloud (partage à distance, Supabase) : boucles de fond
-  // lancées APRÈS le démarrage, sans jamais le retarder. Sans configuration,
-  // elles ne font rien et l'application reste 100 % locale.
-  require('./syncHub').startAll();
+  // Vidéos : la bibliothèque est désormais 100 % YouTube (même liste sur tous
+  // les comptes et tous les postes). On efface les fichiers vidéo importés
+  // autrefois sur ce poste et on supprime les vidéos sans lien YouTube — la
+  // pierre tombale part ensuite vers le cloud. Les synchronisations démarrent
+  // juste après, pour que la suppression soit poussée dans la même passe.
+  const { purgeLocalVideos } = require('./localVideoCleanup');
+  purgeLocalVideos()
+    .then(({ videosRemoved, videosCleaned, filesRemoved }) => {
+      if (videosRemoved || videosCleaned || filesRemoved) {
+        console.log(
+          `[ASUL] Vidéos locales retirées du poste : ${videosRemoved} vidéo(s) hors YouTube supprimée(s), ` +
+            `${videosCleaned} référence(s) locale(s) nettoyée(s), ${filesRemoved} fichier(s) effacé(s).`
+        );
+      }
+    })
+    .catch((err) => {
+      console.warn('[ASUL] Nettoyage des vidéos locales impossible :', err.message);
+    })
+    .finally(() => {
+      // Synchronisation cloud (partage à distance, Supabase) : boucles de fond
+      // lancées APRÈS le démarrage, sans jamais le retarder. Sans
+      // configuration, elles ne font rien et l'application reste 100 % locale.
+      require('./syncHub').startAll();
+    });
 
   // Autoriser les très gros uploads (vidéos de plusieurs Go) :
   // on désactive le timeout de requête de Node.js (5 min par défaut) et le

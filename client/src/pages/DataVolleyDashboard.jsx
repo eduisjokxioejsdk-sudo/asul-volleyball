@@ -84,11 +84,9 @@ import {
   House,
   Keyboard,
   ListChecks,
-  Loader,
   MonitorPlay,
   Pencil,
   Plane,
-  RefreshCw,
   RotateCcw,
   RotateCw,
   Save,
@@ -270,21 +268,6 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
 
-  // Préparation d'une version lisible par le navigateur. Un fichier uploadé peut
-  // être illisible tel quel (conteneur MP4 fragmenté, codec exotique, index en
-  // fin de fichier) : le lecteur tourne alors à l'infini SANS émettre d'erreur.
-  // Le serveur sait le diagnostiquer puis produire une version lisible
-  // (`filepath_proxy`) ; on suit ici cet état pour informer l'utilisateur.
-  // status : 'idle' | 'checking' | 'processing' | 'error'
-  const [playable, setPlayable] = useState({ status: 'idle', reason: null, error: null });
-  // Métadonnées réellement obtenues par le <video>. Tant qu'elles manquent, le
-  // fichier est considéré comme suspect au bout de quelques secondes.
-  const [mediaReady, setMediaReady] = useState(false);
-  const [suspect, setSuspect] = useState(false);
-  // Incrémenté par « Réessayer » : relance le diagnostic même si la vidéo est
-  // déjà marquée comme suspecte (un état identique ne re-déclenche pas l'effet).
-  const [playableRetry, setPlayableRetry] = useState(0);
-
   // Édition de la séquence complète d'un point
   const [editingRallyUid, setEditingRallyUid] = useState(null); // uid de la 1re action du point, ou 'NEW'
   const [editingSequence, setEditingSequence] = useState('');
@@ -333,14 +316,9 @@ function DataVolleyDashboard({ user, onLogout }) {
   const videoAngle2Ref = useRef(null);
   const [showAngleModal, setShowAngleModal] = useState(false);
   const [playlistOpen, setPlaylistOpen] = useState(false);
-  const [uploadingAngle, setUploadingAngle] = useState(false);
-  const [angleUploadProgress, setAngleUploadProgress] = useState(0);
   const [angleOffsetInput, setAngleOffsetInput] = useState(0);
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
   const [youtubeUrlAngle2Input, setYoutubeUrlAngle2Input] = useState('');
-  // Choix d'import par caméra dans la modale : « youtube » (lien) ou « file » (fichier local).
-  const [cam1UploadMode, setCam1UploadMode] = useState('youtube');
-  const [cam2UploadMode, setCam2UploadMode] = useState('youtube');
 
   useEffect(() => {
     const saved = loadCourtCalibration(id);
@@ -494,9 +472,6 @@ function DataVolleyDashboard({ user, onLogout }) {
   // même timecode au lieu de repartir de zéro (voir onLoadedMetadata plus bas).
   const resumeTimeRef = useRef(0);
   const wasPlayingRef = useRef(false);
-  // Mis à vrai juste avant un basculement vers la version préparée d'une vidéo
-  // déjà chargée : la position de lecture doit alors être conservée.
-  const keepPositionRef = useRef(false);
 
   useEffect(() => { bufferRef.current = buffer; }, [buffer]);
 
@@ -510,7 +485,7 @@ function DataVolleyDashboard({ user, onLogout }) {
   }, [buffer]);
 
   // Retour en arrière dans la vidéo (barre de progression, boutons, lecteur
-  // YouTube ou fichier local) : les codes encore dans le champ de saisie
+  // YouTube) : les codes encore dans le champ de saisie
   // avaient été horodatés plus loin dans le match. On les ramène à la position
   // courante, sinon l'action validée garde l'ancien timecode (ex. 6:30 alors
   // que la vidéo est revenue à 6:00).
@@ -568,18 +543,13 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   const matchFinished = match?.status === 'finished';
 
-  const videoUrl = video?.filename ? videosAPI.getFileUrl(video.filename) : null;
-  const proxyFilename = video?.filepath_proxy ? video.filepath_proxy.split(/[\\/]/).pop() : null;
-  const proxyUrl = proxyFilename ? videosAPI.getProxyUrl(proxyFilename) : null;
-  const playbackUrl = proxyUrl || videoUrl;
   const youtubeUrl = video?.youtube_url || null;
   const youtubeId = extractYouTubeId(youtubeUrl);
-  const hasPrimaryVideo = Boolean(playbackUrl || youtubeId);
-  const angle2Url = video?.filename_angle2 ? videosAPI.getFileUrl(video.filename_angle2) : null;
+  const hasPrimaryVideo = Boolean(youtubeId);
   const angle2YoutubeUrl = video?.youtube_url_angle2 || null;
   const angle2YoutubeId = extractYouTubeId(angle2YoutubeUrl);
-  // La CAM 2 existe dès qu'un fichier local ou un lien YouTube est enregistré.
-  const hasAngle2 = Boolean(angle2Url || angle2YoutubeId);
+  // La CAM 2 existe dès qu'un lien YouTube est enregistré.
+  const hasAngle2 = Boolean(angle2YoutubeId);
   const angle2Offset = Number(video?.angle2_offset || 0);
 
   useEffect(() => {
@@ -614,141 +584,13 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   // Nouvelle vidéo (premier chargement ou changement de match) : la position
   // mémorisée ne vaut que pour la vidéo en cours, on repart donc du début.
-  // Un simple changement d'onglet ne touche pas `playbackUrl` : la position est
-  // conservée.
+  // Un simple changement d'onglet ne touche pas la source YouTube : la
+  // position de lecture est conservée.
   useEffect(() => {
-    // Basculement vers la version préparée d'une vidéo déjà en lecture : ce
-    // n'est pas une nouvelle vidéo et le remuxage conserve strictement le
-    // timecode, donc on garde la position au lieu de repartir de zéro.
-    if (keepPositionRef.current) {
-      keepPositionRef.current = false;
-      return;
-    }
     resumeTimeRef.current = 0;
     wasPlayingRef.current = false;
     setCurrentTime(0);
-  }, [playbackUrl]);
-
-  // Nouvelle source : surveillance repartie de zéro (le fichier peut différer).
-  useEffect(() => {
-    setMediaReady(false);
-    setSuspect(false);
-    setPlayable({ status: 'idle', reason: null, error: null });
-  }, [playbackUrl]);
-
-  // Surveillance du lecteur. Un fichier illisible ne déclenche AUCUNE erreur :
-  // le navigateur n'obtient simplement jamais les métadonnées et le lecteur
-  // tourne à l'infini. Sans métadonnées après quelques secondes, la vidéo est
-  // donc marquée comme suspecte, ce qui déclenche le diagnostic serveur.
-  useEffect(() => {
-    if (!playbackUrl) return undefined;
-    if (mediaReady) {
-      // Le fichier est lisible : inutile d'alerter l'utilisateur.
-      setSuspect(false);
-      return undefined;
-    }
-    const timer = setTimeout(() => setSuspect(true), 8000);
-    return () => clearTimeout(timer);
-  }, [playbackUrl, mediaReady]);
-
-  // Diagnostic puis préparation d'une version lisible, et suivi de l'avancement.
-  // Déclenché par un fichier suspect, ou par une préparation déjà en cours côté
-  // serveur (celle lancée automatiquement juste après l'upload).
-  useEffect(() => {
-    const videoId = video?.id;
-    if (!videoId || proxyUrl) return undefined;
-
-    const alreadyProcessing = video?.proxy_status === 'processing';
-    if (!suspect && !alreadyProcessing) return undefined;
-
-    let cancelled = false;
-    let timer = null;
-
-    const poll = async () => {
-      let st = null;
-      try {
-        const res = await videosAPI.getPlayableStatus(videoId);
-        st = res.data || {};
-      } catch {
-        // Serveur momentanément injoignable : on réessaie un peu plus tard.
-        if (!cancelled) timer = setTimeout(poll, 5000);
-        return;
-      }
-      if (cancelled) return;
-
-      // Version lisible produite : on recharge la vidéo, ce qui fait basculer
-      // `playbackUrl` sur le proxy (il privilégie déjà `filepath_proxy`).
-      if (st.status === 'ready') {
-        setPlayable({ status: 'idle', reason: null, error: null });
-        try {
-          const res = await videosAPI.getOne(videoId);
-          const fresh = res.data?.video;
-          if (!cancelled && fresh) {
-            // Si la lecture avait malgré tout démarré, on ne perd pas la
-            // position : le remuxage conserve le timecode à l'identique.
-            const at = Number(videoRef.current?.currentTime || 0);
-            if (at > 1) {
-              resumeTimeRef.current = at;
-              keepPositionRef.current = true;
-            }
-            setVideo(fresh);
-          }
-        } catch { /* la vidéo sera rechargée plus tard */ }
-        return;
-      }
-      // `reason` porte le message d'échec quand le statut est `error`.
-      if (st.status === 'error') {
-        setPlayable({ status: 'error', reason: null, error: st.reason || 'La préparation de la vidéo a échoué.' });
-        return;
-      }
-      if (st.status === 'not_needed') {
-        setPlayable({ status: 'idle', reason: null, error: null });
-        return;
-      }
-
-      setPlayable({ status: 'processing', reason: st.reason || null, error: null });
-      // Rien en cours côté serveur (préparation jamais lancée, ou interrompue
-      // par un redémarrage) : on la (re)lance.
-      if (st.status !== 'processing') {
-        try { await videosAPI.preparePlayable(videoId); } catch { /* retenté au prochain tour */ }
-      }
-      if (!cancelled) timer = setTimeout(poll, 3000);
-    };
-
-    (async () => {
-      // Une préparation déjà lancée par le serveur est simplement suivie.
-      if (suspect && !alreadyProcessing) {
-        setPlayable({ status: 'checking', reason: null, error: null });
-        try {
-          const res = await videosAPI.diagnosePlayable(videoId);
-          const verdict = res.data || {};
-          if (cancelled) return;
-          // Finalement lisible : le blocage venait d'autre chose (réseau lent,
-          // onglet masqué…). On laisse le lecteur démarrer.
-          if (verdict.playable) {
-            setPlayable({ status: 'idle', reason: null, error: null });
-            setSuspect(false);
-            return;
-          }
-          setPlayable({ status: 'processing', reason: verdict.reason || null, error: null });
-        } catch {
-          if (cancelled) return;
-          setPlayable({ status: 'error', reason: null, error: 'Diagnostic impossible : le serveur est-il démarré ?' });
-          return;
-        }
-      }
-      await poll();
-    })();
-
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [video?.id, video?.proxy_status, proxyUrl, suspect, playableRetry]);
-
-  // Relance manuelle après un échec de diagnostic ou de préparation.
-  const retryPlayable = useCallback(() => {
-    setPlayable({ status: 'checking', reason: null, error: null });
-    setSuspect(true);
-    setPlayableRetry((n) => n + 1);
-  }, []);
+  }, [youtubeUrl]);
 
 
   // --- Actions vidéo (raccourcis ou boutons) -------------------------------
@@ -837,13 +679,13 @@ function DataVolleyDashboard({ user, onLogout }) {
     const fromRemote = Date.now() - remoteCmdAtRef.current < 150;
     broadcastSync({
       videoId: id,
-      src: playbackUrl || youtubeUrl,
+      src: youtubeUrl,
       currentTime: fromRemote ? undefined : currentTime,
       playing,
       playbackRate,
       title: `${team1} vs ${team2}`,
     });
-  }, [popoutActive, hasPrimaryVideo, playbackUrl, youtubeUrl, id, currentTime, playing, playbackRate, team1, team2, broadcastSync]);
+  }, [popoutActive, hasPrimaryVideo, youtubeUrl, id, currentTime, playing, playbackRate, team1, team2, broadcastSync]);
 
   // Joueur correspondant au bloc en cours de frappe → mis en avant sur le terrain.
   const bufferPlayer = useMemo(() => {
@@ -1384,34 +1226,7 @@ function DataVolleyDashboard({ user, onLogout }) {
     [notifyEvent]
   );
 
-  // Upload d'un angle vidéo (Cam 1 ou Cam 2) après coup
-  const handleUploadAngleFile = async (angleNum, file) => {
-    if (!file) return;
-    setUploadingAngle(true);
-    setAngleUploadProgress(0);
-    try {
-      const fd = new FormData();
-      fd.append('video', file);
-      fd.append('angle', String(angleNum));
-      if (angleNum === 2) {
-        fd.append('angle2_offset', String(angleOffsetInput || 0));
-      }
-      const res = await videosAPI.uploadAngle(id, fd, (pe) => {
-        if (pe.total) setAngleUploadProgress(Math.round((pe.loaded * 100) / pe.total));
-      });
-      if (res.data?.video) {
-        setVideo(res.data.video);
-        if (angleNum === 2) setCameraView('split');
-        notifyEvent(true, `Caméra ${angleNum} importée avec succès.`);
-      }
-    } catch (err) {
-      notifyEvent(false, err?.response?.data?.error || `Échec de l'import Caméra ${angleNum}`);
-    } finally {
-      setUploadingAngle(false);
-      setAngleUploadProgress(0);
-    }
-  };
-
+  // Décalage CAM 2 (les deux caméras sont des liens YouTube)
   const handleSaveAngleOffset = async (newOffset) => {
     const val = Number(newOffset) || 0;
     setAngleOffsetInput(val);
@@ -1427,14 +1242,18 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   const handleSaveYoutubeUrl = async () => {
     const trimmed = String(youtubeUrlInput || '').trim();
-    if (trimmed && !extractYouTubeId(trimmed)) {
+    if (!trimmed) {
+      notifyEvent(false, 'CAM 1 : un lien YouTube est obligatoire (supprimez le match pour le retirer).');
+      return;
+    }
+    if (!extractYouTubeId(trimmed)) {
       notifyEvent(false, 'Lien YouTube invalide.');
       return;
     }
     try {
-      const res = await videosAPI.update(id, { youtube_url: trimmed || null });
+      const res = await videosAPI.update(id, { youtube_url: trimmed });
       if (res.data?.video) setVideo(res.data.video);
-      notifyEvent(true, trimmed ? 'Lien YouTube enregistré et synchronisé.' : 'Lien YouTube retiré.');
+      notifyEvent(true, 'Lien YouTube enregistré et synchronisé.');
     } catch (err) {
       notifyEvent(false, err?.response?.data?.error || 'Impossible d’enregistrer le lien YouTube.');
     }
@@ -2682,7 +2501,7 @@ function DataVolleyDashboard({ user, onLogout }) {
               Aucune vidéo ou lien YouTube associé à ce match
             </div>
             <div style={{ fontSize: 11, color: '#a1a1aa', maxWidth: 340 }}>
-              Vous pouvez coder ce match dès maintenant et coller un lien YouTube (répertorié ou non) ou importer un fichier MP4 après coup.
+              Vous pouvez coder ce match dès maintenant et coller un lien YouTube (répertorié ou non) pour la CAM 1 et, si besoin, la CAM 2.
             </div>
             <button
               type="button"
@@ -2696,60 +2515,9 @@ function DataVolleyDashboard({ user, onLogout }) {
 
         {hasPrimaryVideo && cameraView !== '2' && (
           <div style={{ position: 'relative', width: '100%', height: '100%', isolation: 'isolate' }}>
-            {/* Fichier illisible dans le navigateur : au lieu d'un chargement
-                infini, on explique ce qui est détecté et ce qui est entrepris. */}
-            {playbackUrl && !mediaReady && playable.status !== 'idle' && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  zIndex: 30,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 10,
-                  padding: 20,
-                  textAlign: 'center',
-                  background: 'rgba(9, 9, 11, 0.93)',
-                }}
-              >
-                {playable.status === 'error' ? (
-                  <AlertTriangle size={26} style={{ color: '#f87171' }} />
-                ) : (
-                  <Loader size={26} style={{ color: '#fbbf24', animation: 'spin 0.8s linear infinite' }} />
-                )}
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#e4e4e7', maxWidth: 540 }}>
-                  {playable.status === 'checking' && 'Analyse de la vidéo…'}
-                  {playable.status === 'processing' && 'Préparation d’une version lisible en cours…'}
-                  {playable.status === 'error' && 'Cette vidéo n’a pas pu être préparée automatiquement'}
-                </div>
-                <div style={{ fontSize: 11, color: '#a1a1aa', maxWidth: 540, lineHeight: 1.6 }}>
-                  {playable.status === 'checking' &&
-                    'La vidéo ne démarre pas. Pancake Stats vérifie pourquoi (conteneur, codec) et lancera la correction si nécessaire.'}
-                  {playable.status === 'processing' && (
-                    <>
-                      {playable.reason || 'Le fichier n’est pas lisible tel quel par le lecteur.'}
-                      <br />
-                      Un remuxage sans perte est en cours : le timecode est strictement conservé, votre codage reste
-                      synchronisé. Cela peut prendre plusieurs minutes sur un gros fichier — vous pouvez continuer à
-                      coder, la vidéo basculera automatiquement dès qu’elle sera prête.
-                    </>
-                  )}
-                  {playable.status === 'error' && (playable.error || 'La préparation de la vidéo a échoué.')}
-                </div>
-                {playable.status === 'error' && (
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={retryPlayable}>
-                    <RefreshCw size={12} /> Réessayer
-                  </button>
-                )}
-              </div>
-            )}
-
             <VideoAnnotationLayer enabled={annotOn} onAnnotationsChange={setAnnotations}>
               <SmartVideoPlayer
                 ref={videoRef}
-                src={playbackUrl}
                 youtubeUrl={youtubeUrl}
                 controls
                 autoPlay
@@ -2771,31 +2539,13 @@ function DataVolleyDashboard({ user, onLogout }) {
                   syncAngle2Video(e.currentTarget.currentTime, false);
                 }}
                 onLoadedMetadata={(e) => {
-                  const el = e.currentTarget;
-                  // Métadonnées obtenues : le fichier est bien décodable, la
-                  // surveillance d'illisibilité peut s'arrêter.
-                  setMediaReady(true);
-                  setVideoDuration(Number.isFinite(el.duration) ? el.duration : 0);
+                  setVideoDuration(Number(e.currentTarget.duration) || 0);
+                  const player = videoRef.current;
                   const t = resumeTimeRef.current;
-                  if (t > 0) {
-                    try { el.currentTime = t; } catch { /* média pas encore accessible */ }
+                  if (player && t > 0) {
+                    try { player.currentTime = t; } catch { /* média pas encore accessible */ }
                   }
-                  if (wasPlayingRef.current) el.play().catch(() => {});
-                }}
-                onError={(e) => {
-                  if (!playbackUrl) return;
-                  const el = e.currentTarget;
-                  // Repli sur le fichier d'origine quand la version préparée
-                  // (proxy) ne se charge pas.
-                  if (el?.dataset && el.dataset.fb !== '1' && videoUrl) {
-                    el.dataset.fb = '1';
-                    el.src = videoUrl;
-                    return;
-                  }
-                  // Décodage refusé : le fichier est illisible dans le
-                  // navigateur, on demande au serveur d'en produire une version
-                  // lisible (remux sans perte ou transcodage).
-                  setSuspect(true);
+                  if (player && wasPlayingRef.current) player.play().catch(() => {});
                 }}
               />
             </VideoAnnotationLayer>
@@ -2828,10 +2578,9 @@ function DataVolleyDashboard({ user, onLogout }) {
 
         {hasAngle2 && (cameraView === '2' || cameraView === 'split') && (
           <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-            {/* CAM 2 : fichier local ou lien YouTube, même lecteur que la CAM 1. */}
+            {/* CAM 2 : lien YouTube, même lecteur que la CAM 1. */}
             <SmartVideoPlayer
               ref={videoAngle2Ref}
-              src={angle2Url}
               youtubeUrl={angle2YoutubeUrl}
               controls={cameraView === '2'}
               muted={cameraView === 'split'}
@@ -2839,9 +2588,11 @@ function DataVolleyDashboard({ user, onLogout }) {
               className="trimmed-player"
               onLoadedMetadata={(e) => {
                 const v1 = videoRef.current;
+                const v2 = videoAngle2Ref.current;
+                if (!v2) return;
                 const baseTime = v1 ? v1.currentTime : resumeTimeRef.current;
                 try {
-                  e.currentTarget.currentTime = Math.max(0, (baseTime || 0) + angle2Offset);
+                  v2.currentTime = Math.max(0, (baseTime || 0) + angle2Offset);
                 } catch {
                   // ignore
                 }
@@ -2946,7 +2697,7 @@ function DataVolleyDashboard({ user, onLogout }) {
           type="button"
           className="btn btn-secondary btn-sm"
           onClick={() => setShowAngleModal(true)}
-          title="Uploader Caméra 1 et/ou Caméra 2 après coup et régler la synchro multi-angles"
+          title="Coller les liens YouTube de la Caméra 1 et/ou de la Caméra 2 et régler la synchro multi-angles"
         >
           <Camera size={11} /> {hasAngle2 ? 'Cam 1/2' : '+ Cam 1/2'}
         </button>
@@ -2971,7 +2722,7 @@ function DataVolleyDashboard({ user, onLogout }) {
           onClick={() =>
             openSecondScreen({
               videoId: id,
-              src: playbackUrl || youtubeUrl,
+              src: youtubeUrl,
               currentTime,
               playing,
               playbackRate,
@@ -4222,12 +3973,12 @@ function DataVolleyDashboard({ user, onLogout }) {
         )}
       </AnimatePresence>
 
-      {/* Modale Multi-Caméras : Upload Caméra 1 / Caméra 2 après coup + Décalage synchro */}
+      {/* Modale Multi-Caméras : liens YouTube CAM 1 / CAM 2 + décalage synchro */}
       <AnimatePresence>
         {showAngleModal && (
           <motion.div
             className="modal-overlay"
-            onClick={() => !uploadingAngle && setShowAngleModal(false)}
+            onClick={() => setShowAngleModal(false)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -4241,159 +3992,71 @@ function DataVolleyDashboard({ user, onLogout }) {
               style={{ maxWidth: 560 }}
             >
               <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Camera size={18} className="text-amber-500" /> Vidéos du match — CAM 1 & CAM 2
+                <Camera size={18} className="text-amber-500" /> Vidéos du match — CAM 1 &amp; CAM 2
               </h2>
               <p className="dv-hint">
-                Une caméra = un menu. Pour chacune, choisissez <strong>soit un lien YouTube</strong> (visible sur tous
-                les postes, aucun fichier à transférer), <strong>soit un fichier vidéo local</strong>.
+                Chaque caméra est un lien YouTube (public ou non répertorié) : tous les comptes et tous les postes
+                voient la même vidéo, sans fichier à transférer.
               </p>
 
-              <div className="form-group" style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 700 }}>CAM 1 — Vue principale</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${cam1UploadMode === 'youtube' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setCam1UploadMode('youtube')}
-                    >
-                      ▶ YouTube
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${cam1UploadMode === 'file' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setCam1UploadMode('file')}
-                    >
-                      📁 Fichier MP4
-                    </button>
-                  </div>
+              <div
+                className="form-group"
+                style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}
+              >
+                <span style={{ fontWeight: 700 }}>CAM 1 — Vue principale</span>
+                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                  <input
+                    type="url"
+                    placeholder="https://youtu.be/... ou https://www.youtube.com/watch?v=..."
+                    value={youtubeUrlInput}
+                    onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveYoutubeUrl}>
+                    Enregistrer
+                  </button>
                 </div>
-
-                {cam1UploadMode === 'youtube' ? (
-                  <>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                      <input
-                        type="url"
-                        placeholder="https://youtu.be/... ou https://www.youtube.com/watch?v=..."
-                        value={youtubeUrlInput}
-                        onChange={(e) => setYoutubeUrlInput(e.target.value)}
-                        style={{ flex: 1 }}
-                      />
-                      <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveYoutubeUrl}>
-                        Enregistrer
-                      </button>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontFamily: 'JetBrains Mono, monospace',
-                        color: youtubeId ? '#ef4444' : '#71717a',
-                        display: 'block',
-                        marginTop: 6,
-                      }}
-                    >
-                      {youtubeId ? `✓ Lien YouTube (${youtubeId})` : 'Aucun lien YouTube'}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <input
-                      type="file"
-                      accept="video/*"
-                      disabled={uploadingAngle}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleUploadAngleFile(1, f);
-                      }}
-                      style={{ marginTop: 6 }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontFamily: 'JetBrains Mono, monospace',
-                        color: video?.filename ? '#10b981' : '#f59e0b',
-                        display: 'block',
-                        marginTop: 6,
-                      }}
-                    >
-                      {video?.filename ? '✓ Fichier vidéo présent' : 'Aucun fichier importé'}
-                    </span>
-                  </>
-                )}
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    color: youtubeId ? '#ef4444' : '#71717a',
+                    display: 'block',
+                    marginTop: 6,
+                  }}
+                >
+                  {youtubeId ? `✓ Lien YouTube (${youtubeId})` : 'Aucun lien YouTube'}
+                </span>
               </div>
 
-              <div className="form-group" style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 700, color: '#38bdf8' }}>CAM 2 — Second angle synchronisé</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${cam2UploadMode === 'youtube' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setCam2UploadMode('youtube')}
-                    >
-                      ▶ YouTube
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${cam2UploadMode === 'file' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setCam2UploadMode('file')}
-                    >
-                      📁 Fichier MP4
-                    </button>
-                  </div>
+              <div
+                className="form-group"
+                style={{ padding: 10, background: '#09090b', border: '1px solid #27272a', marginBottom: 10 }}
+              >
+                <span style={{ fontWeight: 700 }}>CAM 2 — Second angle (optionnel)</span>
+                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                  <input
+                    type="url"
+                    placeholder="https://youtu.be/... ou https://www.youtube.com/watch?v=..."
+                    value={youtubeUrlAngle2Input}
+                    onChange={(e) => setYoutubeUrlAngle2Input(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveYoutubeUrlAngle2}>
+                    Enregistrer
+                  </button>
                 </div>
-
-                {cam2UploadMode === 'youtube' ? (
-                  <>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                      <input
-                        type="url"
-                        placeholder="https://youtu.be/... ou https://www.youtube.com/watch?v=..."
-                        value={youtubeUrlAngle2Input}
-                        onChange={(e) => setYoutubeUrlAngle2Input(e.target.value)}
-                        style={{ flex: 1 }}
-                      />
-                      <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveYoutubeUrlAngle2}>
-                        Enregistrer
-                      </button>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontFamily: 'JetBrains Mono, monospace',
-                        color: angle2YoutubeId ? '#38bdf8' : '#71717a',
-                        display: 'block',
-                        marginTop: 6,
-                      }}
-                    >
-                      {angle2YoutubeId ? `✓ Lien YouTube (${angle2YoutubeId})` : 'Aucun lien YouTube'}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <input
-                      type="file"
-                      accept="video/*"
-                      disabled={uploadingAngle}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleUploadAngleFile(2, f);
-                      }}
-                      style={{ marginTop: 6 }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontFamily: 'JetBrains Mono, monospace',
-                        color: video?.filename_angle2 ? '#38bdf8' : '#71717a',
-                        display: 'block',
-                        marginTop: 6,
-                      }}
-                    >
-                      {video?.filename_angle2 ? '✓ Fichier vidéo présent' : 'Aucun fichier importé'}
-                    </span>
-                  </>
-                )}
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    color: angle2YoutubeId ? '#38bdf8' : '#71717a',
+                    display: 'block',
+                    marginTop: 6,
+                  }}
+                >
+                  {angle2YoutubeId ? `✓ Lien YouTube (${angle2YoutubeId})` : 'Aucun lien YouTube'}
+                </span>
 
                 <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, color: '#a1a1aa' }}>Décalage Cam 2 vs Cam 1 (s) :</span>
@@ -4429,19 +4092,8 @@ function DataVolleyDashboard({ user, onLogout }) {
                 </div>
               </div>
 
-              {uploadingAngle && (
-                <div style={{ margin: '10px 0', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: '#f59e0b' }}>
-                  Importation en cours… {angleUploadProgress}%
-                </div>
-              )}
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={uploadingAngle}
-                  onClick={() => setShowAngleModal(false)}
-                >
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAngleModal(false)}>
                   Fermer
                 </button>
               </div>

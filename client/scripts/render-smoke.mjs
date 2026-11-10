@@ -125,14 +125,14 @@ console.log('\n== Menus d’import vidéo (CAM 1 / CAM 2) ==');
 {
   const mod = await vite.ssrLoadModule('/src/pages/DataVolleyMatchesPage.jsx');
   const Block = mod.CameraUploadBlock;
-  const base = { title: 'CAM 1 — Vue principale', onMode: noop, youtubeUrl: '', onYoutubeUrl: noop, file: null, onFile: noop };
+  const base = { title: 'CAM 1 — Vue principale', youtubeUrl: '', onYoutubeUrl: noop };
 
-  const yt = renderToString(React.createElement(Block, { ...base, mode: 'youtube' }));
-  check('le menu propose les 2 options YouTube et fichier MP4', /▶ YouTube/.test(yt) && /Fichier MP4/.test(yt));
-  check('mode YouTube : seul le champ de lien est affiché', /type="url"/.test(yt) && !/type="file"/.test(yt));
-
-  const file = renderToString(React.createElement(Block, { ...base, mode: 'file' }));
-  check('mode fichier : seul le sélecteur de fichier est affiché', /type="file"/.test(file) && !/type="url"/.test(file));
+  const html = renderToString(React.createElement(Block, base));
+  check('le menu caméra ne propose que YouTube', /▶ YOUTUBE/.test(html) && !/Fichier MP4/.test(html));
+  check(
+    'seul le champ de lien YouTube est affiché',
+    /type="url"/.test(html) && !/type="file"/.test(html)
+  );
 }
 
 console.log('\n== Rendu de la liste des matchs ==');
