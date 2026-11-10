@@ -135,6 +135,25 @@ console.log('\n== Menus d’import vidéo (CAM 1 / CAM 2) ==');
   );
 }
 
+console.log('\n== Rendu du cumul vidéo multi-matchs ==');
+{
+  const mod = await vite.ssrLoadModule('/src/pages/VideoMultiMatchPage.jsx');
+  const Page = mod.default;
+  try {
+    const html = renderToString(
+      React.createElement(
+        MemoryRouter,
+        null,
+        React.createElement(Page, { user: { email: 'coach@asul.test', name: 'Coach' }, onLogout: noop })
+      )
+    );
+    check('la page de cumul vidéo se rend sans erreur', html.length > 0);
+    check('le chargement des matchs est affiché', /Chargement des matchs/.test(html), html.slice(0, 200));
+  } catch (err) {
+    check('la page de cumul vidéo se rend sans erreur', false, `${err.name}: ${err.message}`);
+  }
+}
+
 console.log('\n== Rendu de la liste des matchs ==');
 {
   const matches = await renderRoute('/src/pages/DataVolleyMatchesPage.jsx', 'default', {

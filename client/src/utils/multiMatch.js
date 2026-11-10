@@ -125,6 +125,32 @@ export function matchSummaries(prepared) {
 }
 
 /**
+ * Toutes les actions d'un joueur dans les matchs préparés (équipe analysée
+ * toujours côté « home »), avec l'adversaire et la vidéo de chaque match.
+ * @param {Array} prepared sortie de prepareMatches
+ * @param {number|string} playerNumber numéro du joueur
+ */
+export function playerActionsOf(prepared, playerNumber) {
+  const num = Number(playerNumber);
+  if (!Number.isFinite(num)) return [];
+  const out = [];
+  for (const m of prepared || []) {
+    for (const a of m.actions || []) {
+      // L'équipe analysée est toujours ramenée côté « home » par prepareMatches.
+      if (a.team !== 'home') continue;
+      if (Number(a.player_number) !== num) continue;
+      out.push({
+        ...a,
+        matchOpponent: m.opponent || '',
+        matchVideo: m.video || null,
+        matchDate: m.video?.created_at || '',
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * Éléments de playlist pour des actions issues de plusieurs matchs (montage vidéo).
  * Les marges dépendent de la compétence ; une action sans timecode est ignorée.
  * @returns {{ items: Array, skipped: number }}

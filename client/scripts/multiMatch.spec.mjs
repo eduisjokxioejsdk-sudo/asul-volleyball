@@ -1,5 +1,5 @@
 // Cumul multi-matchs. Exécution : node client/scripts/multiMatch.spec.mjs
-import { prepareMatches, matchSummaries, sideOfTeamInMatch } from '../src/utils/multiMatch.js';
+import { prepareMatches, matchSummaries, sideOfTeamInMatch, playerActionsOf } from '../src/utils/multiMatch.js';
 import { cumulativeSideOutBreak, cumulativeMoneyTime } from '../src/utils/multiMatchAnalytics.js';
 import { computeSideOutBreak } from '../src/utils/dvAnalytics.js';
 
@@ -46,6 +46,22 @@ const a2 = prepared[1].actions.find((a) => a.action === 'S');
 const raw2 = matches[1].actions.find((a) => a.action === 'S');
 check('match 2 inversé : équipe cible = home', raw2.team === 'away' ? a2.team === 'home' : a2.team === 'away');
 check('uid uniques entre matchs', new Set(prepared.flatMap((m) => m.actions.map((a) => a.uid))).size === prepared.reduce((s, m) => s + m.actions.length, 0));
+
+// --- Toutes les actions d'un même joueur sur les matchs sélectionnés ---
+const expected9 = prepared.reduce(
+  (s, m) => s + m.actions.filter((a) => a.team === 'home' && Number(a.player_number) === 9).length,
+  0
+);
+const p9 = playerActionsOf(prepared, 9);
+check('joueur : actions réunies sur tous les matchs', p9.length === expected9 && expected9 > 0);
+check('joueur : uniquement le côté de l’équipe analysée', p9.every((a) => a.team === 'home'));
+check(
+  'joueur : chaque action connaît son match vidéo',
+  p9.every((a) => a.match_video_id === v1.id || a.match_video_id === v2.id)
+);
+check('joueur : numéro en chaîne accepté', playerActionsOf(prepared, '9').length === expected9);
+check('joueur absent : aucune action', playerActionsOf(prepared, 99).length === 0);
+check('joueur sans numéro : aucune action', playerActionsOf(prepared, null).length === 0);
 
 const cum = cumulativeSideOutBreak(prepared);
 const p1 = computeSideOutBreak(prepared[0].actions, {});

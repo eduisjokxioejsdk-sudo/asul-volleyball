@@ -21,7 +21,7 @@ import SmartVideoPlayer from '../components/SmartVideoPlayer';
 import { extractYouTubeId } from '../utils/youtube';
 import { formatTimecode, groupActionsIntoRallies, buildPointSegments } from '../utils/datavolley';
 import { computeMatchState } from '../utils/rotation';
-import { Play, Pause, Clock, ArrowLeft, ChevronLeft, ChevronRight, Trash, Tv, Camera, MonitorPlay, Upload } from '../components/icons';
+import { Play, Pause, Clock, ArrowLeft, ChevronLeft, ChevronRight, Trash, Tv, Camera, MonitorPlay, Upload, ChartColumn } from '../components/icons';
 
 const ACTION_TYPES = [
   { key: 'ALL', label: 'Toutes les actions' },
@@ -467,6 +467,14 @@ export default function VideoCenterPage({ user, onLogout }) {
                 </span>
                 {/* L'import se fait dans Data Volley : même bibliothèque, même
                     propriétaire, et les actions restent liées à la vidéo. */}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => navigate('/video-center/multi')}
+                  title="Réunir toutes les actions d'un joueur sur plusieurs matchs sélectionnés"
+                >
+                  <ChartColumn size={13} /> Cumul multi-matchs
+                </button>
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"

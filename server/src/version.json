@@ -1,17 +1,18 @@
 {
-  "version": "3.13.0",
+  "version": "3.14.0",
   "releasedAt": "2026-11-10",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
     {
-      "version": "3.13.0",
+      "version": "3.14.0",
       "date": "2026-11-10",
-      "title": "Trajectoires : suppression d’une fiche depuis n’importe quel compte",
+      "title": "Centre Vidéo : cumul multi-matchs par joueur",
       "items": [
-        "Le bouton « Supprimer » est désormais affiché sur toutes les fiches de trajectoire, y compris celles créées par un autre compte — dans la liste des fiches comme sur la page de marquage",
-        "Le serveur ne réserve plus la suppression au créateur : l’authentification reste obligatoire et la suppression reste une pierre tombale synchronisée vers tous les postes",
-        "La confirmation précise que la fiche sera retirée de tous les postes ; les flèches ne sont plus accessibles une fois la fiche supprimée",
-        "Validation : test d’intégration où un compte B supprime une fiche créée par un compte A (réponse 200, fiche retirée pour les deux comptes)"
+        "Nouveau bouton « Cumul multi-matchs » dans le Centre Vidéo : sélectionnez tous les matchs ou seulement quelques-uns (pastilles cochables, boutons « Tous » et « Aucun »), comme dans le rapport cumulé des trajectoires",
+        "Choisissez une équipe puis un joueur : toutes ses actions codées sont réunies, avec compteurs par type d’action et par évaluation, détail par match (actions, points) et total cumulé",
+        "Lecteur YouTube synchronisé : cliquez une action pour la revoir (le lecteur ouvre le bon match au bon timecode) ou lancez « Lire la sélection » pour enchaîner toutes les actions, match après match",
+        "Une playlist vidéo du cumul peut être créée en un clic et se retrouve dans « Playlists » du Centre Vidéo",
+        "Validation : nouvel utilitaire playerActionsOf testé (actions d’un joueur sur plusieurs matchs) et rendu de la nouvelle page contrôlé sans erreur"
       ]
     },
     {
