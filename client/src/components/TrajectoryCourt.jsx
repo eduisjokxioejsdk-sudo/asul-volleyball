@@ -30,6 +30,7 @@ import {
   resultColor,
   resultLabel,
   selectedShotIndexes,
+  selectedShots,
   shotPath,
   svgPointFromEvent,
 } from '../utils/trajectory.js';
@@ -435,8 +436,11 @@ export default function TrajectoryCourt({ player, shots = [], kind, teams, onCom
     onComplete(from, point, result);
   };
 
-  const counts = countByResult(shots);
   const selectedIndexes = useMemo(() => selectedShotIndexes(shots, selection), [shots, selection]);
+  // Compteurs du bas : ceux de la zone désignée quand une sélection existe,
+  // sinon ceux de toutes les flèches du terrain.
+  const countedShots = useMemo(() => selectedShots(shots, selectedIndexes), [shots, selectedIndexes]);
+  const counts = countByResult(countedShots);
   const courtProps = {
     teams,
     shots,
@@ -500,6 +504,9 @@ export default function TrajectoryCourt({ player, shots = [], kind, teams, onCom
             </button>
           </span>
         )}
+        {readOnly && selectedIndexes.length > 0 && (
+          <span className="tj-hint">Compteurs de la sélection :</span>
+        )}
         {TRAJECTORY_RESULTS.filter((r) => counts[r.id] > 0).map((r) => (
           <span key={r.id} className="tj-chip" style={{ borderColor: r.color, color: r.color }}>
             {r.short} {counts[r.id]}
@@ -537,7 +544,7 @@ export default function TrajectoryCourt({ player, shots = [], kind, teams, onCom
               <CourtSvg markerId={`${markerId}-big`} kind={kind} className="tj-court-big" {...courtProps} />
               <p className="dv-hint">
                 {readOnly
-                  ? 'Consultation : glissez sur le terrain pour désigner une zone — les flèches concernées passent en violet et sont comptées. Le menu « Filtres » choisit les issues affichées.'
+                  ? 'Consultation : glissez sur le terrain pour désigner une zone — les flèches concernées passent en violet et les compteurs du bas se limitent à cette sélection. Le menu « Filtres » choisit les issues affichées.'
                   : '1er clic : point de départ · 2e clic : point d’arrivée. Hors des lignes la flèche passe au rouge automatiquement ; dans le terrain, choisissez l’issue de la frappe.'}
               </p>
             </motion.div>

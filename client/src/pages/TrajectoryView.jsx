@@ -271,9 +271,10 @@ export default function TrajectoryView({ user }) {
 
             <p className="dv-hint">
               Lecture seule : aucune flèche ne peut être ajoutée ni modifiée ici. Glissez sur un terrain pour désigner une
-              zone : les flèches concernées passent en violet et leur nombre s’affiche. Cliquez sur un terrain pour
-              l’agrandir, utilisez « Filtres » pour n’afficher que certains types de flèches et « Poste de départ » pour
-              trier les attaques selon la zone d’où part la flèche (4, 3, 2 ou arrière).
+              zone : les flèches concernées passent en violet et les compteurs sous le terrain se limitent à cette
+              sélection. Cliquez sur un terrain pour l’agrandir, utilisez « Filtres » pour n’afficher que certains types
+              de flèches et « Poste de départ » pour trier les attaques selon la zone d’où part la flèche (4, 3, 2 ou
+              arrière).
             </p>
 
             <div className="tj-recap">

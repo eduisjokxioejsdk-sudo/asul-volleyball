@@ -339,6 +339,19 @@ export function shotsOfMatches(rows, matchIds) {
 }
 
 /**
+ * Flèches retenues par une sélection sur le terrain (indices renvoyés par
+ * `selectedShotIndexes`). Sans sélection, toutes les flèches restent comptées.
+ * @param {Array} shots flèches affichées sur le terrain
+ * @param {Iterable<number>} selectedIndexes indices des flèches désignées
+ */
+export function selectedShots(shots, selectedIndexes) {
+  const wanted = new Set([...(selectedIndexes || [])].map(Number));
+  const list = shots || [];
+  if (wanted.size === 0) return list;
+  return list.filter((_, index) => wanted.has(index));
+}
+
+/**
  * Postes de départ d'une attaque : les trois zones de l'avant (4, 3, 2) et le
  * regroupement des zones arrière (5, 6, 1, 7, 8, 9). Sert au tri des attaques
  * selon l'endroit d'où part la flèche.

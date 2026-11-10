@@ -17,7 +17,6 @@ import TrajectoryZoneFilter from '../components/TrajectoryZoneFilter';
 import { teamsAPI, trajectoryAPI } from '../services/api';
 import {
   TRAJECTORY_KINDS,
-  TRAJECTORY_RESULTS,
   countByResult,
   filterShots,
   filterShotsByZone,
@@ -110,13 +109,6 @@ export default function TrajectoryTeamReport() {
     [data, includedMatchIds]
   );
   const allIncluded = includedMatches.length === matches.length;
-  // Le tableau de synthèse suit le tri par poste de départ : les services
-  // restent comptés, seules les attaques se limitent au poste choisi.
-  const reportShots = useMemo(
-    () => filterShotsByZone(allShots, zone === 'all' ? [] : [zone], 'home'),
-    [allShots, zone]
-  );
-  const summary = useMemo(() => teamReport(reportShots, roster), [reportShots, roster]);
   const kindShots = useMemo(() => shotsOfKind(allShots, kind), [allShots, kind]);
   // Le tri par poste de départ ne concerne que les attaques : les services
   // restent affichés. L'équipe du rapport occupe toujours la moitié gauche.
@@ -127,6 +119,10 @@ export default function TrajectoryTeamReport() {
   const shownShots = useMemo(() => filterShots(zoneShots, hidden), [zoneShots, hidden]);
   const recap = useMemo(() => countByResult(shownShots), [shownShots]);
   const filterResults = useMemo(() => resultsForKind(kind), [kind]);
+  // Le tableau de synthèse suit exactement le mode et le poste choisis :
+  // « Attaque » ne compte que les attaques, « Attaque + poste 4 » seulement les
+  // attaques parties de la zone 4, « Services » seulement les services.
+  const summary = useMemo(() => teamReport(zoneShots, roster), [zoneShots, roster]);
   const kindLabel = kindLabelOf(kind);
 
   const toggleResult = (resultId) =>
@@ -278,9 +274,9 @@ export default function TrajectoryTeamReport() {
               Rapport cumulé : toutes les fiches cochées de <strong>{teamName}</strong> sont réunies (par défaut,
               toutes). Décochez un match pour l’exclure du tableau, des terrains et de l’export ZIP — les fiches
               elles-mêmes ne sont pas modifiées. L’onglet « Tout » rassemble les services et les attaques de chaque
-              joueur ; les autres onglets isolent un type de frappe. « Poste de départ » limite les attaques à la zone
-              d’où part la flèche (4, 3, 2 ou arrière), dans le tableau comme sur les terrains. Cliquez sur un terrain
-              pour l’agrandir.
+              joueur ; les autres onglets isolent un type de frappe et le tableau ne garde alors que les colonnes de ce
+              type. « Poste de départ » limite les attaques à la zone d’où part la flèche (4, 3, 2 ou arrière), dans le
+              tableau comme sur les terrains. Cliquez sur un terrain pour l’agrandir.
             </p>
 
             {data.matches.length === 0 ? (
@@ -386,13 +382,27 @@ export default function TrajectoryTeamReport() {
   
                   <div className="report-wrap">
                     <table className="report report-compact tj-report-table">
+                      <caption
+                        style={{
+                          captionSide: 'top',
+                          textAlign: 'left',
+                          padding: '0 0 8px',
+                          fontSize: 12,
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        Tableau — {kindLabel}
+                        {kind !== 'serve' && zone !== 'all' ? ` · poste ${zone === 'arriere' ? 'arrière' : zone}` : ''}
+                        {' · '}
+                        {zoneShots.length} flèche{zoneShots.length > 1 ? 's' : ''} prise{zoneShots.length > 1 ? 's' : ''} en compte
+                      </caption>
                       <thead>
                         <tr className="group-row">
                           <th className="name">Joueur</th>
-                          <th>Services</th>
-                          <th>Attaque</th>
+                          {(kind === 'all' || kind === 'serve') && <th>Services</th>}
+                          {(kind === 'all' || kind === 'attack') && <th>Attaque</th>}
                           <th>Total</th>
-                          {TRAJECTORY_RESULTS.map((r) => (
+                          {filterResults.map((r) => (
                             <th key={r.id} style={{ color: r.color }}>{r.short}</th>
                           ))}
                           <th>Réussite</th>
@@ -402,10 +412,10 @@ export default function TrajectoryTeamReport() {
                         {summary.players.map((p) => (
                           <tr key={p.player_number}>
                             <td className="name">{p.player_number} · {p.name || `N°${p.player_number}`}</td>
-                            <td>{p.serveTotal}</td>
-                            <td>{p.attackTotal}</td>
+                            {(kind === 'all' || kind === 'serve') && <td>{p.serveTotal}</td>}
+                            {(kind === 'all' || kind === 'attack') && <td>{p.attackTotal}</td>}
                             <td><strong>{p.total}</strong></td>
-                            {TRAJECTORY_RESULTS.map((r) => (
+                            {filterResults.map((r) => (
                               <td key={r.id}>{p.counts[r.id] || ''}</td>
                             ))}
                             <td>{p.total ? `${Math.round(p.successRate * 100)} %` : '—'}</td>
@@ -415,10 +425,10 @@ export default function TrajectoryTeamReport() {
                       <tfoot>
                         <tr className="team-row">
                           <td className="name">Total équipe</td>
-                          <td>{summary.serveTotal}</td>
-                          <td>{summary.attackTotal}</td>
+                          {(kind === 'all' || kind === 'serve') && <td>{summary.serveTotal}</td>}
+                          {(kind === 'all' || kind === 'attack') && <td>{summary.attackTotal}</td>}
                           <td><strong>{summary.total}</strong></td>
-                          {TRAJECTORY_RESULTS.map((r) => (
+                          {filterResults.map((r) => (
                             <td key={r.id}>{summary.counts[r.id] || ''}</td>
                           ))}
                           <td>{summary.total ? `${Math.round(summary.successRate * 100)} %` : '—'}</td>

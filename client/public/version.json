@@ -1,18 +1,18 @@
 {
-  "version": "3.11.0",
+  "version": "3.12.0",
   "releasedAt": "2026-11-10",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
     {
-      "version": "3.11.0",
+      "version": "3.12.0",
       "date": "2026-11-10",
-      "title": "Trajectoires : rapport cumulé sur tous les matchs ou une sélection",
+      "title": "Trajectoires : tableau filtré par mode/poste et compteurs de sélection",
       "items": [
-        "Rapport cumulé d’une équipe : chaque fiche de match peut être incluse ou retirée du calcul (pastilles cochables, boutons « Tous » et « Aucun »), sans modifier les fiches elles-mêmes",
-        "Le tableau de synthèse, les terrains par joueur, les compteurs de flèches et l’export ZIP ne prennent en compte que les matchs sélectionnés ; l’en-tête affiche « X / Y matchs »",
-        "Chaque pastille de match conserve un accès direct à la fiche en consultation (icône œil) ; la sélection revient à toutes les fiches quand on change d’équipe",
-        "Aucun match sélectionné : le rapport est remplacé par un message avec un bouton « Tout sélectionner » ; l’export est désactivé",
-        "Validation : nouvel utilitaire de filtrage des flèches par match et contrôles associés dans le test du rapport de trajectoires"
+        "Rapport cumulé : le tableau de synthèse ne garde que le mode choisi — « Attaque » n’affiche plus les services, « Services » n’affiche plus les attaques, avec uniquement les colonnes d’issues correspondantes",
+        "« Attaque + poste de départ » (4, 3, 2 ou arrière) : le tableau ne compte que les attaques parties de ce poste ; le filtre fonctionne pour tous les postes proposés",
+        "Consultation d’une fiche : quand une zone de flèches est désignée au glisser, les compteurs sous le terrain se limitent à la sélection (ex. 10 flèches vertes → « Point 10 »)",
+        "Le libellé « Compteurs de la sélection » apparaît sous le terrain pour distinguer les totaux de la sélection de ceux du joueur",
+        "Validation : nouveaux contrôles sur le tableau mode + poste et sur les compteurs de sélection des trajectoires"
       ]
     },
     {

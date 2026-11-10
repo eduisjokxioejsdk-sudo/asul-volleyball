@@ -5,9 +5,11 @@ import {
   ATTACK_START_ZONES,
   TRAJECTORY_RESULTS,
   attackZone,
+  countByResult,
   filterShotsByZone,
   playerReport,
   resultsForKind,
+  selectedShots,
   shotsOfKind,
   shotsOfMatches,
   shotsReport,
@@ -147,6 +149,40 @@ const awayZoneShots = [
 ];
 check('côté droit : zone 4', filterShotsByZone(awayZoneShots, ['4'], 'away').length === 1);
 check('côté droit : zone 2', filterShotsByZone(awayZoneShots, ['2'], 'away').length === 1);
+
+console.log('\n== Tableau du rapport : mode + poste ==');
+const attackOnly = shotsOfKind(zoneShots, 'attack');
+check('mode attaque : plus aucun service', attackOnly.length === 3, `${attackOnly.length}`);
+check(
+  'attaque + poste 4 : uniquement l’attaque de la zone 4',
+  filterShotsByZone(attackOnly, ['4']).length === 1,
+  `${filterShotsByZone(attackOnly, ['4']).length}`
+);
+check('mode services : uniquement les services', shotsOfKind(zoneShots, 'serve').length === 1);
+check(
+  'mode services : le poste ne retire aucun service',
+  filterShotsByZone(shotsOfKind(zoneShots, 'serve'), ['4']).length === 1
+);
+
+console.log('\n== Compteurs de la sélection (consultation) ==');
+const selectionShots = [
+  shot(4, 'attack', 'point'),
+  shot(4, 'attack', 'point'),
+  shot(4, 'attack', 'faute'),
+];
+check('sans sélection : toutes les flèches comptées', selectedShots(selectionShots, []).length === 3);
+check(
+  'sélection de 2 flèches vertes : 2 points',
+  countByResult(selectedShots(selectionShots, [0, 1])).point === 2,
+  `${countByResult(selectedShots(selectionShots, [0, 1])).point}`
+);
+check(
+  'la faute hors sélection n’est plus comptée',
+  countByResult(selectedShots(selectionShots, [0, 1])).faute === 0
+);
+check('sélection d’une faute : 1 faute', countByResult(selectedShots(selectionShots, [2])).faute === 1);
+check('indice hors limites ignoré', selectedShots(selectionShots, [9]).length === 0);
+check('liste absente acceptée', selectedShots(null, [0]).length === 0);
 
 console.log('\n== Cohérence du rapport brut ==');
 check('total = somme des issues', sumCounts(shotsReport(shots).counts) === shotsReport(shots).total);
