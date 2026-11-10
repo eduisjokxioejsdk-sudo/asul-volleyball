@@ -41,7 +41,7 @@ const TEAM_TABS = [
 /** Libellé d'un type de frappe : « Services » / « Attaque ». */
 const kindLabelOf = (k) => TRAJECTORY_KINDS.find((x) => x.id === k)?.label || k;
 
-export default function TrajectoryDashboard({ user }) {
+export default function TrajectoryDashboard() {
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -155,7 +155,6 @@ export default function TrajectoryDashboard({ user }) {
   // Légende : exactement les issues proposées pour la frappe en cours, plus la
   // sortie de terrain (automatique) — donc ni feinte ni contrée au service.
   const legendResults = useMemo(() => resultsForKind(kind), [kind]);
-  const isOwner = !!user && Number(match?.user_id) === Number(user.id);
   const kindLabel = kindLabelOf(kind);
 
   // --- Interactions ---------------------------------------------------------
@@ -196,7 +195,7 @@ export default function TrajectoryDashboard({ user }) {
   };
 
   const deleteMatch = async () => {
-    if (!window.confirm('Supprimer définitivement cette fiche de trajectoire ?')) return;
+    if (!window.confirm('Supprimer définitivement cette fiche de trajectoire ? Elle sera retirée de tous les postes.')) return;
     try {
       await trajectoryAPI.delete(id);
       navigate('/dashboard');
@@ -324,11 +323,13 @@ export default function TrajectoryDashboard({ user }) {
           >
             <Keyboard size={14} /> Raccourcis
           </button>
-          {isOwner && (
-            <button className="btn btn-danger btn-sm" onClick={deleteMatch} title="Supprimer cette fiche">
-              <Trash size={14} />
-            </button>
-          )}
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={deleteMatch}
+            title="Supprimer cette fiche (partagée entre tous les comptes)"
+          >
+            <Trash size={14} />
+          </button>
           <div className="dv-save-state">
             {saving ? (<><Save size={12} /> Enregistrement…</>) : (<><Check size={12} /> Enregistré</>)}
           </div>

@@ -17,7 +17,7 @@ import PancakeLogo from './PancakeLogo';
 
 const emptyPlayer = () => ({ number: '', name: '', role: 'universal' });
 
-export default function TrajectoryHome({ user }) {
+export default function TrajectoryHome() {
   const navigate = useNavigate();
   const [matches, setMatches] = useState([]);
 
@@ -164,7 +164,7 @@ export default function TrajectoryHome({ user }) {
   };
 
   const removeMatch = async (match) => {
-    if (!window.confirm(`Supprimer définitivement la fiche « ${match.name} » ?`)) return;
+    if (!window.confirm(`Supprimer définitivement la fiche « ${match.name} » ? Elle sera retirée de tous les postes.`)) return;
     try {
       await trajectoryAPI.delete(match.id);
       await loadMatches();
@@ -369,16 +369,14 @@ export default function TrajectoryHome({ user }) {
                   </button>
                 </div>
 
-                {Number(match.user_id) === Number(user?.id) && (
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    title="Supprimer cette fiche"
-                    onClick={() => removeMatch(match)}
-                  >
-                    <Trash size={13} /> Supprimer
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  title="Supprimer cette fiche (partagée entre tous les comptes)"
+                  onClick={() => removeMatch(match)}
+                >
+                  <Trash size={13} /> Supprimer
+                </button>
               </div>
             </div>
           ))}

@@ -131,7 +131,7 @@ export const teamsAPI = {
 };
 
 // Fiches de trajectoire (outil temporaire : service / attaque par joueur).
-// Partagées comme les équipes ; seul le créateur peut supprimer une fiche.
+// Partagées comme les équipes ; tous les comptes peuvent les supprimer.
 export const trajectoryAPI = {
   getAll: () => api.get('/trajectories'),
   create: (name, homeTeamId, awayTeamId, videoId) =>

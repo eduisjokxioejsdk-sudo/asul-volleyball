@@ -36,7 +36,7 @@ mountSyncRoutes(router, syncHub.trajectories);
 // Fiches de trajectoire (outil temporaire de marquage service / attaque).
 // Un match porte 1 ou 2 équipes de la table `teams` (partagée) et une liste de
 // flèches, une par frappe et par joueur. Les fiches sont partagées comme les
-// équipes : tout le monde les voit, seul le créateur peut les supprimer.
+// équipes : tout le monde les voit et peut les supprimer.
 // ============================================================================
 
 const TEAM_SIDES = ['home', 'away'];
@@ -305,19 +305,13 @@ router.patch('/:id', authenticateToken, (req, res) => {
   );
 });
 
-// Supprime une fiche (et ses flèches) — réservé à son créateur (ou ouvert si fiche importée sans auteur).
+// Supprime une fiche (et ses flèches) — ouvert à tous les comptes : les fiches
+// de trajectoire sont partagées, comme les équipes et les vidéos.
 router.delete('/:id', authenticateToken, (req, res) => {
   const matchId = Number(req.params.id);
   db.get('SELECT * FROM trajectory_matches WHERE id = ?', [matchId], (err, match) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (!match) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
-    const isCreator =
-      (!match.created_by && (!match.user_id || Number(match.user_id) === 0)) ||
-      (match.created_by && match.created_by === req.user.email) ||
-      Number(match.user_id) === Number(req.user.id);
-    if (!isCreator) {
-      return res.status(403).json({ error: 'Seul le créateur peut supprimer cette fiche' });
-    }
     // Pierre tombale (et non effacement) : la suppression est propagée au cloud.
     db.run(
       'UPDATE trajectory_matches SET deleted = 1, dirty = 1, local_updated_at = ? WHERE id = ?',
