@@ -7,6 +7,7 @@ import {
   makeActions,
   nextBlockTimes,
   parseSequence,
+  restampPendingBlockTimes,
   splitInputBlocks,
 } from '../src/utils/datavolley.js';
 
@@ -137,6 +138,55 @@ eq(
   [101, 107, 112]
 );
 eq('les codes sont intacts', committed.map((a) => a.code), ['*01S5#', 'a02R1+', 'a03A45#']);
+
+console.log('\n== Retour en arrière dans la vidéo ==');
+const pendingTimes = [390];
+eq('les codes en attente reprennent la position courante', restampPendingBlockTimes([390], 360), [360]);
+eq(
+  'les temps antérieurs (lecture normale) sont conservés',
+  restampPendingBlockTimes([100, 108], 120),
+  [100, 108]
+);
+eq(
+  'le tableau reçu est renvoyé à l’identique quand rien ne change',
+  restampPendingBlockTimes(pendingTimes, 400) === pendingTimes,
+  true
+);
+eq('tolérance : une avance infime est ignorée', restampPendingBlockTimes([120.2], 120), [120.2]);
+eq('retour arrière de 30 s sur deux blocs', restampPendingBlockTimes([390, 393], 360), [360, 360]);
+eq('position inconnue : rien ne bouge', restampPendingBlockTimes([390], null), [390]);
+eq('tampon vide', restampPendingBlockTimes([], 360), []);
+
+console.log('\n== Scénario : revenir en arrière puis valider ==');
+let back = [];
+let backPrev = '';
+const typeBack = (next, now) => {
+  back = nextBlockTimes(back, backPrev, next, now);
+  backPrev = next;
+};
+// Le point est codé à 6:30 (390 s)…
+typeBack('*01S5#', 390);
+typeBack('*01S5#a02R1+', 390);
+// … puis on recule la vidéo à 6:00 (360 s) : les codes en attente suivent.
+back = restampPendingBlockTimes(back, 360);
+eq('blocs ré-horodatés', back, [360, 360]);
+const replayed = makeActions(parseSequence(backPrev), {
+  currentTimecode: 360,
+  timecodes: itemTimecodes(backPrev, back),
+});
+eq('les actions validées portent la position de l’image', replayed.map((a) => a.timecode), [360, 360]);
+
+console.log('\n== Scénario : serveur pré-rempli du point suivant ==');
+const committedPoint = makeActions(parseSequence('*01S5#a02R1+'), {
+  currentTimecode: 393,
+  timecodes: itemTimecodes('*01S5#a02R1+', [390, 393]),
+});
+eq('service du point 1', committedPoint[0].timecode, 390);
+// Le pré-remplissage repart de zéro (cf. commitBuffer) : le service du point 2
+// ne garde pas le temps du point précédent, malgré un code identique.
+const next2 = nextBlockTimes([], '*01S5#a02R1+', '*01S5#', 400);
+eq('service pré-rempli horodaté à la validation', next2, [400]);
+eq('formule alignée après pré-remplissage', itemTimecodes('*01S5#a02R1+', nextBlockTimes(next2, '*01S5#', '*01S5#a02R1+', 404)), [400, 404]);
 
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);
 process.exit(failures === 0 ? 0 : 1);

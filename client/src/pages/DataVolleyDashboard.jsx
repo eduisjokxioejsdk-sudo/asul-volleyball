@@ -147,6 +147,7 @@ import {
   prefillWithLearnedType,
   reindexActions,
   replaceRallySequence,
+  restampPendingBlockTimes,
   tryAppendChar,
   validateAction,
 } from '../utils/datavolley';
@@ -507,6 +508,15 @@ function DataVolleyDashboard({ user, onLogout }) {
     blockTimesRef.current = nextBlockTimes(blockTimesRef.current, blockTimeBufferRef.current, normalized, now);
     blockTimeBufferRef.current = normalized;
   }, [buffer]);
+
+  // Retour en arrière dans la vidéo (barre de progression, boutons, lecteur
+  // YouTube ou fichier local) : les codes encore dans le champ de saisie
+  // avaient été horodatés plus loin dans le match. On les ramène à la position
+  // courante, sinon l'action validée garde l'ancien timecode (ex. 6:30 alors
+  // que la vidéo est revenue à 6:00).
+  useEffect(() => {
+    blockTimesRef.current = restampPendingBlockTimes(blockTimesRef.current, currentTime);
+  }, [currentTime]);
   useEffect(() => { actionsRef.current = actions; }, [actions]);
 
   // Mesure du canevas : la ref est un « callback ref », donc la mesure se
@@ -1651,6 +1661,10 @@ function DataVolleyDashboard({ user, onLogout }) {
       const nextRallies = groupActionsIntoRallies(next, rallyOpts);
       const nextState = computeMatchState(nextRallies, setups, {}, events);
       const prefill = prefillWithLearnedType(serverPrefill(nextState), learnActionTypes(next));
+      // Le serveur pré-rempli ouvre un NOUVEAU point : il ne doit pas hériter du
+      // timecode du service précédent (même texte de code), sinon l'action
+      // validée garde l'heure de l'échange d'avant.
+      blockTimesRef.current = [];
       bufferRef.current = prefill;
       setBuffer(prefill);
     }

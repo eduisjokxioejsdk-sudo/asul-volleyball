@@ -43,6 +43,10 @@ function loadYouTubeIframeApi() {
  *   - playbackRate (lecture / écriture)
  *   - play() / pause()
  *   - requestFullscreen()
+ *
+ * Les callbacks `onTimeUpdate` / `onSeeked` reçoivent le même genre d'événement
+ * pour les deux lecteurs : les timecodes du codage restent justes après un
+ * retour en arrière, y compris sur une vidéo YouTube.
  */
 const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
   {
@@ -56,6 +60,7 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
     style,
     className,
     onTimeUpdate,
+    onSeeked,
     onLoadedMetadata,
     onPlay,
     onPause,
@@ -87,11 +92,15 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
     paused: true,
     playbackRate: 1,
     pendingSeek: null,
+    // Déplacement demandé par l'application : le temps optimiste est conservé
+    // tant que YouTube n'a pas appliqué le saut (seek asynchrone).
+    seekingTo: null,
   });
 
   const callbacksRef = useRef({});
   callbacksRef.current = {
     onTimeUpdate,
+    onSeeked,
     onLoadedMetadata,
     onPlay,
     onPause,
@@ -120,11 +129,15 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
         set currentTime(val) {
           const sec = Math.max(0, Number(val) || 0);
           ytStateRef.current.currentTime = sec;
+          ytStateRef.current.seekingTo = { target: sec, at: Date.now() };
           const p = ytPlayerRef.current;
           if (p && ytReadyRef.current && typeof p.seekTo === 'function') {
             p.seekTo(sec, true);
             if (callbacksRef.current.onTimeUpdate) {
               callbacksRef.current.onTimeUpdate({ target: proxy, currentTarget: proxy });
+            }
+            if (callbacksRef.current.onSeeked) {
+              callbacksRef.current.onSeeked({ target: proxy, currentTarget: proxy });
             }
           } else {
             ytStateRef.current.pendingSeek = sec;
@@ -196,6 +209,46 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
       window.removeEventListener('keydown', unmuteOnGesture);
       unmuteOnGesture = null;
     };
+
+    // Position lue directement sur le lecteur YouTube. La boucle tourne aussi
+    // pendant une pause : un retour en arrière (curseur, bouton) ou un arrêt
+    // doit immédiatement mettre à jour le timecode affiché et celui du codage.
+    const emitTime = (force = false) => {
+      const p = ytPlayerRef.current;
+      if (!p || !ytReadyRef.current || typeof p.getCurrentTime !== 'function') return;
+      const t = Number(p.getCurrentTime());
+      if (!Number.isFinite(t)) return;
+      const d = typeof p.getDuration === 'function' ? Number(p.getDuration()) : 0;
+      if (Number.isFinite(d) && d > 0) ytStateRef.current.duration = d;
+
+      // Saut demandé par l'application : YouTube applique le `seekTo` de façon
+      // asynchrone. Tant qu'il renvoie l'ancienne position, on conserve la
+      // position demandée au lieu de réafficher l'ancienne.
+      const guard = ytStateRef.current.seekingTo;
+      if (guard) {
+        const applied = Math.abs(t - guard.target) <= 0.75;
+        if (!applied && Date.now() - guard.at < 1500) return;
+        ytStateRef.current.seekingTo = null;
+      }
+
+      const delta = Math.abs(t - ytStateRef.current.currentTime);
+      if (!force && delta < 0.04) return;
+      ytStateRef.current.currentTime = t;
+      const target = { currentTime: t, duration: ytStateRef.current.duration };
+      if (callbacksRef.current.onTimeUpdate) {
+        callbacksRef.current.onTimeUpdate({ target, currentTarget: target });
+      }
+      // Saut franc (curseur YouTube, retour en arrière) : on prévient comme le
+      // ferait l'événement `seeked` d'un <video>.
+      if (delta > 1.5 && callbacksRef.current.onSeeked) {
+        callbacksRef.current.onSeeked({ target, currentTarget: target });
+      }
+    };
+
+    // Boucle créée avant même l'API YouTube : elle ne fait rien tant que le
+    // lecteur n'est pas prêt, mais elle ne peut pas être perdue si `onReady`
+    // n'est pas émis.
+    pollTimer = setInterval(() => emitTime(false), 100);
 
     loadYouTubeIframeApi().then((YT) => {
       if (cancelled || !YT || !ytContainerRef.current) return;
@@ -279,28 +332,15 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
             }
 
             if (autoPlay) startPlayback();
-
-            pollTimer = setInterval(() => {
-              if (!ytReadyRef.current || typeof player.getCurrentTime !== 'function') return;
-              const t = Number(player.getCurrentTime());
-              const d = typeof player.getDuration === 'function' ? Number(player.getDuration()) : 0;
-              if (Number.isFinite(d) && d > 0) ytStateRef.current.duration = d;
-              if (Number.isFinite(t) && Math.abs(t - ytStateRef.current.currentTime) >= 0.04) {
-                ytStateRef.current.currentTime = t;
-                if (callbacksRef.current.onTimeUpdate) {
-                  const target = {
-                    currentTime: t,
-                    duration: ytStateRef.current.duration,
-                  };
-                  callbacksRef.current.onTimeUpdate({ target, currentTarget: target });
-                }
-              }
-            }, 100);
           },
           onStateChange: (event) => {
             if (cancelled) return;
             const state = event.data;
             const YTState = window.YT?.PlayerState || {};
+            // La position est relue à chaque changement d'état : une pause ou
+            // une reprise juste après un déplacement affiche tout de suite le
+            // bon timecode, sans attendre le tour suivant de la boucle.
+            emitTime(true);
             if (state === YTState.PLAYING) {
               ytStateRef.current.paused = false;
               if (callbacksRef.current.onPlay) callbacksRef.current.onPlay(event);
@@ -412,6 +452,7 @@ const SmartVideoPlayer = forwardRef(function SmartVideoPlayer(
       style={style}
       className={className}
       onTimeUpdate={onTimeUpdate}
+      onSeeked={onSeeked}
       onLoadedMetadata={onLoadedMetadata}
       onPlay={onPlay}
       onPause={onPause}

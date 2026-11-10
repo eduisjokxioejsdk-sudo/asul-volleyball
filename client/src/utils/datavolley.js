@@ -1157,6 +1157,39 @@ export function nextBlockTimes(times, previousBuffer, nextBuffer, now) {
 }
 
 /**
+ * Ré-horodate les codes encore en attente quand on revient en arrière dans la
+ * vidéo.
+ *
+ * Un code ne peut pas avoir été terminé APRÈS la position courante de la
+ * vidéo : si c'est le cas, c'est qu'on a reculé (barre de progression, bouton
+ * « −5 s », lecteur YouTube ou fichier local). Les codes en attente reprennent
+ * alors la position courante, pour que l'action validée porte bien le timecode
+ * de l'image qu'on est en train de coder.
+ *
+ * Un temps antérieur à la position courante (lecture normale) est conservé :
+ * chaque code garde l'instant où il a été tapé, façon DataVolley 4.
+ *
+ * @param {Array<number|null>} times - temps des blocs du tampon courant
+ * @param {number|null} now - position vidéo courante
+ * @param {number} [tolerance=0.5] - avance tolérée avant ré-horodatage (s)
+ * @returns {Array<number|null>} le tableau reçu si rien ne change
+ */
+export function restampPendingBlockTimes(times, now, tolerance = 0.5) {
+  if (!Array.isArray(times) || times.length === 0) return times;
+  if (typeof now !== 'number' || !Number.isFinite(now)) return times;
+  const limit = now + Math.max(0, Number(tolerance) || 0);
+  let changed = false;
+  const next = times.map((t) => {
+    if (typeof t === 'number' && Number.isFinite(t) && t > limit) {
+      changed = true;
+      return now;
+    }
+    return t;
+  });
+  return changed ? next : times;
+}
+
+/**
  * Timecodes alignés sur les items de `parseSequence(buffer)` : un bloc donne
  * une action, sauf une formule combinée qui en donne deux (même temps).
  */

@@ -1,8 +1,20 @@
 {
-  "version": "3.9.1",
-  "releasedAt": "2026-11-09",
+  "version": "3.9.2",
+  "releasedAt": "2026-11-10",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.9.2",
+      "date": "2026-11-10",
+      "title": "Codage : le timecode suit la vidéo quand on revient en arrière",
+      "items": [
+        "Retour en arrière dans la vidéo (curseur, boutons, lecteur YouTube comme fichier local) : les codes encore dans le champ de saisie reprennent la position courante — l’action validée ne garde plus le timecode d’avant (6:30 au lieu de 6:00)",
+        "Le timecode affiché sous le champ des codes est relu à chaque déplacement et à chaque pause du lecteur YouTube, sans attendre le tour de boucle suivant",
+        "Serveur pré-rempli d’un nouveau point : il reçoit le timecode du moment de la validation, et non plus celui du service de l’échange précédent",
+        "Le lecteur YouTube signale désormais les sauts de la vidéo comme un fichier local (décalage CAM 2 réaligné après un déplacement)",
+        "Validation : nouveaux contrôles sur le ré-horodatage des codes après un retour en arrière et sur le serveur pré-rempli"
+      ]
+    },
     {
       "version": "3.9.1",
       "date": "2026-11-09",
