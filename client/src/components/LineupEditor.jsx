@@ -28,7 +28,15 @@ const inputStyle = {
  * @param {Function} props.onLineupChange
  * @param {Function} props.onConfigChange
  */
-export default function LineupEditor({ title, lineup, config, onLineupChange, onConfigChange }) {
+export default function LineupEditor({
+  title,
+  lineup,
+  config,
+  onLineupChange,
+  onConfigChange,
+  showAutoSix = true,
+  showLiberoFor = true,
+}) {
   const l = normalizeLineup(lineup);
   const issues = validateLineup(l, config);
   const libero = config?.libero || '';
@@ -41,8 +49,9 @@ export default function LineupEditor({ title, lineup, config, onLineupChange, on
 
   const setRole = (number, role) => {
     const num = Number(number);
+    const existing = (config?.roster || []).find((p) => Number(p.number) === num);
     const roster = [...(config?.roster || [])].filter((p) => Number(p.number) !== num);
-    if (num > 0) roster.push({ number: num, name: '', role });
+    if (num > 0) roster.push({ number: num, name: existing?.name || '', role });
     roster.sort((a, b) => a.number - b.number);
     onConfigChange({ ...(config || {}), roster });
   };
@@ -75,19 +84,21 @@ export default function LineupEditor({ title, lineup, config, onLineupChange, on
               <option key={r.id} value={r.id}>{r.label}</option>
             ))}
           </select>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            title="Désigner ce joueur comme remplacé par le libéro sur les postes arrière"
-            disabled={!l[p]}
-            onClick={() => {
-              if (String(liberoFor) === String(l[p])) onConfigChange({ ...(config || {}), liberoFor: null });
-              else onConfigChange({ ...(config || {}), liberoFor: l[p], libero: libero || l[p] });
-            }}
-            style={{ color: String(liberoFor) === String(l[p]) ? 'var(--accent)' : undefined }}
-          >
-            Lib
-          </button>
+          {showLiberoFor && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              title="Désigner ce joueur comme remplacé par le libéro sur les postes arrière"
+              disabled={!l[p]}
+              onClick={() => {
+                if (String(liberoFor) === String(l[p])) onConfigChange({ ...(config || {}), liberoFor: null });
+                else onConfigChange({ ...(config || {}), liberoFor: l[p], libero: libero || l[p] });
+              }}
+              style={{ color: String(liberoFor) === String(l[p]) ? 'var(--accent)' : undefined }}
+            >
+              Lib
+            </button>
+          )}
         </div>
       ))}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
@@ -101,9 +112,26 @@ export default function LineupEditor({ title, lineup, config, onLineupChange, on
           onChange={(e) => onConfigChange({ ...(config || {}), libero: e.target.value === '' ? null : Number(e.target.value) })}
           style={{ ...inputStyle, width: 70 }}
         />
-        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-          remplace le n°{liberoFor || '—'} sur les postes arrière
-        </span>
+        {(() => {
+          const replaced = [...COURT_POSITIONS.map((p) => l[p]), liberoFor]
+            .filter((n) => Number(n) > 0 && String(n) !== String(libero));
+          const unique = [...new Set(replaced.map(Number))];
+          return (
+            <select
+              value={liberoFor}
+              disabled={!libero}
+              title="Joueur remplacé par le libéro sur les postes arrière"
+              onChange={(e) => onConfigChange({ ...(config || {}), liberoFor: e.target.value === '' ? null : Number(e.target.value) })}
+              style={{ ...inputStyle, maxWidth: 170 }}
+            >
+              <option value="">remplace —</option>
+              {unique.map((n) => (
+                <option key={n} value={n}>remplace n°{n}</option>
+              ))}
+            </select>
+          );
+        })()}
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>sur les postes arrière</span>
       </div>
       {!issues.valid && (
         <p style={{ fontSize: 11, color: 'var(--danger, #e05252)', marginTop: 6 }}>
@@ -111,9 +139,11 @@ export default function LineupEditor({ title, lineup, config, onLineupChange, on
         </p>
       )}
       <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onLineupChange(autoLineup(config))}>
-          Six automatique
-        </button>
+        {showAutoSix && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onLineupChange(autoLineup(config))}>
+            Six automatique
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-secondary btn-sm"

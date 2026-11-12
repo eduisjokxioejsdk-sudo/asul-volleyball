@@ -1,8 +1,20 @@
 {
-  "version": "3.15.1",
+  "version": "3.16.0",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.16.0",
+      "date": "2026-11-12",
+      "title": "Data Volley : six & rôles plus rapide, premier serveur et enregistrement automatiques",
+      "items": [
+        "Le bouton « Six automatique » et les boutons « Lib » à droite de chaque joueur sont retirés : le libéro se renseigne une seule fois, sur sa ligne dédiée, avec le joueur qu’il remplace",
+        "Le premier serveur alterne automatiquement d’un set à l’autre : si l’équipe A sert au set 1, c’est l’équipe B au set 2, puis l’équipe A au set 3, et ainsi de suite",
+        "Chaque clic sur une position, chaque numéro saisi et chaque rôle modifié sont enregistrés automatiquement sans fermer la fenêtre ; un indicateur précise « Enregistré automatiquement »",
+        "Les numéros saisis sont rapprochés de la fiche de l’équipe : nom et rôle (passeur, pointu, réceptionneur, central, libéro) sont appliqués directement, ainsi que le libéro et le joueur qu’il remplace",
+        "Validation : build, rendu de la fenêtre Six & rôles et suites de tests contrôlés sans erreur"
+      ]
+    },
     {
       "version": "3.15.1",
       "date": "2026-11-12",

@@ -79,6 +79,61 @@ export function playerInfo(config, number) {
 }
 
 /**
+ * Complète une fiche équipe avec les joueurs connus (fiche globale de l'équipe
+ * ou joueurs déjà renseignés dans un autre set) :
+ * - les numéros absents sont ajoutés avec leur nom et leur rôle ;
+ * - un rôle encore « polyvalent » est remplacé par le rôle connu ;
+ * - un rôle explicitement choisi dans la fenêtre Six & rôles est conservé.
+ * Le libéro et le joueur remplacé sont complétés seulement s'ils sont vides.
+ */
+export function mergeKnownPlayers(config, players, options = {}) {
+  const byNumber = new Map();
+  for (const p of config?.roster || []) {
+    const n = Number(p.number);
+    if (n > 0) byNumber.set(n, { ...p, number: n });
+  }
+
+  const roleOf = (p) => {
+    if (ROLE_IDS.includes(p?.role)) return p.role;
+    return p?.is_libero || p?.isLibero ? 'libero' : 'universal';
+  };
+
+  for (const p of players || []) {
+    const n = Number(p?.number ?? p?.player_number ?? 0) || 0;
+    if (n <= 0) continue;
+    const knownRole = roleOf(p);
+    const existing = byNumber.get(n);
+    if (!existing) {
+      byNumber.set(n, {
+        number: n,
+        name: p.name || p.player_name || '',
+        role: knownRole,
+        serve_type: p.serve_type || '',
+      });
+      continue;
+    }
+    byNumber.set(n, {
+      ...existing,
+      name: existing.name || p.name || p.player_name || '',
+      role: ROLE_IDS.includes(existing.role) && existing.role !== 'universal' ? existing.role : knownRole,
+      serve_type: existing.serve_type || p.serve_type || '',
+    });
+  }
+
+  const fallbackLibero =
+    Number(options.libero) ||
+    Number((players || []).find((p) => roleOf(p) === 'libero')?.number) ||
+    null;
+
+  return {
+    roster: [...byNumber.values()].sort((a, b) => a.number - b.number),
+    libero: config?.libero ? Number(config.libero) : fallbackLibero,
+    liberoFor: config?.liberoFor ? Number(config.liberoFor) : Number(options.liberoFor) || null,
+  };
+}
+
+
+/**
  * Composition réellement sur le terrain, libéro appliqué.
  * @returns {Object} { P1..P6 } de { position, number, name, role, isLibero, replaced }
  */

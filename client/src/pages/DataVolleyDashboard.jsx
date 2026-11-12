@@ -3,12 +3,12 @@ import PancakeLogo from '../components/PancakeLogo';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { videosAPI, datavolleyAPI } from '../services/api';
+import { videosAPI, datavolleyAPI, teamsAPI } from '../services/api';
 import useCollectionChanged, { useOnCollectionsChanged } from '../hooks/useCollectionChanged';
 import SmartVideoPlayer from '../components/SmartVideoPlayer';
 import { extractYouTubeId } from '../utils/youtube';
 import { isUndefinedTeam } from '../utils/teams';
-import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS } from '../utils/rotation';
+import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS, firstServerForSet } from '../utils/rotation';
 import {
   computeSetterDistributionByRotation,
   computeSetterTendencies,
@@ -25,7 +25,7 @@ import { applyCompoundAutoCodes, matchMacroShortcut } from '../utils/compoundCod
 import { handleCodeFieldKeyDown, handleRemappedKeyDown } from '../utils/keyboardRemap';
 import useDualScreenVideo from '../hooks/useDualScreenVideo';
 import PlaylistManagerModal from '../components/PlaylistManagerModal';
-import { emptyTeamConfig, parseSavedLineup, serializeSavedLineup, serverPrefill } from '../utils/lineup';
+import { emptyTeamConfig, parseSavedLineup, serializeSavedLineup, serverPrefill, mergeKnownPlayers, normalizeTeamConfig } from '../utils/lineup';
 import { computeMatchReport, indexActionSets, indexActionLineups, reportToRows } from '../utils/matchReport';
 import { computeScouting, tacticToRows } from '../utils/scouting';
 import { downloadTextFile, rowsToCsv } from '../utils/download';
@@ -216,6 +216,21 @@ function SetterPositionPicker({ title, value, onChange }) {
   );
 }
 
+
+/** Brouillon commun aux deux équipes pour l'onglet « Six & rôles ». */
+function emptySetupDraft() {
+  return {
+    set: 1,
+    firstServer: 'team1',
+    homeSetterPos: null,
+    awaySetterPos: null,
+    homeLineup: emptyLineup(),
+    awayLineup: emptyLineup(),
+    homeConfig: emptyTeamConfig(),
+    awayConfig: emptyTeamConfig(),
+  };
+}
+
 function DataVolleyDashboard({ user, onLogout }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -289,14 +304,29 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [subIn, setSubIn] = useState('');
   const [savingEvent, setSavingEvent] = useState(false);
   const [showTeams, setShowTeams] = useState(false);
-  const [editSet, setEditSet] = useState(1);
-  const [editFirstServer, setEditFirstServer] = useState('team1');
-  const [editHomeSetterPos, setEditHomeSetterPos] = useState(null);
-  const [editAwaySetterPos, setEditAwaySetterPos] = useState(null);
-  const [editHomeLineup, setEditHomeLineup] = useState(null);
-  const [editAwayLineup, setEditAwayLineup] = useState(null);
-  const [editHomeConfig, setEditHomeConfig] = useState({ roster: [], libero: null, liberoFor: null });
-  const [editAwayConfig, setEditAwayConfig] = useState({ roster: [], libero: null, liberoFor: null });
+  // Un seul brouillon pour l'onglet Six & rôles : chaque modification est
+  // enregistrée automatiquement par set (debounce + file d'attente).
+  const [editDraft, setEditDraft] = useState(emptySetupDraft);
+  const {
+    set: editSet,
+    firstServer: editFirstServer,
+    homeSetterPos: editHomeSetterPos,
+    awaySetterPos: editAwaySetterPos,
+    homeLineup: editHomeLineup,
+    awayLineup: editAwayLineup,
+    homeConfig: editHomeConfig,
+    awayConfig: editAwayConfig,
+  } = editDraft;
+  const editDraftRef = useRef(editDraft);
+  const setupsRef = useRef({});
+  const setupSaveTimer = useRef(null);
+  const setupSaveQueue = useRef(Promise.resolve());
+  const pendingSetupSave = useRef(null);
+  const setupSaveVersion = useRef(0);
+  const [setupSaveState, setSetupSaveState] = useState('idle');
+  // Fiches globales des deux équipes (rôles et libéro appliqués automatiquement).
+  const [homeTeamData, setHomeTeamData] = useState(null);
+  const [awayTeamData, setAwayTeamData] = useState(null);
   const [distPos, setDistPos] = useState('Total');
   const [distTeam, setDistTeam] = useState('home');
   const [distFilters, setDistFilters] = useState({
@@ -320,6 +350,10 @@ function DataVolleyDashboard({ user, onLogout }) {
   const [angleOffsetInput, setAngleOffsetInput] = useState(0);
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
   const [youtubeUrlAngle2Input, setYoutubeUrlAngle2Input] = useState('');
+
+  useEffect(() => {
+    setupsRef.current = setups;
+  }, [setups]);
 
   useEffect(() => {
     const saved = loadCourtCalibration(id);
@@ -541,6 +575,35 @@ function DataVolleyDashboard({ user, onLogout }) {
   const team1 = video?.team1_name || 'Domicile';
   const team2 = video?.team2_name || 'Extérieur';
   const teamLabel = (t) => (t === 'home' ? team1 : team2);
+  // Fiches globales des équipes associées au match : elles fournissent les
+  // numéros, noms et rôles à appliquer automatiquement dans le six.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [idsRes, teamsRes] = await Promise.all([datavolleyAPI.getTeams(id), teamsAPI.getAll()]);
+        if (cancelled) return;
+        const teams = teamsRes?.data?.teams || [];
+        const ids = idsRes?.data || {};
+        const byId = new Map(teams.map((t) => [Number(t.id), t]));
+        const pick = (teamId, name) => {
+          const linked = byId.get(Number(teamId));
+          if (linked) return linked;
+          const wanted = String(name || '').trim().toLowerCase();
+          return teams.find((t) => String(t.name || '').trim().toLowerCase() === wanted) || null;
+        };
+        setHomeTeamData(pick(ids.home_team_id, team1));
+        setAwayTeamData(pick(ids.away_team_id, team2));
+      } catch (err) {
+        console.warn('Impossible de charger les fiches équipe DataVolley :', err?.message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, team1, team2]);
+
+
 
   const matchFinished = match?.status === 'finished';
 
@@ -707,6 +770,7 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   // Persiste les positions après correction manuelle (débounce 600 ms).
   const persistSetups = (updated) => {
+    setupsRef.current = updated;
     setSetups(updated);
     if (rotSaveTimer.current) clearTimeout(rotSaveTimer.current);
     rotSaveTimer.current = setTimeout(() => {
@@ -1338,7 +1402,10 @@ function DataVolleyDashboard({ user, onLogout }) {
 
         try {
           const setupsRes = await datavolleyAPI.getSetups(id);
-          if (!cancelled) setSetups(setupsRes.data.setups || {});
+          if (!cancelled) {
+            setupsRef.current = setupsRes.data.setups || {};
+            setSetups(setupsRef.current);
+          }
         } catch (err) {
           console.warn('Impossible de charger les positions DataVolley :', err?.message);
         }
@@ -1389,7 +1456,15 @@ function DataVolleyDashboard({ user, onLogout }) {
       }
       if (syncRes?.data?.sync) setSync(syncRes.data.sync);
       if (matchRes?.data?.match) setMatch(matchRes.data.match);
-      if (setupsRes?.data?.setups && !rotSaveTimer.current) setSetups(setupsRes.data.setups);
+      if (
+        setupsRes?.data?.setups &&
+        !rotSaveTimer.current &&
+        !setupSaveTimer.current &&
+        !pendingSetupSave.current
+      ) {
+        setupsRef.current = setupsRes.data.setups;
+        setSetups(setupsRes.data.setups);
+      }
       if (eventsRes?.data?.events) setEvents(eventsRes.data.events);
       if (auditRes?.data?.entries) setAuditEntries(auditRes.data.entries);
     } catch {
@@ -2189,53 +2264,227 @@ function DataVolleyDashboard({ user, onLogout }) {
     flashTimer.current = setTimeout(() => setFlash(null), 3000);
   };
 
-  const applySetToEditor = (setNumber) => {
-    const s = setups?.[String(setNumber)] || {};
-    setEditSet(setNumber);
-    setEditFirstServer(s.first_server === 'team2' ? 'team2' : 'team1');
-    setEditHomeSetterPos(s.home_setter_pos || null);
-    setEditAwaySetterPos(s.away_setter_pos || null);
+  /** Tous les joueurs connus d'un côté : fiche globale + autres sets déjà saisis. */
+  const knownTeamConfig = (side) => {
+    const base = normalizeTeamConfig(side === 'away' ? awayTeamData : homeTeamData);
+    const byNumber = new Map();
+    for (const p of base.roster || []) {
+      const n = Number(p.number);
+      if (n > 0) byNumber.set(n, { ...p });
+    }
+    for (const setup of Object.values(setupsRef.current || {})) {
+      const parsed = parseSavedLineup(side === 'away' ? setup?.away_lineup : setup?.home_lineup);
+      for (const p of parsed.config.roster || []) {
+        const n = Number(p.number);
+        if (n > 0 && !byNumber.has(n)) byNumber.set(n, { ...p });
+      }
+    }
+    return {
+      roster: [...byNumber.values()].sort((a, b) => a.number - b.number),
+      libero: base.libero,
+      liberoFor: base.liberoFor,
+    };
+  };
+
+  /** Construit le brouillon d'un set, rôles de l'équipe déjà appliqués. */
+  const draftFromSet = (setNumber) => {
+    const s = setupsRef.current?.[String(setNumber)] || {};
     const h = parseSavedLineup(s.home_lineup);
     const a = parseSavedLineup(s.away_lineup);
-    setEditHomeLineup(h.lineup || emptyLineup());
-    setEditAwayLineup(a.lineup || emptyLineup());
-    setEditHomeConfig(h.config || emptyTeamConfig());
-    setEditAwayConfig(a.config || emptyTeamConfig());
+    const homeKnown = knownTeamConfig('home');
+    const awayKnown = knownTeamConfig('away');
+    return {
+      set: setNumber,
+      firstServer: firstServerForSet(setupsRef.current, setNumber),
+      homeSetterPos: s.home_setter_pos || null,
+      awaySetterPos: s.away_setter_pos || null,
+      homeLineup: h.lineup || emptyLineup(),
+      awayLineup: a.lineup || emptyLineup(),
+      homeConfig: mergeKnownPlayers(h.config || emptyTeamConfig(), homeKnown.roster, {
+        libero: homeKnown.libero,
+        liberoFor: homeKnown.liberoFor,
+      }),
+      awayConfig: mergeKnownPlayers(a.config || emptyTeamConfig(), awayKnown.roster, {
+        libero: awayKnown.libero,
+        liberoFor: awayKnown.liberoFor,
+      }),
+    };
+  };
+
+  const applySetToEditor = (setNumber) => {
+    const draft = draftFromSet(setNumber);
+    editDraftRef.current = draft;
+    setEditDraft(draft);
   };
 
   const openTeamsModal = () => {
+    setSetupSaveState('idle');
     applySetToEditor(1);
     setShowTeams(true);
   };
 
   const selectEditSet = (n) => applySetToEditor(n);
 
+  /** Sérialise le brouillon courant dans la forme attendue par `set_setups`. */
+  const setupFromDraft = (draft) => ({
+    set_number: draft.set,
+    first_server: draft.firstServer,
+    home_setter_pos: draft.homeSetterPos,
+    away_setter_pos: draft.awaySetterPos,
+    home_lineup: serializeSavedLineup(draft.homeLineup, draft.homeConfig),
+    away_lineup: serializeSavedLineup(draft.awayLineup, draft.awayConfig),
+  });
+
+  /** Applique le brouillon à la map des sets ; le set 1 pilote l'alternance. */
+  const nextSetupsForDraft = (draft) => {
+    const next = { ...(setupsRef.current || {}), [String(draft.set)]: setupFromDraft(draft) };
+    if (Number(draft.set) === 1) {
+      for (let n = 2; n <= 5; n += 1) {
+        const key = String(n);
+        if (next[key]) next[key] = { ...next[key], first_server: firstServerForSet(next, n) };
+      }
+    }
+    return next;
+  };
+
+  const enqueueSetupSave = (payload) => {
+    const run = setupSaveQueue.current.catch(() => {}).then(() => datavolleyAPI.saveSetups(id, payload));
+    setupSaveQueue.current = run.catch(() => {});
+    return run;
+  };
+
+  const scheduleSetupSave = (next) => {
+    pendingSetupSave.current = next;
+    setSetupSaveState('saving');
+    const version = ++setupSaveVersion.current;
+    if (setupSaveTimer.current) clearTimeout(setupSaveTimer.current);
+    setupSaveTimer.current = setTimeout(async () => {
+      setupSaveTimer.current = null;
+      const payload = pendingSetupSave.current;
+      pendingSetupSave.current = null;
+      if (!payload) return;
+      try {
+        await enqueueSetupSave(payload);
+        if (version === setupSaveVersion.current) setSetupSaveState('saved');
+      } catch (err) {
+        console.error('Failed to save teams/setup:', err);
+        if (version === setupSaveVersion.current) {
+          setSetupSaveState('error');
+          setFlash({ ok: false, text: 'Impossible d’enregistrer les positions.' });
+          if (flashTimer.current) clearTimeout(flashTimer.current);
+          flashTimer.current = setTimeout(() => setFlash(null), 3000);
+        }
+      }
+    }, 300);
+  };
+
+  const flushSetupSave = () => {
+    if (setupSaveTimer.current) {
+      clearTimeout(setupSaveTimer.current);
+      setupSaveTimer.current = null;
+    }
+    const payload = pendingSetupSave.current;
+    pendingSetupSave.current = null;
+    if (!payload) return Promise.resolve();
+    const version = ++setupSaveVersion.current;
+    setSetupSaveState('saving');
+    return enqueueSetupSave(payload)
+      .then(() => {
+        if (version === setupSaveVersion.current) setSetupSaveState('saved');
+      })
+      .catch((err) => {
+        console.error('Failed to save teams/setup:', err);
+        setSetupSaveState('error');
+      });
+  };
+
+  /** Toute modification du brouillon met à jour l'affichage puis sauvegarde. */
+  const commitDraft = (patch, { persist = true } = {}) => {
+    const draft = { ...editDraftRef.current, ...patch };
+    editDraftRef.current = draft;
+    setEditDraft(draft);
+    const next = nextSetupsForDraft(draft);
+    setupsRef.current = next;
+    setSetups(next);
+    if (persist) scheduleSetupSave(next);
+  };
+
+  const handleHomeLineupChange = (lineup) => {
+    const known = knownTeamConfig('home');
+    const homeConfig = mergeKnownPlayers(editDraftRef.current.homeConfig, known.roster, {
+      libero: known.libero,
+      liberoFor: known.liberoFor,
+    });
+    commitDraft({ homeLineup: lineup, homeConfig });
+  };
+
+  const handleAwayLineupChange = (lineup) => {
+    const known = knownTeamConfig('away');
+    const awayConfig = mergeKnownPlayers(editDraftRef.current.awayConfig, known.roster, {
+      libero: known.libero,
+      liberoFor: known.liberoFor,
+    });
+    commitDraft({ awayLineup: lineup, awayConfig });
+  };
+
+  const closeTeamsModal = () => {
+    flushSetupSave();
+    setShowTeams(false);
+  };
+
   const saveSetup = async () => {
+    const next = nextSetupsForDraft(editDraftRef.current);
+    setupsRef.current = next;
+    setSetups(next);
+    if (setupSaveTimer.current) {
+      clearTimeout(setupSaveTimer.current);
+      setupSaveTimer.current = null;
+    }
+    pendingSetupSave.current = null;
+    const version = ++setupSaveVersion.current;
+    setSetupSaveState('saving');
     try {
-      const updated = {
-        ...setups,
-        [String(editSet)]: {
-          set_number: editSet,
-          first_server: editFirstServer,
-          home_setter_pos: editHomeSetterPos,
-          away_setter_pos: editAwaySetterPos,
-          home_lineup: serializeSavedLineup(editHomeLineup, editHomeConfig),
-          away_lineup: serializeSavedLineup(editAwayLineup, editAwayConfig),
-        },
-      };
-      await datavolleyAPI.saveSetups(id, updated);
-      setSetups(updated);
+      await enqueueSetupSave(next);
+      if (version === setupSaveVersion.current) setSetupSaveState('saved');
       setShowTeams(false);
       setFlash({ ok: true, text: 'Positions, six et rôles enregistrés.' });
     } catch (err) {
       console.error('Failed to save teams/setup:', err);
+      setSetupSaveState('error');
       setFlash({ ok: false, text: 'Impossible d’enregistrer.' });
     }
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 3000);
   };
 
+
+
+  // Si les fiches équipe arrivent après l'ouverture de la fenêtre, on complète
+  // immédiatement les rôles connus (sans écraser un rôle choisi à la main).
+  useEffect(() => {
+    if (!showTeams) return;
+    const draft = editDraftRef.current;
+    const homeKnown = knownTeamConfig('home');
+    const awayKnown = knownTeamConfig('away');
+    const homeConfig = mergeKnownPlayers(draft.homeConfig, homeKnown.roster, {
+      libero: homeKnown.libero,
+      liberoFor: homeKnown.liberoFor,
+    });
+    const awayConfig = mergeKnownPlayers(draft.awayConfig, awayKnown.roster, {
+      libero: awayKnown.libero,
+      liberoFor: awayKnown.liberoFor,
+    });
+    if (
+      JSON.stringify(homeConfig) !== JSON.stringify(draft.homeConfig) ||
+      JSON.stringify(awayConfig) !== JSON.stringify(draft.awayConfig)
+    ) {
+      commitDraft({ homeConfig, awayConfig }, { persist: false });
+    }
+  }, [homeTeamData, awayTeamData, showTeams]);
+
+
   const errorCount = useMemo(() => actions.filter((a) => !validateAction(a.code, codeOpts).valid).length, [actions, codeOpts]);
+
   const ralliesWithErrors = useMemo(
     () => rallies.filter((r) => r.actions.some((a) => !validateAction(a.code, codeOpts).valid)),
     [rallies, codeOpts]
@@ -3819,7 +4068,7 @@ function DataVolleyDashboard({ user, onLogout }) {
 
       <AnimatePresence>
         {showTeams && (
-          <motion.div className="modal-overlay" onClick={() => setShowTeams(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div className="modal-overlay" onClick={closeTeamsModal} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <motion.div className="modal" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 16 }} style={{ maxWidth: 760 }}>
               <h2><Users size={18} /> Six de départ, rôles et libéro</h2>
 
@@ -3831,33 +4080,58 @@ function DataVolleyDashboard({ user, onLogout }) {
 
               <div className="form-group">
                 <label>Premier serveur (set {editSet})</label>
-                <div className="btn-group-horizontal">
-                  <button type="button" className={`btn-choice ${editFirstServer === 'team1' ? 'active team1' : ''}`} onClick={() => setEditFirstServer('team1')}>{team1}</button>
-                  <button type="button" className={`btn-choice ${editFirstServer === 'team2' ? 'active team2' : ''}`} onClick={() => setEditFirstServer('team2')}>{team2}</button>
-                </div>
+                {editSet === 1 ? (
+                  <div className="btn-group-horizontal">
+                    <button type="button" className={`btn-choice ${editFirstServer === 'team1' ? 'active team1' : ''}`} onClick={() => commitDraft({ firstServer: 'team1' })}>{team1}</button>
+                    <button type="button" className={`btn-choice ${editFirstServer === 'team2' ? 'active team2' : ''}`} onClick={() => commitDraft({ firstServer: 'team2' })}>{team2}</button>
+                  </div>
+                ) : (
+                  <p className="dv-hint" style={{ margin: 0 }}>
+                    <strong>{editFirstServer === 'team1' ? team1 : team2}</strong> — alternance automatique après le set 1.
+                  </p>
+                )}
               </div>
 
-              <SetterPositionPicker title={team1} value={editHomeSetterPos} onChange={(p) => setEditHomeSetterPos(p)} />
-              <SetterPositionPicker title={team2} value={editAwaySetterPos} onChange={(p) => setEditAwaySetterPos(p)} />
+              <SetterPositionPicker title={team1} value={editHomeSetterPos} onChange={(p) => commitDraft({ homeSetterPos: p })} />
+              <SetterPositionPicker title={team2} value={editAwaySetterPos} onChange={(p) => commitDraft({ awaySetterPos: p })} />
 
               <LineupEditor
                 title={team1}
                 lineup={editHomeLineup || emptyLineup()}
                 config={editHomeConfig}
-                onLineupChange={setEditHomeLineup}
-                onConfigChange={setEditHomeConfig}
+                onLineupChange={handleHomeLineupChange}
+                onConfigChange={(config) => commitDraft({ homeConfig: config })}
+                showAutoSix={false}
+                showLiberoFor={false}
               />
               <LineupEditor
                 title={team2}
                 lineup={editAwayLineup || emptyLineup()}
                 config={editAwayConfig}
-                onLineupChange={setEditAwayLineup}
-                onConfigChange={setEditAwayConfig}
+                onLineupChange={handleAwayLineupChange}
+                onConfigChange={(config) => commitDraft({ awayConfig: config })}
+                showAutoSix={false}
+                showLiberoFor={false}
               />
 
-              <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
                 <button className="btn btn-primary" onClick={saveSetup}>Enregistrer</button>
-                <button className="btn btn-secondary" onClick={() => setShowTeams(false)}>Fermer</button>
+                <button className="btn btn-secondary" onClick={closeTeamsModal}>Fermer</button>
+                <span
+                  className="dv-hint"
+                  style={{
+                    margin: 0,
+                    color: setupSaveState === 'error' ? 'var(--danger, #e05252)' : undefined,
+                  }}
+                >
+                  {setupSaveState === 'saving'
+                    ? 'Enregistrement…'
+                    : setupSaveState === 'saved'
+                      ? 'Enregistré automatiquement'
+                      : setupSaveState === 'error'
+                        ? 'Enregistrement impossible'
+                        : 'Enregistrement automatique activé'}
+                </span>
               </div>
             </motion.div>
           </motion.div>

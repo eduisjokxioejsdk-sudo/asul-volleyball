@@ -398,6 +398,35 @@ console.log('\n== Rapport : chaque fenêtre d’analyse ==');
   })());
 }
 
+console.log('\n== Fenêtre Six & rôles ==');
+{
+  const mod = await vite.ssrLoadModule('/src/components/LineupEditor.jsx');
+  const Editor = mod.default;
+  const html = renderToString(
+    React.createElement(Editor, {
+      title: 'ASUL',
+      lineup: { P1: 4, P2: 7, P3: 9, P4: 12, P5: 2, P6: 5 },
+      config: {
+        roster: [
+          { number: 4, name: 'Passeur', role: 'setter' },
+          { number: 7, name: 'Central', role: 'middle' },
+          { number: 9, name: 'Pointu', role: 'opposite' },
+        ],
+        libero: 12,
+        liberoFor: 7,
+      },
+      onLineupChange: noop,
+      onConfigChange: noop,
+      showAutoSix: false,
+      showLiberoFor: false,
+    })
+  );
+  check('le bouton Six automatique est masqué', !/Six automatique/.test(html));
+  check('les boutons Lib par joueur sont masqués', !/>\s*Lib\s*</.test(html));
+  check('la ligne libéro propose le joueur remplacé', /remplace/.test(html));
+  check('le rôle du passeur est affiché', /Passeur|PAS|setter/.test(html));
+}
+
 await vite.close();
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);
 process.exit(failures === 0 ? 0 : 1);

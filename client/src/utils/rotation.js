@@ -152,10 +152,20 @@ function setupFor(setups, n) {
   return setups?.[String(n)] || {};
 }
 
+/** Premier serveur d'un set (set 1 enregistré, puis alternance automatique). */
+export function firstServerForSet(setups, setNumber) {
+  const n = Math.max(1, Number(setNumber) || 1);
+  const saved = setupFor(setups, n).first_server;
+  if (n === 1) return saved === 'team2' ? 'team2' : 'team1';
+  const base = setupFor(setups, 1).first_server === 'team2' ? 'team2' : 'team1';
+  const other = base === 'team1' ? 'team2' : 'team1';
+  return n % 2 === 0 ? other : base;
+}
+
 /** (Ré)initialise l'état d'un set à partir de la configuration enregistrée. */
 function initSet(state, setNumber, setups) {
   const st = setupFor(setups, setNumber);
-  state.server = st.first_server === 'team2' ? 'team2' : 'team1';
+  state.server = firstServerForSet(setups, setNumber);
   state.homeLineup = normalizeLineup(st.home_lineup);
   state.awayLineup = normalizeLineup(st.away_lineup);
   state.homePos = st.home_setter_pos || null;
