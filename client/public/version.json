@@ -1,8 +1,20 @@
 {
-  "version": "3.15.0",
+  "version": "3.15.1",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.15.1",
+      "date": "2026-11-12",
+      "title": "Fenêtres d’import et de réaffectation : en haut de l’écran et sélection fiable",
+      "items": [
+        "Les fenêtres « Importer une feuille de match » et « Réaffecter une équipe » s’ouvrent désormais ancrées en haut de l’écran, au-dessus de la page, même lorsque la liste des équipes est défilée tout en bas",
+        "La fenêtre est affichée dans un portail au niveau du document : elle n’est plus enfermée dans la zone défilante de la page",
+        "Le choix de l’équipe de remplacement se fait maintenant par des boutons d’équipe cliquables, avec le nombre de joueurs et une coche sur la sélection ; le menu déroulant qui pouvait rester bloqué sur « Choisir une équipe » est supprimé",
+        "La sélection reste visible et modifiable pendant tout l’assistant, puis la correspondance des numéros s’adapte immédiatement à l’équipe choisie",
+        "Validation : build, rendu des pages et suites de tests contrôlés sans erreur"
+      ]
+    },
     {
       "version": "3.15.0",
       "date": "2026-11-12",

@@ -1,6 +1,7 @@
 import AppNavigation from '../components/AppNavigation';
 import PancakeLogo from '../components/PancakeLogo';
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { teamsAPI } from '../services/api';
@@ -28,6 +29,11 @@ Date : 21/10/2026
 10 GARCIA Romain 1948271 Central
 13 DAVID Clément 1993812 L
 17 BERTRAND Julien 1883920 Central`;
+
+function ModalPortal({ children }) {
+  if (typeof document === 'undefined' || !document.body) return children;
+  return createPortal(children, document.body);
+}
 
 function TeamsPage({ user, onLogout }) {
   const [teams, setTeams] = useState([]);
@@ -977,7 +983,8 @@ function TeamsPage({ user, onLogout }) {
 
       {/* Assistant de réaffectation d'une équipe supprimée */}
       {replacement && (
-        <div className="modal-backdrop" onClick={() => setReplacement(null)}>
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setReplacement(null)}>
           <div
             className="modal-card"
             style={{ maxWidth: 900, width: '94%', maxHeight: '90vh', overflowY: 'auto' }}
@@ -1005,24 +1012,47 @@ function TeamsPage({ user, onLogout }) {
 
                 <div className="form-group">
                   <label>Équipe de remplacement</label>
-                  <select
-                    value={replacement.targetId}
-                    onChange={(e) => changeReplacementTarget(e.target.value)}
-                  >
-                    <option value="">— Choisir une équipe —</option>
-                    {replacementTargets.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({(t.players || []).length} joueur(s))
-                      </option>
-                    ))}
-                  </select>
+                  {replacementTargets.length === 0 ? (
+                    <div className="dv-flash err">
+                      Aucune autre équipe disponible. Créez d’abord l’équipe de remplacement, puis revenez ici.
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                        gap: 8,
+                      }}
+                    >
+                      {replacementTargets.map((t) => {
+                        const active = Number(replacement.targetId) === Number(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            className={`btn ${active ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => changeReplacementTarget(String(t.id))}
+                            style={{
+                              justifyContent: 'space-between',
+                              textAlign: 'left',
+                              padding: '10px 12px',
+                              gap: 10,
+                            }}
+                          >
+                            <span>
+                              <strong>{t.name}</strong>
+                              <br />
+                              <span style={{ fontSize: 11, opacity: 0.75 }}>
+                                {(t.players || []).length} joueur(s)
+                              </span>
+                            </span>
+                            {active ? <Check size={14} /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-
-                {replacementTargets.length === 0 && (
-                  <div className="dv-flash err">
-                    Aucune autre équipe disponible. Créez d’abord l’équipe de remplacement, puis revenez ici.
-                  </div>
-                )}
 
                 <div className="dv-panel" style={{ margin: '10px 0', padding: 12 }}>
                   <strong style={{ fontSize: 13 }}>
@@ -1167,12 +1197,14 @@ function TeamsPage({ user, onLogout }) {
             )}
           </div>
         </div>
+        </ModalPortal>
       )}
 
 
       {/* Modale d'importation Feuille de Match FFVB / .dvw / CSV */}
       {showImportModal && (
-        <div className="modal-backdrop" onClick={() => setShowImportModal(false)}>
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setShowImportModal(false)}>
           <div
             className="modal-card"
             style={{ maxWidth: 820, width: '94%', maxHeight: '90vh', overflowY: 'auto' }}
@@ -1290,6 +1322,7 @@ function TeamsPage({ user, onLogout }) {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );
