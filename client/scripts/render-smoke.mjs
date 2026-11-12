@@ -154,6 +154,32 @@ console.log('\n== Rendu du cumul vidéo multi-matchs ==');
   }
 }
 
+console.log('\n== Rendu du Centre Vidéo en mode cumul ==');
+{
+  const mod = await vite.ssrLoadModule('/src/pages/VideoCenterPage.jsx');
+  const Page = mod.default;
+  try {
+    const html = renderToString(
+      React.createElement(
+        MemoryRouter,
+        { initialEntries: ['/video-center?multi=1,2&team=ASUL'] },
+        React.createElement(Page, {
+          user: { email: 'coach@asul.test', name: 'Coach' },
+          onLogout: noop,
+        })
+      )
+    );
+    check('le Centre Vidéo en cumul se rend sans erreur', html.length > 0);
+    check(
+      'l’écran de chargement du cumul est affiché',
+      /Chargement de la consultation cumulée/.test(html),
+      html.slice(0, 200)
+    );
+  } catch (err) {
+    check('le Centre Vidéo en cumul se rend sans erreur', false, `${err.name}: ${err.message}`);
+  }
+}
+
 console.log('\n== Rendu de la liste des matchs ==');
 {
   const matches = await renderRoute('/src/pages/DataVolleyMatchesPage.jsx', 'default', {

@@ -1,18 +1,18 @@
 {
-  "version": "3.14.0",
+  "version": "3.14.1",
   "releasedAt": "2026-11-10",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
     {
-      "version": "3.14.0",
+      "version": "3.14.1",
       "date": "2026-11-10",
-      "title": "Centre Vidéo : cumul multi-matchs par joueur",
+      "title": "Cumul multi-matchs : l’écran de consultation habituel, sur plusieurs vidéos",
       "items": [
-        "Nouveau bouton « Cumul multi-matchs » dans le Centre Vidéo : sélectionnez tous les matchs ou seulement quelques-uns (pastilles cochables, boutons « Tous » et « Aucun »), comme dans le rapport cumulé des trajectoires",
-        "Choisissez une équipe puis un joueur : toutes ses actions codées sont réunies, avec compteurs par type d’action et par évaluation, détail par match (actions, points) et total cumulé",
-        "Lecteur YouTube synchronisé : cliquez une action pour la revoir (le lecteur ouvre le bon match au bon timecode) ou lancez « Lire la sélection » pour enchaîner toutes les actions, match après match",
-        "Une playlist vidéo du cumul peut être créée en un clic et se retrouve dans « Playlists » du Centre Vidéo",
-        "Validation : nouvel utilitaire playerActionsOf testé (actions d’un joueur sur plusieurs matchs) et rendu de la nouvelle page contrôlé sans erreur"
+        "Le cumul multi-matchs n’utilise plus un écran dédié : il ouvre exactement le même écran de consultation qu’une seule vidéo (lecteur, filtres Équipe / Joueur / Action / Évaluation, play-by-play, playlists, 2ᵉ écran et CAM 2)",
+        "La recherche d’actions porte sur toutes les vidéos sélectionnées ; chaque action garde son match et le lecteur bascule automatiquement sur la bonne vidéo au bon timecode",
+        "Le score, les rotations et les playlists sont recalculés match par match (aucun mélange de sets entre deux vidéos) ; l’équipe suivie occupe le côté 1 et les adversaires le côté 2",
+        "La page de sélection des matchs devient un simple lanceur (Tous / Aucun, équipe à suivre) ; un bouton « Matchs du cumul » permet de modifier la sélection depuis la consultation",
+        "Validation : build, tests et rendu des pages contrôlés sans erreur"
       ]
     },
     {

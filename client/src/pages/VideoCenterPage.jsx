@@ -19,6 +19,7 @@ import { videosAPI, datavolleyAPI, teamsAPI } from '../services/api';
 import useCollectionChanged, { useOnCollectionsChanged } from '../hooks/useCollectionChanged';
 import SmartVideoPlayer from '../components/SmartVideoPlayer';
 import { extractYouTubeId } from '../utils/youtube';
+import { prepareMatches } from '../utils/multiMatch';
 import { formatTimecode, groupActionsIntoRallies, buildPointSegments } from '../utils/datavolley';
 import { computeMatchState } from '../utils/rotation';
 import { Play, Pause, Clock, ArrowLeft, ChevronLeft, ChevronRight, Trash, Tv, Camera, MonitorPlay, Upload, ChartColumn } from '../components/icons';
@@ -47,6 +48,23 @@ export default function VideoCenterPage({ user, onLogout }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialVideoId = searchParams.get('video');
+
+  // Cumul multi-matchs : /video-center?multi=1,2,3&team=Nom
+  const multiKey = searchParams.get('multi') || '';
+  const multiIds = useMemo(() => {
+    const raw = multiKey;
+    if (!raw) return [];
+    return raw
+      .split(',')
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+  }, [multiKey]);
+  const isMulti = multiIds.length > 0;
+  const requestedMultiTeam = searchParams.get('team') || '';
+  const [multiTeam, setMultiTeam] = useState(requestedMultiTeam);
+  const [multiLoading, setMultiLoading] = useState(false);
+  // Position à appliquer dès que le lecteur du match suivant est prêt.
+  const pendingSeekRef = useRef(null);
 
   const [videos, setVideos] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -183,10 +201,83 @@ export default function VideoCenterPage({ user, onLogout }) {
   };
 
   const closeVideoConsultation = () => {
+    // En cumul, « Retour » ramène à la sélection des matchs.
+    if (isMulti) {
+      navigate(
+        `/video-center/multi?ids=${multiIds.join(',')}&team=${encodeURIComponent(multiTeam)}`
+      );
+      return;
+    }
     setSelectedVideo(null);
     setActions([]);
     setIsPlaying(false);
   };
+
+  // --- Cumul multi-matchs : choisir l'équipe puis charger toutes les actions --
+  useEffect(() => {
+    if (!isMulti || multiTeam) return;
+    const first = videos.find((v) => multiIds.some((id) => Number(id) === Number(v.id)));
+    const name = first?.team1_name || first?.team2_name || '';
+    if (name) setMultiTeam(name);
+  }, [isMulti, multiTeam, videos, multiIds]);
+
+  useEffect(() => {
+    if (!isMulti || videos.length === 0) return undefined;
+    let cancelled = false;
+    (async () => {
+      setMultiLoading(true);
+      try {
+        const entries = await Promise.all(
+          multiIds.map(async (vid) => {
+            try {
+              const res = await datavolleyAPI.getActions(vid);
+              return [vid, res.data?.actions || []];
+            } catch {
+              return [vid, []];
+            }
+          })
+        );
+        if (cancelled) return;
+
+        const actionsById = new Map(entries);
+        const videoById = new Map(videos.map((v) => [Number(v.id), v]));
+        const list = multiIds
+          .map((vid) => ({ video: videoById.get(Number(vid)), actions: actionsById.get(vid) || [] }))
+          .filter((m) => m.video);
+        const prepared = prepareMatches(list, multiTeam);
+
+        // Équipe demandée absente de la sélection : on repart de la première.
+        if (prepared.length === 0 && list.length > 0) {
+          const fallback = list[0].video.team1_name || list[0].video.team2_name || '';
+          if (fallback && fallback !== multiTeam) {
+            setMultiTeam(fallback);
+            return;
+          }
+        }
+
+        // Chaque action connaît sa vidéo et son match : la recherche et la
+        // lecture peuvent passer d'un match à l'autre sans perdre le timecode.
+        const combined = prepared.flatMap((m) =>
+          m.actions.map((action) => ({
+            ...action,
+            video_id: m.id,
+            match_label: `${m.video.team1_name || 'Dom'} vs ${m.video.team2_name || 'Ext'}`,
+            match_date: m.video.created_at || '',
+          }))
+        );
+
+        setActions(combined);
+        setSelectedVideo((prev) => {
+          if (prev && multiIds.some((id) => Number(id) === Number(prev.id))) return prev;
+          const firstId = prepared.find((m) => m.actions.length > 0)?.id ?? multiIds[0];
+          return videoById.get(Number(firstId)) || null;
+        });
+      } finally {
+        if (!cancelled) setMultiLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isMulti, multiKey, videos, multiTeam]);
 
   const handleDeleteVideo = async (e, videoId) => {
     e.stopPropagation();
@@ -228,8 +319,13 @@ export default function VideoCenterPage({ user, onLogout }) {
           (teamNameStr && t.name.toLowerCase() === teamNameStr.toLowerCase())
       );
 
-    const homeTeamObj = findTeamObj(selectedVideo.home_team_id, selectedVideo.team1_name);
-    const awayTeamObj = findTeamObj(selectedVideo.away_team_id, selectedVideo.team2_name);
+    const homeTeamObj = isMulti
+      ? teams.find((t) => t.name.toLowerCase() === String(multiTeam || '').toLowerCase())
+      : findTeamObj(selectedVideo.home_team_id, selectedVideo.team1_name);
+    // En cumul, l'adversaire change à chaque match : les numéros codés suffisent.
+    const awayTeamObj = isMulti
+      ? null
+      : findTeamObj(selectedVideo.away_team_id, selectedVideo.team2_name);
 
     const addPlayer = (side, number, name = '') => {
       const num = Number(number);
@@ -265,7 +361,7 @@ export default function VideoCenterPage({ user, onLogout }) {
         if (a.side !== b.side) return a.side === 'home' ? -1 : 1;
         return a.number - b.number;
       });
-  }, [selectedVideo, teams, actions, filterTeam]);
+  }, [selectedVideo, teams, actions, filterTeam, isMulti, multiTeam]);
 
   // Filtrage des actions dans le mode consultation (Équipe + Joueur + Action + Qualité)
   const filteredActions = useMemo(() => {
@@ -283,11 +379,18 @@ export default function VideoCenterPage({ user, onLogout }) {
     });
   }, [actions, filterAction, filterQuality, filterTeam, filterPlayer]);
 
-  // Points (rallies) et segments vidéo correspondants — alimente le modal
-  // de playlists multi-matchs (props `rallies` / `segments` attendues).
+  // Points du match affiché (en cumul, on ne mélange jamais deux matchs : le
+  // modal de playlist enregistre les clips de la vidéo en cours).
+  const playlistSourceActions = useMemo(
+    () =>
+      isMulti && selectedVideo
+        ? filteredActions.filter((a) => Number(a.video_id) === Number(selectedVideo.id))
+        : filteredActions,
+    [isMulti, selectedVideo, filteredActions]
+  );
   const playlistRallies = useMemo(
-    () => groupActionsIntoRallies(filteredActions, { byService: true }),
-    [filteredActions]
+    () => groupActionsIntoRallies(playlistSourceActions, { byService: true }),
+    [playlistSourceActions]
   );
   const playlistSegments = useMemo(
     () => buildPointSegments(playlistRallies, { leadIn: 4, leadOut: 3 }),
@@ -295,9 +398,23 @@ export default function VideoCenterPage({ user, onLogout }) {
   );
 
   const seekToAction = (act, idx) => {
-    const v = videoRef.current;
-    if (!v || act.timecode == null) return;
+    if (!act || act.timecode == null) return;
     const targetTime = Math.max(0, Number(act.timecode) - 2);
+
+    // Cumul : l'action peut appartenir à un autre match. On change la vidéo et
+    // la position est appliquée dès que le lecteur du nouveau match est prêt.
+    if (isMulti && act.video_id && Number(act.video_id) !== Number(selectedVideo?.id)) {
+      const nextVideo = videos.find((v) => Number(v.id) === Number(act.video_id));
+      if (nextVideo) {
+        pendingSeekRef.current = targetTime;
+        setSelectedVideo(nextVideo);
+        setActiveActionIndex(idx);
+        return;
+      }
+    }
+
+    const v = videoRef.current;
+    if (!v) return;
     v.currentTime = targetTime;
     v.play().catch(() => {});
     setIsPlaying(true);
@@ -364,6 +481,17 @@ export default function VideoCenterPage({ user, onLogout }) {
   const hasAngle2 = Boolean(extractYouTubeId(angle2YoutubeUrl));
   const angle2Offset = Number(selectedVideo?.angle2_offset || 0);
 
+  // Changement de match dans le cumul : on repart de zéro, puis la position de
+  // l'action choisie est appliquée dès que le lecteur est prêt.
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+  }, [selectedVideo?.id]);
+
+  useEffect(() => {
+    if (!hasAngle2 && cameraView !== '1') setCameraView('1');
+  }, [hasAngle2, cameraView]);
+
   const syncAngle2 = (t, shouldPlay = null) => {
     const v2 = videoAngle2Ref.current;
     if (!v2 || !hasAngle2) return;
@@ -379,9 +507,19 @@ export default function VideoCenterPage({ user, onLogout }) {
     if (shouldPlay === false && !v2.paused) v2.pause();
   };
 
+  // En cumul, le score et les rotations proviennent UNIQUEMENT du match affiché
+  // (les actions de deux matchs ne partagent ni sets ni rotations).
+  const overlayActions = useMemo(
+    () =>
+      isMulti && selectedVideo
+        ? actions.filter((a) => Number(a.video_id) === Number(selectedVideo.id))
+        : actions,
+    [isMulti, selectedVideo, actions]
+  );
+
   // État live du score et de l'action active au timecode courant (pour VideoTvOverlay)
   const overlayState = useMemo(() => {
-    if (!actions.length) {
+    if (!overlayActions.length) {
       return {
         score: { team1: 0, team2: 0 },
         setsWon: { team1: 0, team2: 0 },
@@ -390,13 +528,18 @@ export default function VideoCenterPage({ user, onLogout }) {
         activeAction: null,
       };
     }
-    const upToNow = actions.filter((a) => a.timecode == null || Number(a.timecode) <= currentTime + 0.5);
-    const subRallies = groupActionsIntoRallies(upToNow.length ? upToNow : actions);
+    const upToNow = overlayActions.filter((a) => a.timecode == null || Number(a.timecode) <= currentTime + 0.5);
+    const subRallies = groupActionsIntoRallies(upToNow.length ? upToNow : overlayActions);
     const st = computeMatchState(subRallies, {}, {}, []);
+    const candidate = filteredActions[activeActionIndex];
+    const candidateOfVideo =
+      candidate && (!isMulti || Number(candidate.video_id) === Number(selectedVideo?.id))
+        ? candidate
+        : null;
     const active =
-      filteredActions[activeActionIndex] ||
+      candidateOfVideo ||
       upToNow[upToNow.length - 1] ||
-      actions[actions.length - 1] ||
+      overlayActions[overlayActions.length - 1] ||
       null;
     return {
       score: st.score,
@@ -407,7 +550,7 @@ export default function VideoCenterPage({ user, onLogout }) {
       awaySetterPos: st.awaySetterPos,
       activeAction: active,
     };
-  }, [actions, currentTime, filteredActions, activeActionIndex]);
+  }, [overlayActions, currentTime, filteredActions, activeActionIndex, isMulti, selectedVideo]);
 
   // Synchronisation vers la fenêtre détachée (2e écran) : source, timecode,
   // lecture, vitesse et incrustation score. Juste après une commande venue du
@@ -430,8 +573,12 @@ export default function VideoCenterPage({ user, onLogout }) {
     });
   }, [popoutActive, hasPrimaryVideo, youtubeUrl, selectedVideo, currentTime, isPlaying, playbackSpeed, overlayState, broadcastSync]);
 
-  const team1 = selectedVideo?.team1_name || 'Domicile';
-  const team2 = selectedVideo?.team2_name || 'Extérieur';
+  // En cumul, l'équipe choisie occupe toujours le côté 1 ; l'adversaire change.
+  const team1 = isMulti ? (multiTeam || 'Équipe') : (selectedVideo?.team1_name || 'Domicile');
+  const team2 = isMulti ? 'Adversaires cumulés' : (selectedVideo?.team2_name || 'Extérieur');
+  const consultTitle = isMulti
+    ? `Cumul multi-matchs — ${multiTeam || 'Équipe'}`
+    : selectedVideo?.display_name || selectedVideo?.original_name;
 
   const playerDisplayName = (act) => {
     const side = act.team === 'away' ? 'away' : 'home';
@@ -449,7 +596,12 @@ export default function VideoCenterPage({ user, onLogout }) {
         {/* ========================================================= */}
         {/* VUE 1 : BIBLIOTHÈQUE VIDÉO (TRI PAR ÉQUIPE & PAR JOUEUR)  */}
         {/* ========================================================= */}
-        {!selectedVideo ? (
+        {isMulti && (selectedVideo ? multiLoading : loading || videos.length > 0) ? (
+          <div className="app-loading" style={{ minHeight: 320 }}>
+            <div className="spinner" />
+            <p className="loading-text">Chargement de la consultation cumulée…</p>
+          </div>
+        ) : !selectedVideo ? (
           <div className="pk-mode-home">
             <header className="pk-mode-header" style={{ borderLeftColor: '#10b981' }}>
               <div className="pk-mode-header-left">
@@ -627,22 +779,46 @@ export default function VideoCenterPage({ user, onLogout }) {
                 </button>
                 <PancakeLogo size={22} />
                 <strong style={{ fontSize: 15, color: '#f4f4f5' }}>
-                  {selectedVideo.display_name || selectedVideo.original_name}
+                  {consultTitle}
                 </strong>
                 <span className="pk-match-versus" style={{ padding: '3px 10px', fontSize: 12 }}>
                   <span>{team1}</span>
                   <em>VS</em>
                   <span>{team2}</span>
                 </span>
+                {isMulti && (
+                  <span className="live-status active">{multiIds.length} matchs</span>
+                )}
               </div>
 
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => navigate(`/datavolley/${selectedVideo.id}`)}
-              >
-                Ouvrir en saisie DataVolley →
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {isMulti && (
+                  <span className="pk-mono" style={{ fontSize: 11, color: '#a1a1aa' }}>
+                    Match en cours : {selectedVideo.display_name || selectedVideo.original_name}
+                  </span>
+                )}
+                {isMulti && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() =>
+                      navigate(
+                        `/video-center/multi?ids=${multiIds.join(',')}&team=${encodeURIComponent(multiTeam)}`
+                      )
+                    }
+                    title="Changer les matchs inclus dans le cumul"
+                  >
+                    <ChartColumn size={13} /> Matchs du cumul
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => navigate(`/datavolley/${selectedVideo.id}`)}
+                >
+                  Ouvrir en saisie DataVolley →
+                </button>
+              </div>
             </div>
 
             <div className="vc-consult-grid">
@@ -671,7 +847,23 @@ export default function VideoCenterPage({ user, onLogout }) {
                           syncAngle2(e.currentTarget.currentTime, null);
                         }}
                         onSeeked={(e) => syncAngle2(e.currentTarget.currentTime, null)}
-                        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                        onLoadedMetadata={(e) => {
+                          setDuration(Number(e.currentTarget.duration) || 0);
+                          if (pendingSeekRef.current != null) {
+                            const target = pendingSeekRef.current;
+                            pendingSeekRef.current = null;
+                            const player = videoRef.current;
+                            if (player) {
+                              try {
+                                player.currentTime = target;
+                              } catch {
+                                // Lecteur pas encore prêt : la position sera perdue, rare.
+                              }
+                              player.play().catch(() => {});
+                              setIsPlaying(true);
+                            }
+                          }
+                        }}
                         onPlay={(e) => {
                           setIsPlaying(true);
                           syncAngle2(e.currentTarget.currentTime, true);
@@ -896,6 +1088,7 @@ export default function VideoCenterPage({ user, onLogout }) {
                               {act.evaluation || '•'}
                             </span>
                             <span className="clip-desc">
+                              {isMulti && act.match_label ? `${act.match_label} · ` : ''}
                               {act.team === 'away' ? team2 : team1} · <strong>{playerDisplayName(act)}</strong>
                             </span>
                           </div>
