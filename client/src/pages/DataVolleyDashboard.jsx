@@ -537,7 +537,11 @@ function DataVolleyDashboard({ user, onLogout }) {
   }, [id, mode]);
 
   const actionsRef = useRef([]);
-  const saveTimer = useRef(null);
+  // Sauvegarde périodique des actions (toutes les 2 s) sans écraser les
+  // changements arrivés pendant une requête déjà en cours.
+  const actionsDirtyRef = useRef(false);
+  const actionsVersionRef = useRef(0);
+  const actionSaveInFlightRef = useRef(false);
   const loadedRef = useRef(false);
   const flashTimer = useRef(null);
   const rotSaveTimer = useRef(null);
@@ -1470,7 +1474,15 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   // Rafraîchit les données partagées quand une synchronisation Supabase apporte des changements d'un autre poste
   const refreshRemoteMatchData = useCallback(async () => {
-    if (!id || saving || saveTimer.current || bufferRef.current) return;
+    if (
+      !id ||
+      saving ||
+      actionsDirtyRef.current ||
+      actionSaveInFlightRef.current ||
+      bufferRef.current
+    ) {
+      return;
+    }
     try {
       const [vRes, actRes, syncRes, matchRes, setupsRes, eventsRes, auditRes] = await Promise.all([
         videosAPI.getOne(id).catch(() => null),
@@ -1482,7 +1494,12 @@ function DataVolleyDashboard({ user, onLogout }) {
         datavolleyAPI.getAudit(id, 100).catch(() => null),
       ]);
       if (vRes?.data?.video) setVideo(vRes.data.video);
-      if (actRes?.data?.actions && !saveTimer.current && !bufferRef.current) {
+      if (
+        actRes?.data?.actions &&
+        !actionsDirtyRef.current &&
+        !actionSaveInFlightRef.current &&
+        !bufferRef.current
+      ) {
         const remoteActions = ensureUids(actRes.data.actions);
         // Ne remplace que si le contenu diffère réellement pour ne pas relancer l'auto-save inutilement
         const currSig = JSON.stringify((actionsRef.current || []).map((a) => `${a.code}:${a.timecode}:${a.set_number}`));
@@ -1514,27 +1531,52 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   useOnCollectionsChanged(['videos', 'actions', 'events', 'setups', 'matches'], refreshRemoteMatchData);
 
-  // Auto-save débouncé des actions
+  /** Enregistre les actions si elles ont changé depuis la dernière sauvegarde. */
+  const persistActionsNow = useCallback(async () => {
+    if (!loadedRef.current || actionSaveInFlightRef.current || !actionsDirtyRef.current) return;
+    const version = actionsVersionRef.current;
+    const payload = actionsRef.current;
+    actionSaveInFlightRef.current = true;
+    setSaving(true);
+    try {
+      if (myClaimedSet) {
+        const setActions = payload.filter((a) => Number(a.set_number) === myClaimedSet);
+        await datavolleyAPI.saveSetActions(id, myClaimedSet, setActions);
+      } else {
+        await datavolleyAPI.saveActions(id, payload);
+      }
+      // Ne nettoie le drapeau que si aucune nouvelle action n'est arrivée
+      // pendant la requête : sinon la prochaine passe de 2 s la sauvegardera.
+      if (actionsVersionRef.current === version) actionsDirtyRef.current = false;
+    } catch (err) {
+      console.error('Failed to save actions:', err);
+    } finally {
+      actionSaveInFlightRef.current = false;
+      setSaving(false);
+    }
+  }, [id, myClaimedSet]);
+
+  // Toute modification des actions programme leur sauvegarde.
   useEffect(() => {
     if (!loadedRef.current) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      try {
-        setSaving(true);
-        if (myClaimedSet) {
-          const setActions = actionsRef.current.filter((a) => Number(a.set_number) === myClaimedSet);
-          await datavolleyAPI.saveSetActions(id, myClaimedSet, setActions);
-        } else {
-          await datavolleyAPI.saveActions(id, actionsRef.current);
-        }
-      } catch (err) {
-        console.error('Failed to save actions:', err);
-      } finally {
-        setSaving(false);
-      }
-    }, 700);
-    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [actions, id, myClaimedSet]);
+    actionsVersionRef.current += 1;
+    actionsDirtyRef.current = true;
+  }, [actions]);
+
+  // Sauvegarde périodique : au maximum toutes les 2 secondes, et seulement
+  // s'il reste des actions non enregistrées.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      persistActionsNow();
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [persistActionsNow]);
+
+  // Changement de match : on repart d'un état de sauvegarde propre.
+  useEffect(() => {
+    actionsDirtyRef.current = false;
+    actionsVersionRef.current = 0;
+  }, [id]);
 
   /**
    * Pré-remplit le service suivant UNIQUEMENT si les actions validées

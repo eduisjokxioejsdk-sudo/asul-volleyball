@@ -1,8 +1,20 @@
 {
-  "version": "3.19.0",
+  "version": "3.20.0",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.20.0",
+      "date": "2026-11-12",
+      "title": "Data Volley : sauvegarde automatique des actions toutes les 2 secondes",
+      "items": [
+        "Les actions déjà saisies sont désormais enregistrées automatiquement au maximum toutes les 2 secondes, même pendant une série d’actions continue",
+        "La sauvegarde n’est plus repoussée indéfiniment par chaque nouvelle action : le minuteur périodique prend le relais",
+        "Seules les actions réellement modifiées sont envoyées, ce qui évite les écritures inutiles ; en cas d’échec, la sauvegarde est retentée au cycle suivant",
+        "Les actions ajoutées pendant une requête d’enregistrement restent marquées à sauvegarder et sont envoyées au cycle suivant",
+        "Validation : build, toutes les suites de tests, contrôles de portée et rendu de la page sans erreur"
+      ]
+    },
     {
       "version": "3.19.0",
       "date": "2026-11-12",
