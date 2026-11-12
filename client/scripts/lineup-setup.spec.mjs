@@ -1,7 +1,8 @@
 // Vérifications de l'onglet « Six & rôles » : rôles repris de la fiche
 // équipe, et alternance automatique du premier serveur.
 // Exécution : node client/scripts/lineup-setup.spec.mjs
-import { mergeKnownPlayers, normalizeTeamConfig } from '../src/utils/lineup.js';
+import { appendServeSeparator, mergeKnownPlayers, normalizeTeamConfig } from '../src/utils/lineup.js';
+import { groupActionsIntoRallies } from '../src/utils/datavolley.js';
 import { firstServerForSet } from '../src/utils/rotation.js';
 
 let failures = 0;
@@ -56,6 +57,29 @@ check('valeur enregistrée pour un ancien set ignorée au profit de l’alternan
   { 1: { first_server: 'team2' }, 2: { first_server: 'team2' } },
   2
 ) === 'team1');
+
+console.log('\n== Service pré-rempli et fin de point ==');
+check('le séparateur est ajouté au service', appendServeSeparator('a1SQ') === 'a1SQ.');
+check('le séparateur est ajouté au service à 2 chiffres', appendServeSeparator('a01SQ') === 'a01SQ.');
+check('le séparateur n’est pas doublé', appendServeSeparator('a01SQ.') === 'a01SQ.');
+check('aucun séparateur sur une autre action', appendServeSeparator('a02R') === 'a02R');
+
+const serveOnlyRally = groupActionsIntoRallies([
+  { action: 'S', evaluation: '+', team: 'home', action_index: 1 },
+]);
+check('service non terminal : point encore ouvert', serveOnlyRally[serveOnlyRally.length - 1]?.complete === false);
+
+const endedRally = groupActionsIntoRallies([
+  { action: 'S', evaluation: '+', team: 'home', action_index: 1 },
+  { action: 'R', evaluation: '+', team: 'away', action_index: 2 },
+  { action: 'A', evaluation: '#', team: 'home', action_index: 3 },
+]);
+check('attaque gagnante : point terminé', endedRally[endedRally.length - 1]?.complete === true);
+
+const aceRally = groupActionsIntoRallies([
+  { action: 'S', evaluation: '#', team: 'away', action_index: 1 },
+]);
+check('service ace : point terminé', aceRally[aceRally.length - 1]?.complete === true);
 
 console.log(failures === 0 ? '\nTOUT EST OK' : `\n${failures} ÉCHEC(S)`);
 process.exit(failures === 0 ? 0 : 1);

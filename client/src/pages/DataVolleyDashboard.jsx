@@ -25,7 +25,7 @@ import { applyCompoundAutoCodes, matchMacroShortcut } from '../utils/compoundCod
 import { handleCodeFieldKeyDown, handleRemappedKeyDown } from '../utils/keyboardRemap';
 import useDualScreenVideo from '../hooks/useDualScreenVideo';
 import PlaylistManagerModal from '../components/PlaylistManagerModal';
-import { emptyTeamConfig, parseSavedLineup, serializeSavedLineup, serverPrefill, mergeKnownPlayers, normalizeTeamConfig } from '../utils/lineup';
+import { emptyTeamConfig, parseSavedLineup, serializeSavedLineup, serverPrefill, mergeKnownPlayers, normalizeTeamConfig, appendServeSeparator } from '../utils/lineup';
 import { computeMatchReport, indexActionSets, indexActionLineups, reportToRows } from '../utils/matchReport';
 import { computeScouting, tacticToRows } from '../utils/scouting';
 import { downloadTextFile, rowsToCsv } from '../utils/download';
@@ -1206,7 +1206,7 @@ function DataVolleyDashboard({ user, onLogout }) {
     const last = actions[actions.length - 1];
     const predicted = predictNextAction(last, { homeSetter: setterNumbers.home, awaySetter: setterNumbers.away });
     if (predicted) return predicted.code;
-    return prefillWithLearnedType(serverPrefill({ ...matchState, ...boardState }), learnedTypes);
+    return appendServeSeparator(prefillWithLearnedType(serverPrefill({ ...matchState, ...boardState }), learnedTypes));
   }, [actions, matchState, boardState, learnedTypes, setterNumbers]);
 
   // Bilan de match standardisé (filtré par set) + rapport de scouting complet.
@@ -1496,10 +1496,36 @@ function DataVolleyDashboard({ user, onLogout }) {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [actions, id, myClaimedSet]);
 
+  /**
+   * Pré-remplit le service suivant UNIQUEMENT si les actions validées
+   * terminent un point. Le code de service reçoit le séparateur `.` afin de
+   * pouvoir enchaîner directement la réception (ex. `a01SQ.`).
+   */
+  const prefillNextServe = useCallback(
+    (list) => {
+      if (!autoServe || lightMode) return;
+      const nextRallies = groupActionsIntoRallies(list, rallyOpts);
+      const lastRally = nextRallies[nextRallies.length - 1];
+      if (!lastRally?.complete) return;
+      const nextState = computeMatchState(nextRallies, setups, {}, events);
+      const prefill = appendServeSeparator(
+        prefillWithLearnedType(serverPrefill(nextState), learnActionTypes(list))
+      );
+      // Le serveur pré-rempli ouvre un NOUVEAU point : il ne doit pas hériter
+      // du timecode du service précédent (même texte de code).
+      blockTimesRef.current = [];
+      bufferRef.current = prefill;
+      setBuffer(prefill);
+    },
+    [autoServe, lightMode, rallyOpts, setups, events]
+  );
+
   const commitBuffer = useCallback((overrideBuffer = null) => {
     if (matchFinished) return;
     const sourceBuf = typeof overrideBuffer === 'string' ? overrideBuffer : bufferRef.current;
-    const raw = stripSpaces(sourceBuf);
+    // Le service pré-rempli peut se terminer par le séparateur `.` : si aucune
+    // réception n'a été ajoutée, on l'ignore pour pouvoir valider le service seul.
+    const raw = stripSpaces(sourceBuf).replace(/\.+$/, '');
     if (!raw) return;
     const items = parseSequence(raw, codeOpts);
     const validItems = items.filter((it) => it.valid);
@@ -1549,21 +1575,11 @@ function DataVolleyDashboard({ user, onLogout }) {
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 2000);
 
-    // Pré-remplit le prochain service (l'équipe qui mène le point suivant).
+    // Pré-remplit le prochain service seulement après une fin de point.
     // En consultation, sans évaluation on ne sait pas qui a gagné : on ne
     // pré-remplit pas (l'utilisateur tape '*' ou 'a' lui-même).
-    if (autoServe && !lightMode) {
-      const nextRallies = groupActionsIntoRallies(next, rallyOpts);
-      const nextState = computeMatchState(nextRallies, setups, {}, events);
-      const prefill = prefillWithLearnedType(serverPrefill(nextState), learnActionTypes(next));
-      // Le serveur pré-rempli ouvre un NOUVEAU point : il ne doit pas hériter du
-      // timecode du service précédent (même texte de code), sinon l'action
-      // validée garde l'heure de l'échange d'avant.
-      blockTimesRef.current = [];
-      bufferRef.current = prefill;
-      setBuffer(prefill);
-    }
-  }, [matchFinished, autoServe, lightMode, setups, codeOpts, rallyOpts, myClaimedSet, matchState.currentSet, setterNumbers]);
+    prefillNextServe(next);
+  }, [matchFinished, autoServe, lightMode, prefillNextServe, codeOpts, rallyOpts, myClaimedSet, matchState.currentSet, setterNumbers]);
 
   const seekTo = useCallback((t) => {
     const v = videoRef.current;
@@ -1867,10 +1883,12 @@ function DataVolleyDashboard({ user, onLogout }) {
         end_zone: last.end_zone || '',
         end_subzone: last.end_subzone || '',
       });
-      applyActions(list.map((a) => (a.uid === last.uid ? { ...a, code, ...decomposeCode(code) } : a)));
+      const nextList = list.map((a) => (a.uid === last.uid ? { ...a, code, ...decomposeCode(code) } : a));
+      applyActions(nextList);
+      prefillNextServe(nextList);
       notify(true, `Point pour ${team === 'away' ? team2 : team1} : ${last.code} → ${code}`);
     },
-    [matchFinished, applyActions, team1, team2]
+    [matchFinished, applyActions, prefillNextServe, team1, team2]
   );
 
   /** Ctrl+A : annule la dernière fin de point (le point reste ouvert). */

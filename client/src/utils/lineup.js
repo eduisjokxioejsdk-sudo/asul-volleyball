@@ -211,6 +211,17 @@ export function serverPrefill(matchState) {
   return `${teamKey}${String(n).padStart(2, '0')}S`;
 }
 
+/**
+ * Ajoute le séparateur de formule combinée (`.`) au code de service
+ * pré-rempli : `a01SQ` → `a01SQ.`, pour pouvoir enchaîner directement la
+ * réception (`06#`) dans le même tampon.
+ */
+export function appendServeSeparator(code) {
+  const s = String(code || '');
+  if (!/^[a*]\d{1,2}S/i.test(s) || s.endsWith('.')) return s;
+  return `${s}.`;
+}
+
 /** Code de service pré-rempli avec le type habituel du joueur, si connu. */
 export function serverPrefillWithType(matchState, config) {
   const base = serverPrefill(matchState);

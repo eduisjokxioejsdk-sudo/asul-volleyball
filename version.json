@@ -1,8 +1,20 @@
 {
-  "version": "3.16.2",
+  "version": "3.17.0",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.17.0",
+      "date": "2026-11-12",
+      "title": "Data Volley : service pré-rempli avec le séparateur et seulement après un point",
+      "items": [
+        "Après une action qui termine réellement le point, le service suivant est pré-rempli avec le numéro du serveur, son type habituel et le séparateur `.` (ex. `a01SQ.`), prêt pour enchaîner la réception",
+        "Le service n’est plus pré-rempli après chaque action : tant que le point est en cours, le tampon reste vide ou propose l’action suivante",
+        "Le pré-remplissage s’applique aussi après une fin de point marquée avec `[` / `]` ou avec les marqueurs `*p` / `ap`",
+        "Le séparateur seul en fin de tampon est ignoré à la validation, ce qui permet de valider un service sans réception",
+        "Validation : build, suites de tests et rendu de la page contrôlés sans erreur"
+      ]
+    },
     {
       "version": "3.16.2",
       "date": "2026-11-12",
