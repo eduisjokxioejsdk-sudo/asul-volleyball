@@ -398,6 +398,22 @@ console.log('\n== Rapport : chaque fenêtre d’analyse ==');
   })());
 }
 
+console.log('\n== Barre des modes : Paramètres ==');
+{
+  const mod = await vite.ssrLoadModule('/src/components/DvModeBar.jsx');
+  const ModeBar = mod.default;
+  const html = renderToString(
+    React.createElement(ModeBar, {
+      mode: 'saisie',
+      onMode: noop,
+      onSettings: noop,
+      settingsOpen: true,
+    })
+  );
+  check('aucun onglet de mode actif quand Paramètres est ouvert', !/dvm-btn active/.test(html));
+  check('le bouton Paramètres est actif', /dvm-btn dvm-settings active/.test(html));
+}
+
 console.log('\n== Fenêtre Six & rôles ==');
 {
   const mod = await vite.ssrLoadModule('/src/components/LineupEditor.jsx');

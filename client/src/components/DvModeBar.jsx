@@ -28,7 +28,7 @@ export default function DvModeBar({ mode, onMode, onSettings, settingsOpen = fal
   return (
     <div className="dvm-bar" role="tablist" aria-label="Modes de codage">
       {DV_MODES.map((m) => {
-        const active = mode === m.key;
+        const active = !settingsOpen && mode === m.key;
         return (
           <button
             key={m.key}

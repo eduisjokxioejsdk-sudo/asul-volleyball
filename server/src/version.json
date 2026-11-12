@@ -1,8 +1,18 @@
 {
-  "version": "3.16.1",
+  "version": "3.16.2",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.16.2",
+      "date": "2026-11-12",
+      "title": "Data Volley : un seul onglet allumé dans la barre des modes",
+      "items": [
+        "Quand la fenêtre Paramètres est ouverte, l’onglet Play-by-Play · Saisie n’est plus affiché comme actif : seul le bouton Paramètres reste allumé",
+        "Le retour sur un mode (Saisie, Banc / Coach, Correction ou Analyse) rallume uniquement ce mode et referme les paramètres",
+        "Validation : build, rendu de la barre des modes et suites de tests contrôlés sans erreur"
+      ]
+    },
     {
       "version": "3.16.1",
       "date": "2026-11-12",
