@@ -90,7 +90,6 @@ import {
   Plane,
   RotateCcw,
   RotateCw,
-  Save,
   Settings,
   Table,
   Target,
@@ -3186,17 +3185,6 @@ function DataVolleyDashboard({ user, onLogout }) {
           >
             {modeAide ? <EyeOff size={14} /> : <Eye size={14} />} Mode Aide
           </button>
-          <div className="dv-save-state">
-            {saving ? (
-              <>
-                <Save size={12} /> Sauvegarde…
-              </>
-            ) : (
-              <>
-                <Check size={12} /> Enregistré
-              </>
-            )}
-          </div>
         </nav>
 
         <div className="vd-main">

@@ -1,8 +1,18 @@
 {
-  "version": "3.20.0",
+  "version": "3.20.1",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.20.1",
+      "date": "2026-11-12",
+      "title": "Data Volley : indicateur d’enregistrement retiré de la barre",
+      "items": [
+        "La mention « Enregistré » / « Sauvegarde… » à droite du bouton Mode Aide est supprimée",
+        "La sauvegarde automatique des actions toutes les 2 secondes reste active, sans affichage permanent dans la barre",
+        "Validation : build, suites de tests et rendu de la page contrôlés sans erreur"
+      ]
+    },
     {
       "version": "3.20.0",
       "date": "2026-11-12",
