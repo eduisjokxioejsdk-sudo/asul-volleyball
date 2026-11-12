@@ -1,8 +1,20 @@
 {
-  "version": "3.18.0",
+  "version": "3.19.0",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.19.0",
+      "date": "2026-11-12",
+      "title": "Data Volley : timecode pris au premier caractère de l’action",
+      "items": [
+        "Le timecode d’une action correspond désormais au moment où son premier caractère est tapé, et non plus au moment où le code est terminé ou validé avec Entrée",
+        "Le temps reste figé pendant la saisie du reste du code : taper un numéro, un type, une zone ou une évaluation ne décale plus l’action",
+        "Le décalage configuré dans Paramètres › Codage s’applique toujours à ce timecode de premier caractère",
+        "Une formule combinée service + réception conserve un seul timecode, celui du début de la saisie du bloc",
+        "Validation : build, suite dédiée aux timecodes, toutes les suites de tests et rendu de la page sans erreur"
+      ]
+    },
     {
       "version": "3.18.0",
       "date": "2026-11-12",

@@ -501,8 +501,8 @@ function DataVolleyDashboard({ user, onLogout }) {
     [actionTimecodeOffset]
   );
   const bufferRef = useRef('');
-  // Timecodes par bloc de saisie : chaque code garde le temps vidéo de l'instant
-  // où il a été terminé (comme DataVolley 4), même si la suite est validée d'un coup.
+  // Timecodes par bloc de saisie : chaque code garde le temps vidéo de son
+  // PREMIER caractère, même si la suite du code est tapée plus tard.
   const blockTimesRef = useRef([]);
   const blockTimeBufferRef = useRef('');
 
@@ -1584,7 +1584,7 @@ function DataVolleyDashboard({ user, onLogout }) {
 
     const v = videoRef.current;
     const timecode = v ? offsetActionTime(v.currentTime) : null;
-    // Chaque action garde le temps vidéo de l'instant où SON code a été terminé.
+    // Chaque action garde le temps vidéo de son PREMIER caractère.
     // Une formule combinée (un seul bloc) donne le même temps à ses deux actions.
     const timecodes = itemTimecodes(raw, blockTimesRef.current);
     const rawActions = makeActions(items, {

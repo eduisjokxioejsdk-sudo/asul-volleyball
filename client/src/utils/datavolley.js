@@ -1135,9 +1135,10 @@ export function splitInputBlocks(buffer) {
 /**
  * Entretient les timecodes par bloc de saisie.
  *
- * Principe (comme DataVolley 4) : chaque code reçoit le temps vidéo de
- * l'instant où il est TERMINÉ. On conserve les temps des blocs dont le texte
- * n'a pas changé ; tout bloc nouveau ou modifié reçoit `now`.
+ * Principe : chaque action reçoit le temps vidéo de son PREMIER caractère.
+ * Tant qu’un bloc continue d’être écrit (ou corrigé par ajout/suppression),
+ * son temps d’origine est conservé ; un bloc réellement nouveau ou remplacé
+ * reçoit `now`.
  *
  * @param {Array<number|null>} times - temps des blocs du tampon précédent
  * @param {string} previousBuffer - tampon précédent (sans espaces)
@@ -1148,12 +1149,17 @@ export function splitInputBlocks(buffer) {
 export function nextBlockTimes(times, previousBuffer, nextBuffer, now) {
   const prev = splitInputBlocks(previousBuffer).map((b) => b.text);
   const next = splitInputBlocks(nextBuffer).map((b) => b.text);
-  let common = 0;
-  while (common < prev.length && common < next.length && prev[common] === next[common]) common += 1;
-  const kept = (Array.isArray(times) ? times : []).slice(0, common);
+  const previousTimes = Array.isArray(times) ? times : [];
   const time = typeof now === 'number' && !Number.isNaN(now) ? now : null;
-  while (kept.length < next.length) kept.push(time);
-  return kept;
+  return next.map((text, i) => {
+    const before = prev[i];
+    const kept = previousTimes[i];
+    const continues =
+      before != null &&
+      kept != null &&
+      (text.startsWith(before) || before.startsWith(text));
+    return continues ? kept : time;
+  });
 }
 
 /**

@@ -41,10 +41,20 @@ eq('texte du dernier bloc', splitInputBlocks('*01S5#a02R1+')[1].text, 'a02R1+');
 console.log('\n== Capture du temps, bloc par bloc ==');
 eq('premier bloc terminé', nextBlockTimes([], '', '*01S5#', 10), [10]);
 eq('nouveau bloc : temps du début de frappe', nextBlockTimes([10], '*01S5#', '*01S5#a', 12), [10, 12]);
+{
+  let typingTimes = [];
+  let typed = '';
+  for (let i = 0; i < 'a01SQ'.length; i += 1) {
+    const before = typed;
+    typed += 'a01SQ'[i];
+    typingTimes = nextBlockTimes(typingTimes, before, typed, 10 + i);
+  }
+  eq('le bloc garde l’heure de son premier caractère', typingTimes, [10]);
+}
 eq(
-  'bloc complété : temps de la dernière frappe',
+  'bloc complété : temps du premier caractère conservé',
   nextBlockTimes([10, 12], '*01S5#a', '*01S5#a02R1+', 14),
-  [10, 14]
+  [10, 12]
 );
 eq(
   'troisième bloc : le deuxième est figé',
@@ -63,9 +73,9 @@ eq(
   [30]
 );
 eq(
-  'correction du dernier bloc : temps rafraîchi',
+  'correction du dernier bloc : temps d’origine conservé',
   nextBlockTimes([10, 14], '*01S5#a02R1+', '*01S5#a02R1', 32),
-  [10, 32]
+  [10, 14]
 );
 eq('position vidéo inconnue', nextBlockTimes([], '', '*01S5#', null), [null]);
 eq('les temps des blocs inchangés sont conservés', nextBlockTimes([7, 8], '*01S5#a02R1+', '*01S5#a02R1+a03A45#', 40), [7, 8, 40]);
@@ -133,9 +143,9 @@ const committed = makeActions(parseSequence(previous), {
 });
 eq('trois actions validées', committed.length, 3);
 eq(
-  'chaque action a le temps de SON code',
+  'chaque action a le temps de son premier caractère',
   committed.map((a) => a.timecode),
-  [101, 107, 112]
+  [100, 105, 110]
 );
 eq('les codes sont intacts', committed.map((a) => a.code), ['*01S5#', 'a02R1+', 'a03A45#']);
 
