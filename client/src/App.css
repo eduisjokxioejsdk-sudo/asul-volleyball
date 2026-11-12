@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    ASUL Ã¢â‚¬â€ Warm Productivity UI
    Deep warm charcoal Ã‚Â· Soft cream text Ã‚Â· Amber accent
    Optimized for 5h+ eye comfort (low contrast, warm tones)
@@ -9564,4 +9564,24 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 14px;
+}
+
+/* Équipe supprimée mais toujours référencée par un match / une fiche. */
+.team-undef {
+  color: #f87171 !important;
+  font-weight: 700;
+}
+
+.team-undef-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
 }

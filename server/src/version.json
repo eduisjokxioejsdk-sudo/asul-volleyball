@@ -1,8 +1,21 @@
 {
-  "version": "3.14.1",
-  "releasedAt": "2026-11-10",
+  "version": "3.15.0",
+  "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.15.0",
+      "date": "2026-11-12",
+      "title": "Équipes : suppression sans perte et réaffectation des matchs",
+      "items": [
+        "Supprimer une équipe ne supprime plus ses données : les matchs et fiches de trajectoire concernés affichent « Équipe à définir » en rouge et restent réaffectables",
+        "L’assistant de réaffectation conserve toutes les actions et trajectoires en les rattachant automatiquement aux joueurs de la nouvelle équipe par numéro (le n°1 reste le n°1, le n°7 le n°7, etc.)",
+        "Si un numéro n’existe pas dans l’équipe choisie, chaque joueur peut être assigné à un autre numéro ou créé dans l’équipe cible, avec son nom et son rôle",
+        "Les six de départ, les remplacements et les codes DataVolley sont remappés avec les numéros ; les statistiques restent donc cohérentes après la fusion de deux équipes en doublon",
+        "Les équipes supprimées qui conservent des rencontres apparaissent dans une section dédiée de la page Équipes pour reprendre la réaffectation plus tard",
+        "Validation : build, rendu des pages, test serveur de réaffectation et suites de tests existantes contrôlés sans erreur"
+      ]
+    },
     {
       "version": "3.14.1",
       "date": "2026-11-10",

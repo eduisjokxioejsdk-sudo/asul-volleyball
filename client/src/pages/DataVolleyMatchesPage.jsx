@@ -13,6 +13,7 @@ import PancakeLogo from '../components/PancakeLogo';
 import { videosAPI, foldersAPI, datavolleyAPI, teamsAPI } from '../services/api';
 import { useOnCollectionsChanged } from '../hooks/useCollectionChanged';
 import { extractYouTubeId } from '../utils/youtube';
+import { isUndefinedTeam } from '../utils/teams';
 import { Check, Plus, Trash, X } from '../components/icons';
 
 const FOLDER_COLORS = [
@@ -536,10 +537,31 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
 
                     <div style={{ marginTop: 12 }}>
                       <div className="pk-match-versus">
-                        <span>{video.team1_name || 'Domicile'}</span>
+                        <span className={isUndefinedTeam(video.team1_name) ? 'team-undef' : undefined}>
+                          {video.team1_name || 'Domicile'}
+                        </span>
                         <em>VS</em>
-                        <span>{video.team2_name || 'Extérieur'}</span>
+                        <span className={isUndefinedTeam(video.team2_name) ? 'team-undef' : undefined}>
+                          {video.team2_name || 'Extérieur'}
+                        </span>
                       </div>
+                      {(isUndefinedTeam(video.team1_name) || isUndefinedTeam(video.team2_name)) && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ marginTop: 8 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const teamId = isUndefinedTeam(video.team1_name)
+                              ? video.home_team_id
+                              : video.away_team_id;
+                            if (teamId) navigate(`/teams?reassign=${teamId}`);
+                            else navigate('/teams');
+                          }}
+                        >
+                          Réaffecter l’équipe…
+                        </button>
+                      )}
                     </div>
                   </div>
 

@@ -194,6 +194,20 @@ console.log('\n== Rendu de la liste des matchs ==');
   check('la liste des matchs affiche du contenu', matches.html.length > 0);
 }
 
+console.log('\n== Rendu de la page Équipes ==');
+{
+  const teamsPage = await renderRoute('/src/pages/TeamsPage.jsx', 'default', {
+    user: { email: 'coach@asul.test', name: 'Coach' },
+    onLogout: noop,
+  });
+  check(
+    'la page Équipes se rend sans erreur',
+    teamsPage.error === null,
+    teamsPage.error ? `${teamsPage.error.name}: ${teamsPage.error.message}` : ''
+  );
+  check('la page Équipes affiche du contenu', teamsPage.html.length > 0);
+}
+
 // --- Lecteur vidéo : démarrage immédiat --------------------------------------
 console.log('\n== Lecteur vidéo (démarrage immédiat) ==');
 {

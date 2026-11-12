@@ -2,8 +2,15 @@ const express = require('express');
 const crypto = require('crypto');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
-const { emitTeamsChanged } = require('../socket');
+const { emitTeamsChanged, emitCollectionChanged } = require('../socket');
 const teamsSync = require('../teamsSync');
+const syncHub = require('../syncHub');
+const {
+  markTeamReferencesUndefined,
+  deletedTeamsWithUsage,
+  getReplacementPreview,
+  replaceTeamReferences,
+} = require('../teamReplacement');
 
 const router = express.Router();
 
@@ -65,6 +72,17 @@ router.get('/', authenticateToken, (req, res) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     res.json({ teams });
   });
+});
+
+// Liste les équipes supprimées qui gardent des matchs / fiches à réaffecter.
+router.get('/deleted', authenticateToken, async (req, res) => {
+  try {
+    const teams = await deletedTeamsWithUsage();
+    res.json({ teams });
+  } catch (err) {
+    console.error('Deleted teams:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Remplace la liste des joueurs d'une équipe (attributs complets DV4 / FFVB).
@@ -183,19 +201,89 @@ router.patch('/:id', authenticateToken, (req, res) => {
 });
 
 // Supprime une équipe : pierre tombale (deleted = 1) et non effacement réel,
-// afin que la suppression soit propagée aux autres postes par le cloud.
-router.delete('/:id', authenticateToken, (req, res) => {
+// afin que la suppression soit propagée aux autres postes par le cloud. Les
+// matchs et fiches qui l'utilisent passent en « Équipe à définir » : les données
+// (actions, trajectoires) sont conservées pour une réaffectation ultérieure.
+router.delete('/:id', authenticateToken, async (req, res) => {
   const teamId = Number(req.params.id);
-  db.run(
-    'UPDATE teams SET deleted = 1, dirty = 1, local_updated_at = ? WHERE id = ?',
-    [new Date().toISOString(), teamId],
-    function (err) {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      emitTeamsChanged();
-      triggerSync();
-      res.json({ message: 'Équipe supprimée' });
+  try {
+    const team = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM teams WHERE id = ?', [teamId], (err, row) => (err ? reject(err) : resolve(row)));
+    });
+    if (!team) return res.status(404).json({ error: 'Équipe introuvable' });
+    if (Number(team.deleted) === 1) {
+      return res.json({ message: 'Équipe déjà supprimée', affected: { videos: 0, trajectories: 0, liveSessions: 0 } });
     }
-  );
+
+    const affected = await markTeamReferencesUndefined(teamId);
+    await new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE teams SET deleted = 1, dirty = 1, local_updated_at = ? WHERE id = ?',
+        [new Date().toISOString(), teamId],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+
+    emitTeamsChanged();
+    emitCollectionChanged('videos');
+    emitCollectionChanged('trajectories');
+    syncHub.videos.syncNow({ reason: 'team-deleted' }).catch(() => {});
+    syncHub.trajectories.syncNow({ reason: 'team-deleted' }).catch(() => {});
+    triggerSync();
+    res.json({ message: 'Équipe supprimée', affected });
+  } catch (err) {
+    console.error('Delete team:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Aperçu de la réaffectation : roster utilisé, matchs et fiches concernés.
+router.get('/:id/replacement-preview', authenticateToken, async (req, res) => {
+  const teamId = Number(req.params.id);
+  try {
+    const preview = await getReplacementPreview(teamId);
+    if (!preview) return res.status(404).json({ error: 'Équipe introuvable' });
+    res.json(preview);
+  } catch (err) {
+    console.error('Replacement preview:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Réaffecte l'équipe supprimée vers une équipe existante, en appliquant la
+// correspondance des numéros aux actions, trajectoires et six de départ.
+router.post('/:id/replace', authenticateToken, async (req, res) => {
+  const teamId = Number(req.params.id);
+  const targetTeamId = Number(req.body?.target_team_id);
+  if (!targetTeamId) return res.status(400).json({ error: 'Équipe de remplacement requise.' });
+  try {
+    const result = await replaceTeamReferences(teamId, targetTeamId, {
+      number_map: req.body?.number_map,
+      create_players: req.body?.create_players,
+    });
+    emitTeamsChanged();
+    emitCollectionChanged('videos');
+    emitCollectionChanged('trajectories');
+    emitCollectionChanged('actions');
+    emitCollectionChanged('setups');
+    emitCollectionChanged('events');
+    syncHub.videos.syncNow({ reason: 'team-replaced' }).catch(() => {});
+    syncHub.trajectories.syncNow({ reason: 'team-replaced' }).catch(() => {});
+    syncHub.actions.syncNow({ reason: 'team-replaced' }).catch(() => {});
+    syncHub.setups.syncNow({ reason: 'team-replaced' }).catch(() => {});
+    syncHub.events.syncNow({ reason: 'team-replaced' }).catch(() => {});
+    triggerSync();
+    res.json({
+      message: `Équipe réaffectée vers « ${result.targetTeam.name} ».`,
+      result,
+    });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message, ...(err.details || {}) });
+    }
+    console.error('Replace team:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // ---------------------------------------------------------------------------

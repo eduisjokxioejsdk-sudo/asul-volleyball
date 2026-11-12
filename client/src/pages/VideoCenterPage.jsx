@@ -19,6 +19,7 @@ import { videosAPI, datavolleyAPI, teamsAPI } from '../services/api';
 import useCollectionChanged, { useOnCollectionsChanged } from '../hooks/useCollectionChanged';
 import SmartVideoPlayer from '../components/SmartVideoPlayer';
 import { extractYouTubeId } from '../utils/youtube';
+import { isUndefinedTeam } from '../utils/teams';
 import { prepareMatches } from '../utils/multiMatch';
 import { formatTimecode, groupActionsIntoRallies, buildPointSegments } from '../utils/datavolley';
 import { computeMatchState } from '../utils/rotation';
@@ -728,10 +729,29 @@ export default function VideoCenterPage({ user, onLogout }) {
 
                       <div style={{ marginTop: 12 }}>
                         <div className="pk-match-versus">
-                          <span>{v.team1_name || 'Domicile'}</span>
+                          <span className={isUndefinedTeam(v.team1_name) ? 'team-undef' : undefined}>
+                            {v.team1_name || 'Domicile'}
+                          </span>
                           <em>VS</em>
-                          <span>{v.team2_name || 'Extérieur'}</span>
+                          <span className={isUndefinedTeam(v.team2_name) ? 'team-undef' : undefined}>
+                            {v.team2_name || 'Extérieur'}
+                          </span>
                         </div>
+                        {(isUndefinedTeam(v.team1_name) || isUndefinedTeam(v.team2_name)) && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ marginTop: 8 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const teamId = isUndefinedTeam(v.team1_name) ? v.home_team_id : v.away_team_id;
+                              if (teamId) navigate(`/teams?reassign=${teamId}`);
+                              else navigate('/teams');
+                            }}
+                          >
+                            Réaffecter l’équipe…
+                          </button>
+                        )}
                       </div>
                     </div>
 

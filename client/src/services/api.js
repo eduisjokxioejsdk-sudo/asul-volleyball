@@ -122,6 +122,10 @@ export const teamsAPI = {
   update: (id, name, players, settings = {}) =>
     api.patch(`/teams/${id}`, { name, players, libero: settings.libero ?? null, libero_for: settings.liberoFor ?? null }),
   delete: (id) => api.delete(`/teams/${id}`),
+  // Équipes supprimées conservant des matchs / fiches à réaffecter.
+  getDeleted: () => api.get('/teams/deleted'),
+  getReplacementPreview: (id) => api.get(`/teams/${id}/replacement-preview`),
+  replace: (id, payload) => api.post(`/teams/${id}/replace`, payload),
   getDirectory: () => api.get('/teams/players/directory'),
   importBatch: (teams) => api.post('/teams/import-batch', { teams }),
   // Partage à distance (synchronisation cloud — voir server/src/teamsSync.js)

@@ -12,6 +12,7 @@ import useTeamsSync from '../hooks/useTeamsSync';
 import useCollectionChanged from '../hooks/useCollectionChanged';
 import SyncStatusBar from './SyncStatusBar';
 import { PLAYER_ROLES } from '../utils/lineup';
+import { isUndefinedTeam } from '../utils/teams';
 import { Check, Plus, Trash, X } from '../components/icons';
 import PancakeLogo from './PancakeLogo';
 
@@ -294,14 +295,34 @@ export default function TrajectoryHome() {
 
                 <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                   <div className="pk-match-versus">
-                    <span>{match.team1_name || '—'}</span>
+                    <span className={isUndefinedTeam(match.team1_name) ? 'team-undef' : undefined}>
+                      {match.team1_name || '—'}
+                    </span>
                     {match.team2_name && (
                       <>
                         <em>VS</em>
-                        <span>{match.team2_name}</span>
+                        <span className={isUndefinedTeam(match.team2_name) ? 'team-undef' : undefined}>
+                          {match.team2_name}
+                        </span>
                       </>
                     )}
                   </div>
+                  {(isUndefinedTeam(match.team1_name) || isUndefinedTeam(match.team2_name)) && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const teamId = isUndefinedTeam(match.team1_name)
+                          ? match.home_team_id
+                          : match.away_team_id;
+                        if (teamId) navigate(`/teams?reassign=${teamId}`);
+                        else navigate('/teams');
+                      }}
+                    >
+                      Réaffecter l’équipe…
+                    </button>
+                  )}
                   <span className="pk-mono" style={{ fontSize: 11.5, color: '#71717a' }}>
                     {formatDate(match.created_at)}
                   </span>

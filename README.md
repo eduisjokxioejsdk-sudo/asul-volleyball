@@ -204,6 +204,24 @@ gratuit (Supabase) :
 > Guide complet (création du projet Supabase, script SQL, dépannage, tests) :
 > **`SYNC.md`**.
 
+## 🧹 Supprimer une équipe sans perdre ses matchs
+
+Lorsqu'une équipe a été créée en double (même effectif, autre nom), la supprimer
+ne détruit aucune donnée :
+
+* les matchs et fiches de trajectoire qui l'utilisaient passent en **« Équipe à
+  définir »** (affiché en rouge) ;
+* l'assistant **Réaffecter…** permet de choisir l'équipe qui la remplace ;
+* les actions, tirs de trajectoire, six de départ, remplacements et codes
+  DataVolley sont conservés et rattachés **par numéro** aux joueurs de la
+  nouvelle équipe (le n°1 au n°1, le n°7 au n°7, etc.) ;
+* si un numéro n'existe pas dans l'équipe cible, il peut être assigné à un autre
+  numéro ou créé comme nouveau joueur (nom et rôle repris de l'ancienne équipe).
+
+La réaffectation peut être reprise plus tard depuis la section « Équipes
+supprimées à réaffecter » de l'onglet **Équipes**, ou directement depuis un match
+marqué en rouge.
+
 ## 📁 Structure du projet
 
 ```

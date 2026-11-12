@@ -7,6 +7,7 @@ import { videosAPI, datavolleyAPI } from '../services/api';
 import useCollectionChanged, { useOnCollectionsChanged } from '../hooks/useCollectionChanged';
 import SmartVideoPlayer from '../components/SmartVideoPlayer';
 import { extractYouTubeId } from '../utils/youtube';
+import { isUndefinedTeam } from '../utils/teams';
 import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS } from '../utils/rotation';
 import {
   computeSetterDistributionByRotation,
@@ -2384,7 +2385,11 @@ function DataVolleyDashboard({ user, onLogout }) {
           <div className="dv-fullpage-title">
             <PancakeLogo size={18} />
             <strong>Rapport de match</strong>
-            <span className="dv-fullpage-sub">{team1} — {team2}</span>
+            <span className="dv-fullpage-sub">
+              <span className={isUndefinedTeam(team1) ? 'team-undef' : undefined}>{team1}</span>
+              {' — '}
+              <span className={isUndefinedTeam(team2) ? 'team-undef' : undefined}>{team2}</span>
+            </span>
             <span className="dv-fullpage-meta">
               {reportSets.length === 0 ? 'Tous les sets' : `Set ${reportSets.join(', ')}`} · Sets{' '}
               {matchState.setsWon.team1}–{matchState.setsWon.team2} · {matchReport.actionCount} action(s) codée(s)
@@ -2788,7 +2793,7 @@ function DataVolleyDashboard({ user, onLogout }) {
           <div className="dv-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <strong>{video.display_name || video.original_name}</strong>
             <span className="dv-teams">
-              <House size={12} /> {team1} &nbsp;·&nbsp; <Plane size={12} /> {team2}
+              <House size={12} /> <span className={isUndefinedTeam(team1) ? 'team-undef' : undefined}>{team1}</span> &nbsp;·&nbsp; <Plane size={12} /> <span className={isUndefinedTeam(team2) ? 'team-undef' : undefined}>{team2}</span>
             </span>
           </div>
           <DvModeBar
