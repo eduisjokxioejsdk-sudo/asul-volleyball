@@ -118,7 +118,7 @@ export default function LineupEditor({
           const unique = [...new Set(replaced.map(Number))];
           return (
             <select
-              value={liberoFor}
+              value={liberoFor || ''}
               disabled={!libero}
               title="Joueur remplacé par le libéro sur les postes arrière"
               onChange={(e) => onConfigChange({ ...(config || {}), liberoFor: e.target.value === '' ? null : Number(e.target.value) })}

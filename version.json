@@ -1,8 +1,18 @@
 {
-  "version": "3.16.0",
+  "version": "3.16.1",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.16.1",
+      "date": "2026-11-12",
+      "title": "Six & rôles : sélecteur de libéro corrigé",
+      "items": [
+        "Le menu « remplace n°… » de la ligne libéro affiche correctement l’absence de sélection",
+        "Toutes les nouveautés de la version 3.16.0 restent disponibles : rôles repris de la fiche équipe, alternance du premier serveur et enregistrement automatique",
+        "Validation : build, rendu de la fenêtre Six & rôles et suites de tests contrôlés sans erreur"
+      ]
+    },
     {
       "version": "3.16.0",
       "date": "2026-11-12",
