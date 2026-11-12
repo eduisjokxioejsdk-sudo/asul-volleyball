@@ -1190,6 +1190,18 @@ export function restampPendingBlockTimes(times, now, tolerance = 0.5) {
 }
 
 /**
+ * Décale un timecode vidéo (en secondes). Un décalage négatif enregistre
+ * l’action plus tôt : 10 s avec -2 → 8 s. Le résultat ne descend jamais sous 0.
+ */
+export function shiftTimecode(time, offset = 0) {
+  if (time == null || time === '') return null;
+  const t = Number(time);
+  if (!Number.isFinite(t)) return null;
+  const delta = Number(offset) || 0;
+  return Math.max(0, t + delta);
+}
+
+/**
  * Timecodes alignés sur les items de `parseSequence(buffer)` : un bloc donne
  * une action, sauf une formule combinée qui en donne deux (même temps).
  */

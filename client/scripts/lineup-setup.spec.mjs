@@ -2,7 +2,7 @@
 // équipe, et alternance automatique du premier serveur.
 // Exécution : node client/scripts/lineup-setup.spec.mjs
 import { appendServeSeparator, mergeKnownPlayers, normalizeTeamConfig } from '../src/utils/lineup.js';
-import { groupActionsIntoRallies } from '../src/utils/datavolley.js';
+import { groupActionsIntoRallies, shiftTimecode } from '../src/utils/datavolley.js';
 import { firstServerForSet } from '../src/utils/rotation.js';
 
 let failures = 0;
@@ -80,6 +80,12 @@ const aceRally = groupActionsIntoRallies([
   { action: 'S', evaluation: '#', team: 'away', action_index: 1 },
 ]);
 check('service ace : point terminé', aceRally[aceRally.length - 1]?.complete === true);
+
+console.log('\n== Décalage de timecode ==');
+check('-2 s à 10 s donne 8 s', shiftTimecode(10, -2) === 8);
+check('+1,5 s à 10 s donne 11,5 s', shiftTimecode(10, 1.5) === 11.5);
+check('le timecode ne passe pas sous 0', shiftTimecode(1, -2) === 0);
+check('timecode absent ignoré', shiftTimecode(null, -2) === null);
 
 console.log(failures === 0 ? '\nTOUT EST OK' : `\n${failures} ÉCHEC(S)`);
 process.exit(failures === 0 ? 0 : 1);

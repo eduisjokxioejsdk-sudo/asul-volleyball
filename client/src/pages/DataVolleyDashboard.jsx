@@ -147,6 +147,7 @@ import {
   reindexActions,
   replaceRallySequence,
   restampPendingBlockTimes,
+  shiftTimecode as shiftActionTimecode,
   tryAppendChar,
   validateAction,
 } from '../utils/datavolley';
@@ -239,6 +240,8 @@ function DataVolleyDashboard({ user, onLogout }) {
   const helpStorageKey = `dv.layout.aide.video.${id}`;
   // Clé du Mode Consultation (sans évaluation), persistée par navigateur et par vidéo.
   const lightStorageKey = `dv.light.video.${id}`;
+  // Décalage des timecodes d'action (secondes), mémorisé pour ce match.
+  const actionOffsetStorageKey = `dv.actionTimecodeOffset.video.${id}`;
 
   const videoRef = useRef(null);
 
@@ -460,6 +463,43 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   // Confort de saisie : pré-remplissage du serveur
   const [autoServe, setAutoServe] = useState(true);
+  // Décalage appliqué au timecode de chaque action validée (ex. -2 s).
+  const [actionTimecodeOffset, setActionTimecodeOffset] = useState(() => {
+    if (typeof localStorage === 'undefined') return 0;
+    try {
+      const saved = Number(localStorage.getItem(actionOffsetStorageKey));
+      return Number.isFinite(saved) ? saved : 0;
+    } catch {
+      return 0;
+    }
+  });
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(actionOffsetStorageKey, String(Number(actionTimecodeOffset) || 0));
+    } catch {
+      // stockage local indisponible : le réglage reste actif pour la session
+    }
+  }, [actionTimecodeOffset]);
+  const previousOffsetKeyRef = useRef(actionOffsetStorageKey);
+  useEffect(() => {
+    if (previousOffsetKeyRef.current === actionOffsetStorageKey) return;
+    previousOffsetKeyRef.current = actionOffsetStorageKey;
+    if (typeof localStorage === 'undefined') {
+      setActionTimecodeOffset(0);
+      return;
+    }
+    try {
+      const saved = Number(localStorage.getItem(actionOffsetStorageKey));
+      setActionTimecodeOffset(Number.isFinite(saved) ? saved : 0);
+    } catch {
+      setActionTimecodeOffset(0);
+    }
+  }, [actionOffsetStorageKey]);
+  const offsetActionTime = useCallback(
+    (time) => shiftActionTimecode(time, actionTimecodeOffset),
+    [actionTimecodeOffset]
+  );
   const bufferRef = useRef('');
   // Timecodes par bloc de saisie : chaque code garde le temps vidéo de l'instant
   // où il a été terminé (comme DataVolley 4), même si la suite est validée d'un coup.
@@ -514,10 +554,10 @@ function DataVolleyDashboard({ user, onLogout }) {
   // du tampon est terminé (ou modifié), pas seulement à la validation.
   useEffect(() => {
     const normalized = stripSpaces(buffer);
-    const now = videoRef.current ? videoRef.current.currentTime : null;
-    blockTimesRef.current = nextBlockTimes(blockTimesRef.current, blockTimeBufferRef.current, normalized, now);
+    const rawNow = videoRef.current ? videoRef.current.currentTime : null;
+    blockTimesRef.current = nextBlockTimes(blockTimesRef.current, blockTimeBufferRef.current, normalized, offsetActionTime(rawNow));
     blockTimeBufferRef.current = normalized;
-  }, [buffer]);
+  }, [buffer, offsetActionTime]);
 
   // Retour en arrière dans la vidéo (barre de progression, boutons, lecteur
   // YouTube) : les codes encore dans le champ de saisie
@@ -525,8 +565,8 @@ function DataVolleyDashboard({ user, onLogout }) {
   // courante, sinon l'action validée garde l'ancien timecode (ex. 6:30 alors
   // que la vidéo est revenue à 6:00).
   useEffect(() => {
-    blockTimesRef.current = restampPendingBlockTimes(blockTimesRef.current, currentTime);
-  }, [currentTime]);
+    blockTimesRef.current = restampPendingBlockTimes(blockTimesRef.current, offsetActionTime(currentTime));
+  }, [currentTime, offsetActionTime]);
   useEffect(() => { actionsRef.current = actions; }, [actions]);
 
   // Mesure du canevas : la ref est un « callback ref », donc la mesure se
@@ -1543,7 +1583,7 @@ function DataVolleyDashboard({ user, onLogout }) {
     }
 
     const v = videoRef.current;
-    const timecode = v ? v.currentTime : null;
+    const timecode = v ? offsetActionTime(v.currentTime) : null;
     // Chaque action garde le temps vidéo de l'instant où SON code a été terminé.
     // Une formule combinée (un seul bloc) donne le même temps à ses deux actions.
     const timecodes = itemTimecodes(raw, blockTimesRef.current);
@@ -1579,7 +1619,7 @@ function DataVolleyDashboard({ user, onLogout }) {
     // En consultation, sans évaluation on ne sait pas qui a gagné : on ne
     // pré-remplit pas (l'utilisateur tape '*' ou 'a' lui-même).
     prefillNextServe(next);
-  }, [matchFinished, autoServe, lightMode, prefillNextServe, codeOpts, rallyOpts, myClaimedSet, matchState.currentSet, setterNumbers]);
+  }, [matchFinished, autoServe, lightMode, prefillNextServe, offsetActionTime, codeOpts, rallyOpts, myClaimedSet, matchState.currentSet, setterNumbers]);
 
   const seekTo = useCallback((t) => {
     const v = videoRef.current;
@@ -2149,7 +2189,7 @@ function DataVolleyDashboard({ user, onLogout }) {
     }
 
     const v = videoRef.current;
-    const currentTimecode = v ? v.currentTime : null;
+    const currentTimecode = v ? offsetActionTime(v.currentTime) : null;
     let next;
 
     if (editingRallyUid === 'NEW') {
@@ -4031,6 +4071,23 @@ function DataVolleyDashboard({ user, onLogout }) {
                       <input type="checkbox" checked={autoServe} onChange={(e) => setAutoServe(e.target.checked)} />
                       Pré-remplir le serveur à chaque point validé
                     </label>
+                    <div className="form-group" style={{ marginTop: 14, maxWidth: 260 }}>
+                      <label htmlFor="dv-action-time-offset">Décalage des timecodes d’action (s)</label>
+                      <input
+                        id="dv-action-time-offset"
+                        type="number"
+                        step="0.1"
+                        value={actionTimecodeOffset}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          setActionTimecodeOffset(e.target.value === '' || !Number.isFinite(next) ? 0 : next);
+                        }}
+                      />
+                      <p className="dv-hint" style={{ marginTop: 6 }}>
+                        Négatif = action enregistrée plus tôt. Exemple : <strong>-2</strong> avec une action validée à
+                        10 s l’enregistre à 8 s. Réglage mémorisé pour ce match.
+                      </p>
+                    </div>
                     <p className="dv-hint" style={{ marginTop: 8 }}>
                       Vitesse de lecture actuelle : <strong>{playbackRate}×</strong> (raccourcis « Ralentir », « Accélérer »,
                       « Vitesse normale » ci-dessus).

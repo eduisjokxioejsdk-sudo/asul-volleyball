@@ -1,8 +1,20 @@
 {
-  "version": "3.17.0",
+  "version": "3.18.0",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.18.0",
+      "date": "2026-11-12",
+      "title": "Data Volley : décalage des timecodes d’action dans les Paramètres",
+      "items": [
+        "Nouveau paramètre « Décalage des timecodes d’action (s) » dans Paramètres › Codage : une valeur de -2 transforme une action saisie à 10 s en action à 8 s",
+        "Le décalage s’applique aux actions validées, aux différents blocs d’un même tampon et aux séquences de point modifiées",
+        "Les valeurs positives avancent le timecode, les valeurs négatives le reculent ; le timecode ne descend jamais sous 0 s",
+        "Le réglage est mémorisé sur l’appareil pour le match en cours",
+        "Validation : build, suites de tests, contrôles de portée et rendu de la page sans erreur"
+      ]
+    },
     {
       "version": "3.17.0",
       "date": "2026-11-12",
