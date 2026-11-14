@@ -197,6 +197,21 @@ db.serialize(() => {
     FOREIGN KEY (video_id) REFERENCES videos(id)
   )`);
 
+  // Sauvegardes de sécurité du codage : instantané JSON des actions AVANT
+  // chaque remplacement. Un match ne peut donc plus être perdu, même si une
+  // sauvegarde cliente arrive vide ou erronée (restauration via
+  // GET /api/datavolley/:videoId/actions/backups).
+  db.run(`CREATE TABLE IF NOT EXISTS volley_action_backups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id INTEGER NOT NULL,
+    reason TEXT,
+    action_count INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    actor_name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_volley_action_backups_video ON volley_action_backups (video_id, id)');
+
   // Réglages de synchronisation vidéo par match (ancre + décalage + marges).
   db.run(`CREATE TABLE IF NOT EXISTS volley_sync (
     video_id INTEGER PRIMARY KEY,

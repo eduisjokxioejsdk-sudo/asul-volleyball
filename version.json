@@ -1,8 +1,20 @@
 {
-  "version": "3.23.0",
+  "version": "3.23.1",
   "releasedAt": "2026-11-14",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.23.1",
+      "date": "2026-11-14",
+      "title": "Correction critique : le codage d'un match ne peut plus être effacé",
+      "items": [
+        "Correction du bug qui pouvait vider un match déjà codé : la sauvegarde met à jour les actions existantes au lieu de les supprimer puis de les réinsérer (conflit d'identifiant unique), cause de la perte des actions après un rechargement.",
+        "Sauvegarde du codage fiabilisée : une liste vide ou un envoi partiel ne peut plus remplacer un match, les erreurs de sauvegarde sont affichées et les actions sont enregistrées immédiatement à la fermeture ou à la mise en arrière-plan.",
+        "Chaque action conserve un identifiant stable de sa création à sa dernière modification : plus de doublons et plus de synchronisation susceptible d'effacer du travail.",
+        "Sauvegardes de secours automatiques avant chaque sauvegarde, avec deux points d'accès pour lister et restaurer une version antérieure du codage d'un match.",
+        "Actions perdues du match concerné restaurées (26 actions) et copie de sécurité complète de la base réalisée avant la restauration."
+      ]
+    },
     {
       "version": "3.23.0",
       "date": "2026-11-14",

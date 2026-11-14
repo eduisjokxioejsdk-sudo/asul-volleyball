@@ -524,6 +524,11 @@ function DataVolleyDashboard({ user, onLogout }) {
   const actionsVersionRef = useRef(0);
   const actionSaveInFlightRef = useRef(false);
   const loadedRef = useRef(false);
+  // Match réellement chargé et nombre d'actions connues du serveur : empêche
+  // qu'une liste vide (état initial d'un autre match, chargement incomplet…)
+  // soit envoyée au serveur et efface un match déjà codé.
+  const loadedVideoIdRef = useRef(null);
+  const lastServerCountRef = useRef(0);
   const flashTimer = useRef(null);
   const rotSaveTimer = useRef(null);
 
@@ -1382,6 +1387,8 @@ function DataVolleyDashboard({ user, onLogout }) {
             const loadedActions = ensureUids(actRes.data.actions || []);
             actionsRef.current = loadedActions;
             setActions(loadedActions);
+            lastServerCountRef.current = loadedActions.length;
+            loadedVideoIdRef.current = id;
             loadedRef.current = true;
           }
         } catch (err) {
@@ -1471,14 +1478,22 @@ function DataVolleyDashboard({ user, onLogout }) {
         !bufferRef.current
       ) {
         const remoteActions = ensureUids(actRes.data.actions);
-        // Ne remplace que si le contenu diffère réellement pour ne pas relancer l'auto-save inutilement
-        const currSig = JSON.stringify((actionsRef.current || []).map((a) => `${a.code}:${a.timecode}:${a.set_number}`));
-        const nextSig = JSON.stringify(remoteActions.map((a) => `${a.code}:${a.timecode}:${a.set_number}`));
-        if (currSig !== nextSig) {
-          loadedRef.current = false;
-          actionsRef.current = remoteActions;
-          setActions(remoteActions);
-          setTimeout(() => { loadedRef.current = true; }, 50);
+        const localCount = (actionsRef.current || []).length;
+        // Une réponse VIDE alors que des actions sont affichées ne doit jamais
+        // remplacer le travail en cours (chargement partiel, autre onglet…).
+        if (remoteActions.length === 0 && localCount > 0) {
+          console.warn('Actions distantes vides ignorées : le match local est conservé.');
+        } else {
+          lastServerCountRef.current = remoteActions.length;
+          // Ne remplace que si le contenu diffère réellement pour ne pas relancer l'auto-save inutilement
+          const currSig = JSON.stringify((actionsRef.current || []).map((a) => `${a.code}:${a.timecode}:${a.set_number}`));
+          const nextSig = JSON.stringify(remoteActions.map((a) => `${a.code}:${a.timecode}:${a.set_number}`));
+          if (currSig !== nextSig) {
+            loadedRef.current = false;
+            actionsRef.current = remoteActions;
+            setActions(remoteActions);
+            setTimeout(() => { loadedRef.current = true; }, 50);
+          }
         }
       }
       if (syncRes?.data?.sync) setSync(syncRes.data.sync);
@@ -1501,30 +1516,61 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   useOnCollectionsChanged(['videos', 'actions', 'events', 'setups', 'matches'], refreshRemoteMatchData);
 
-  /** Enregistre les actions si elles ont changé depuis la dernière sauvegarde. */
+  /**
+   * Enregistre les actions si elles ont changé depuis la dernière sauvegarde.
+   * Renvoie true si le serveur a bien enregistré la version courante.
+   */
   const persistActionsNow = useCallback(async () => {
-    if (!loadedRef.current || actionSaveInFlightRef.current || !actionsDirtyRef.current) return;
+    if (!loadedRef.current || loadedVideoIdRef.current !== id) return true;
+    if (actionSaveInFlightRef.current || !actionsDirtyRef.current) return true;
     const version = actionsVersionRef.current;
-    const payload = actionsRef.current;
+    const payload = actionsRef.current || [];
+    // Sécurité : ne jamais envoyer une liste vide à la place d'un match codé.
+    if (payload.length === 0 && lastServerCountRef.current > 0) {
+      showFlash(
+        false,
+        'Sauvegarde bloquée : les actions affichées sont vides alors que le serveur en contient. Rechargez le match.'
+      );
+      return false;
+    }
     actionSaveInFlightRef.current = true;
     setSaving(true);
     try {
-      if (myClaimedSet) {
-        const setActions = payload.filter((a) => Number(a.set_number) === myClaimedSet);
-        await datavolleyAPI.saveSetActions(id, myClaimedSet, setActions);
-      } else {
-        await datavolleyAPI.saveActions(id, payload);
+      const res = myClaimedSet
+        ? await datavolleyAPI.saveSetActions(
+            id,
+            myClaimedSet,
+            payload.filter((a) => Number(a.set_number) === myClaimedSet)
+          )
+        : await datavolleyAPI.saveActions(id, payload);
+      // Le serveur renvoie les actions réellement enregistrées avec leur
+      // sync_uuid : on garde cet identifiant pour que la sauvegarde suivante
+      // mette à jour les mêmes lignes (index UNIQUE) au lieu d'en recréer.
+      const saved = Array.isArray(res?.data?.actions) ? res.data.actions : null;
+      if (saved && saved.length === payload.length) {
+        actionsRef.current = payload.map((action, index) => ({
+          ...action,
+          sync_uuid: saved[index]?.sync_uuid || action.sync_uuid,
+        }));
       }
+      lastServerCountRef.current = payload.length;
       // Ne nettoie le drapeau que si aucune nouvelle action n'est arrivée
       // pendant la requête : sinon la prochaine passe de 2 s la sauvegardera.
       if (actionsVersionRef.current === version) actionsDirtyRef.current = false;
+      return true;
     } catch (err) {
+      const message = err?.response?.data?.error || err?.message || 'erreur inconnue';
       console.error('Failed to save actions:', err);
+      // On garde les actions « à enregistrer » : la sauvegarde repart toutes
+      // les 2 s, et l'utilisateur voit désormais l'échec (plus de perte muette).
+      actionsDirtyRef.current = true;
+      showFlash(false, `Sauvegarde impossible : ${message}`);
+      return false;
     } finally {
       actionSaveInFlightRef.current = false;
       setSaving(false);
     }
-  }, [id, myClaimedSet]);
+  }, [id, myClaimedSet, showFlash]);
 
   // Toute modification des actions programme leur sauvegarde.
   useEffect(() => {
@@ -1542,10 +1588,68 @@ function DataVolleyDashboard({ user, onLogout }) {
     return () => clearInterval(interval);
   }, [persistActionsNow]);
 
-  // Changement de match : on repart d'un état de sauvegarde propre.
+  // Enregistrement immédiat quand la page est fermée ou masquée : les dernières
+  // actions codées ne dépendent plus du cycle de 2 s. `keepalive` laisse la
+  // requête aboutir même pendant la fermeture de la fenêtre.
+  useEffect(() => {
+    const flush = () => {
+      if (!loadedRef.current || loadedVideoIdRef.current !== id) return;
+      if (!actionsDirtyRef.current) return;
+      const payload = actionsRef.current || [];
+      if (payload.length === 0 && lastServerCountRef.current > 0) return;
+      const version = actionsVersionRef.current;
+      const scoped = myClaimedSet
+        ? payload.filter((a) => Number(a.set_number) === myClaimedSet)
+        : payload;
+      const url = myClaimedSet
+        ? `/api/datavolley/${id}/actions/set/${myClaimedSet}`
+        : `/api/datavolley/${id}/actions`;
+      const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+      try {
+        fetch(url, {
+          method: 'POST',
+          keepalive: true,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ actions: scoped }),
+        })
+          .then((response) => {
+            if (response.ok && actionsVersionRef.current === version) {
+              actionsDirtyRef.current = false;
+            }
+          })
+          .catch(() => {});
+      } catch {
+        // rien de plus à faire : la sauvegarde périodique a déjà eu lieu
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+      flush();
+    };
+  }, [id, myClaimedSet]);
+
+  // Changement de match : on repart d'un état de sauvegarde propre ET on vide
+  // la liste en mémoire, pour ne jamais envoyer les actions d'un match sur un
+  // autre (l'ancien match est d'abord sauvegardé par le nettoyage ci-dessus).
   useEffect(() => {
     actionsDirtyRef.current = false;
     actionsVersionRef.current = 0;
+    loadedRef.current = false;
+    loadedVideoIdRef.current = null;
+    lastServerCountRef.current = 0;
+    actionsRef.current = [];
+    setActions([]);
   }, [id]);
 
   /**
@@ -2263,9 +2367,18 @@ function DataVolleyDashboard({ user, onLogout }) {
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 3000);
     try {
-      await datavolleyAPI.saveActions(id, demo);
+      const res = await datavolleyAPI.saveActions(id, demo);
+      const saved = Array.isArray(res?.data?.actions) ? res.data.actions : null;
+      if (saved && saved.length === demo.length) {
+        actionsRef.current = demo.map((action, index) => ({
+          ...action,
+          sync_uuid: saved[index]?.sync_uuid || action.sync_uuid,
+        }));
+      }
+      lastServerCountRef.current = demo.length;
     } catch (err) {
       console.error('Failed to save demo actions:', err);
+      showFlash(false, `Sauvegarde impossible : ${err?.response?.data?.error || err.message}`);
     }
   };
 
@@ -2634,11 +2747,27 @@ function DataVolleyDashboard({ user, onLogout }) {
       if (!window.confirm(`Importer ${parsed.actions.length} action(s) depuis « ${file.name} » ?\nLes actions actuelles seront remplacées.`)) {
         return;
       }
-      const next = parsed.actions.map((a, i) => ({ uid: `imp-${i}`, action_index: i, set_number: a.set_number, code: a.code, ...decomposeCode(a.code) }));
+      const next = ensureUids(
+        parsed.actions.map((a, i) => ({
+          uid: `imp-${i}`,
+          action_index: i,
+          set_number: a.set_number,
+          code: a.code,
+          ...decomposeCode(a.code),
+        }))
+      );
       actionsRef.current = next;
       setActions(next);
       loadedRef.current = true;
-      await datavolleyAPI.saveActions(id, next);
+      const res = await datavolleyAPI.saveActions(id, next);
+      const saved = Array.isArray(res?.data?.actions) ? res.data.actions : null;
+      if (saved && saved.length === next.length) {
+        actionsRef.current = next.map((action, index) => ({
+          ...action,
+          sync_uuid: saved[index]?.sync_uuid || action.sync_uuid,
+        }));
+      }
+      lastServerCountRef.current = next.length;
       setFlash({ ok: true, text: `${next.length} action(s) importée(s) depuis ${file.name}.` });
     } catch (err) {
       setFlash({ ok: false, text: "Échec de l'import .dvw : " + (err?.message || '') });

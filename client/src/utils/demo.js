@@ -8,7 +8,7 @@
 // Produit un set 1 terminé (25-20) et un set 2 en cours (12-8).
 // ============================================================================
 
-import { makeUid, decomposeCode, formatCode } from './datavolley.js';
+import { makeUid, makeSyncUuid, decomposeCode, formatCode } from './datavolley.js';
 
 // Zones officielles : 4 3 2 / 7 8 9 / 5 6 1 (filet en haut).
 const ATTACK_ZONES = ['4', '3', '2', '7', '8', '9', '5', '6', '1'];
@@ -40,6 +40,7 @@ function recepEval() {
 function buildAction(team, player, code, timecode) {
   return {
     uid: makeUid(),
+    sync_uuid: makeSyncUuid(),
     code,
     timecode,
     system_time: null,

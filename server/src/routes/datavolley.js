@@ -86,8 +86,247 @@ function insertActionAudit(videoId, before, after, user) {
       (video_id, action_uuid, action_index, operation, before_json, after_json, user_id, actor_name)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
-  for (const change of changes) stmt.run(change);
+  for (const change of changes) {
+    // Une erreur d'écriture du journal ne doit jamais casser la sauvegarde,
+    // mais elle ne doit pas non plus passer inaperçue.
+    stmt.run(change, (err) => {
+      if (err) console.warn('Journal des actions non écrit :', err.message);
+    });
+  }
   stmt.finalize();
+}
+
+// ---------------------------------------------------------------------------
+// Sauvegarde des actions : MISE À JOUR par sync_uuid (jamais de perte)
+// ---------------------------------------------------------------------------
+// L'ancienne version marquait TOUTES les actions existantes comme supprimées
+// puis les réinsérait. Or `sync_uuid` porte un index UNIQUE : dès qu'une action
+// avait déjà son identifiant (après un rechargement de page — cas normal), chaque
+// INSERT échouait silencieusement, la transaction validait quand même et le
+// match devenait VIDE tout en répondant « succès ».
+// On met donc à jour les lignes existantes et on n'insère que les nouvelles :
+//   • liste vide refusée si le match contient déjà des actions ;
+//   • instantané de secours avant chaque remplacement ;
+//   • toute erreur SQL annule la transaction et remonte au client.
+// ---------------------------------------------------------------------------
+
+const ACTION_DATA_COLUMNS = [
+  'action_index', 'code', 'timecode', 'system_time', 'team', 'player_number', 'action',
+  'evaluation', 'type', 'start_zone', 'end_zone', 'start_subzone', 'end_subzone',
+  'set_number', 'note', 'attack_zone', 'start_x', 'start_y', 'mid_x', 'mid_y', 'end_x',
+  'end_y', 'is_auto',
+];
+
+const dbRunAsync = (sql, params = []) =>
+  new Promise((resolve, reject) => {
+    db.run(sql, params, function onRun(err) {
+      if (err) reject(err);
+      else resolve(this);
+    });
+  });
+
+const dbAllAsync = (sql, params = []) =>
+  new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || [])));
+  });
+
+/** Valeurs d'une action dans l'ordre de ACTION_DATA_COLUMNS. */
+function actionDataValues(action, fallbackSetNumber = null) {
+  const parts = dvCode.decomposeCode(action.code);
+  return [
+    typeof action.action_index === 'number' ? action.action_index : 0,
+    action.code,
+    action.timecode ?? null,
+    action.system_time ?? null,
+    action.team || parts.team,
+    action.player_number ?? parts.player_number,
+    action.action || parts.action,
+    action.evaluation || parts.evaluation,
+    parts.type || null,
+    action.start_zone ?? parts.start_zone ?? null,
+    action.end_zone ?? parts.end_zone ?? null,
+    action.start_subzone ?? parts.start_subzone ?? null,
+    action.end_subzone ?? parts.end_subzone ?? null,
+    action.set_number ?? fallbackSetNumber ?? null,
+    action.note ?? null,
+    action.attack_zone ?? parts.start_zone ?? null,
+    action.start_x ?? null,
+    action.start_y ?? null,
+    action.mid_x ?? null,
+    action.mid_y ?? null,
+    action.end_x ?? null,
+    action.end_y ?? null,
+    action.is_auto ? 1 : 0,
+  ];
+}
+
+/** Instantané de secours du codage (50 derniers par match). */
+function backupActions(videoId, rows, reason, user) {
+  return new Promise((resolve) => {
+    if (!rows || rows.length === 0) return resolve();
+    const payload = JSON.stringify(rows);
+    db.run(
+      `INSERT INTO volley_action_backups (video_id, reason, action_count, payload, actor_name)
+       VALUES (?, ?, ?, ?, ?)`,
+      [videoId, reason || 'save', rows.length, payload, user?.name || user?.email || 'Utilisateur'],
+      () => {
+        db.run(
+          `DELETE FROM volley_action_backups
+            WHERE video_id = ? AND id NOT IN (
+              SELECT id FROM volley_action_backups WHERE video_id = ? ORDER BY id DESC LIMIT 50)`,
+          [videoId, videoId],
+          () => resolve()
+        );
+      }
+    );
+  });
+}
+
+function actionSaveError(message, status = 400) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+/**
+ * Remplace les actions d'un match (ou d'un seul set) sans jamais perdre de
+ * travail. Renvoie la liste réellement enregistrée (avec son sync_uuid).
+ */
+async function replaceActions({
+  videoId,
+  setNumber = null,
+  actions,
+  user,
+  allowEmpty = false,
+  reason = 'save',
+}) {
+  const payloadRows = [];
+  for (const action of actions) {
+    for (const code of dvCode.expandSequence(action.code)) payloadRows.push({ ...action, code });
+  }
+
+  const scope =
+    setNumber == null
+      ? { sql: 'video_id = ?', params: [videoId] }
+      : { sql: 'video_id = ? AND COALESCE(set_number, 1) = ?', params: [videoId, setNumber] };
+
+  const oldRows = await dbAllAsync(
+    `SELECT * FROM volley_actions WHERE ${scope.sql} AND COALESCE(deleted, 0) = 0
+      ORDER BY action_index ASC, id ASC`,
+    scope.params
+  );
+
+  // Garde-fou : une liste vide ne doit jamais effacer un match déjà codé.
+  if (payloadRows.length === 0 && oldRows.length > 0 && !allowEmpty) {
+    throw actionSaveError(
+      `Sauvegarde refusée : aucune action reçue alors que ${oldRows.length} action(s) ` +
+        'sont déjà enregistrées. Utilisez « Supprimer le codage » pour effacer volontairement.',
+      409
+    );
+  }
+
+  // Second garde-fou : un envoi qui ne référence AUCUNE action existante
+  // (aucun sync_uuid connu) et qui est plus court que le match enregistré part
+  // d'un état périmé (page restée sur un match vide, autre onglet…). On refuse
+  // au lieu de remplacer les actions déjà codées par ce seul envoi partiel.
+  const payloadHasKnownAction = payloadRows.some(
+    (row) => typeof row.sync_uuid === 'string' && row.sync_uuid.length >= 8
+  );
+  if (
+    payloadRows.length > 0 &&
+    oldRows.length >= 5 &&
+    payloadRows.length < oldRows.length &&
+    !payloadHasKnownAction &&
+    !allowEmpty
+  ) {
+    throw actionSaveError(
+      `Sauvegarde refusée : l'envoi ne contient aucune des ${oldRows.length} action(s) déjà ` +
+        'enregistrées. Rechargez le match avant de continuer.',
+      409
+    );
+  }
+
+  const now = new Date().toISOString();
+
+  // Toutes les lignes du match (y compris les pierres tombales) : un sync_uuid
+  // existant doit être mis à jour, jamais réinséré (index UNIQUE).
+  const allRows = await dbAllAsync(
+    'SELECT id, video_id, sync_uuid, action_index, code, set_number, deleted FROM volley_actions WHERE video_id = ?',
+    [videoId]
+  );
+  const byUuid = new Map();
+  for (const row of allRows) {
+    if (row.sync_uuid) byUuid.set(String(row.sync_uuid), row);
+  }
+  // Correspondance de secours pour les clients qui n'envoient pas de sync_uuid :
+  // même position + même code = même action.
+  const byKey = new Map();
+  for (const row of oldRows) {
+    byKey.set(`${row.action_index}|${row.code}|${row.set_number ?? ''}`, row);
+  }
+
+  const usedUuids = new Set();
+  const planned = [];
+  for (const row of payloadRows) {
+    let uuid =
+      typeof row.sync_uuid === 'string' && row.sync_uuid.length >= 8 ? row.sync_uuid : null;
+    let existing = uuid ? byUuid.get(uuid) : null;
+    if (existing && Number(existing.video_id) !== Number(videoId)) existing = null;
+    if (!existing) {
+      const key = `${row.action_index}|${row.code}|${row.set_number ?? (setNumber ?? '')}`;
+      const candidate = byKey.get(key);
+      if (candidate && candidate.sync_uuid && !usedUuids.has(String(candidate.sync_uuid))) {
+        existing = candidate;
+        uuid = String(candidate.sync_uuid);
+      }
+    }
+    if (!uuid || usedUuids.has(uuid)) uuid = crypto.randomUUID();
+    usedUuids.add(uuid);
+    planned.push({ row, uuid, existingId: existing ? existing.id : null });
+  }
+
+  await backupActions(videoId, oldRows, reason, user);
+
+  await dbRunAsync('BEGIN TRANSACTION');
+  try {
+    // 1) Les actions du périmètre absentes de l'envoi deviennent des pierres
+    //    tombales (propagées au cloud), jamais des suppressions brutales.
+    await dbRunAsync(
+      `UPDATE volley_actions SET deleted = 1, dirty = 1, local_updated_at = ?
+        WHERE ${scope.sql} AND COALESCE(deleted, 0) = 0`,
+      [now, ...scope.params]
+    );
+
+    // 2) Mise à jour des actions déjà connues, insertion des nouvelles.
+    const assignments = ACTION_DATA_COLUMNS.map((column) => `${column} = ?`).join(', ');
+    for (const { row, uuid, existingId } of planned) {
+      const values = actionDataValues(row, setNumber);
+      if (existingId) {
+        await dbRunAsync(
+          `UPDATE volley_actions SET sync_uuid = ?, ${assignments}, deleted = 0, dirty = 1, local_updated_at = ?
+            WHERE id = ?`,
+          [uuid, ...values, now, existingId]
+        );
+      } else {
+        await dbRunAsync(
+          `INSERT INTO volley_actions
+            (video_id, ${ACTION_DATA_COLUMNS.join(', ')}, deleted, dirty, local_updated_at, sync_uuid)
+           VALUES (?, ${ACTION_DATA_COLUMNS.map(() => '?').join(', ')}, 0, 1, ?, ?)`,
+          [videoId, ...values, now, uuid]
+        );
+      }
+    }
+    await dbRunAsync('COMMIT');
+  } catch (err) {
+    await dbRunAsync('ROLLBACK').catch(() => {});
+    throw err;
+  }
+
+  const saved = planned.map(({ row, uuid }) => ({ ...row, sync_uuid: uuid }));
+  syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+  insertActionAudit(videoId, oldRows, saved, user);
+  emitCollectionChanged('actions');
+  return { actions: saved, count: saved.length };
 }
 
 // Liste des matchs terminés (partagée entre tous les utilisateurs et postes).
@@ -142,228 +381,138 @@ router.get('/:videoId/audit', authenticateToken, (req, res) => {
   });
 });
 
-// Replace all coded actions for a video (transaction)
+// Remplace toutes les actions codées d'un match (transaction, sans perte).
 router.post('/:videoId/actions', authenticateToken, (req, res) => {
   const { videoId } = req.params;
-  const { actions } = req.body;
+  const { actions } = req.body || {};
 
-  if (!actions || !Array.isArray(actions)) {
+  if (!Array.isArray(actions)) {
     return res.status(400).json({ error: 'Actions array is required' });
   }
-
-  verifyVideo(req, res, () => {
-    for (const a of actions) {
-      if (!isValidCode(a.code)) {
-        return res.status(400).json({ error: `Code invalide : "${a.code}"` });
-      }
+  for (const action of actions) {
+    if (!isValidCode(action.code)) {
+      return res.status(400).json({ error: `Code invalide : "${action.code}"` });
     }
+  }
 
-    const rows = [];
-    for (const a of actions) {
-      for (const code of dvCode.expandSequence(a.code)) {
-        rows.push({ ...a, code });
-      }
+  verifyVideo(req, res, async () => {
+    try {
+      const result = await replaceActions({
+        videoId,
+        actions,
+        user: req.user,
+        allowEmpty: req.body?.allowEmpty === true,
+        reason: 'replace-all',
+      });
+      return res.json({
+        message: 'Actions saved successfully',
+        count: result.count,
+        actions: result.actions,
+      });
+    } catch (err) {
+      if (err.status) return res.status(err.status).json({ error: err.message });
+      console.error('Échec de la sauvegarde des actions :', err);
+      return res.status(500).json({ error: `Sauvegarde des actions impossible : ${err.message}` });
     }
-
-    const now = new Date().toISOString();
-    db.all('SELECT * FROM volley_actions WHERE video_id = ? AND COALESCE(deleted, 0) = 0 ORDER BY action_index ASC, id ASC', [videoId], (readErr, oldRows) => {
-    if (readErr) return res.status(500).json({ error: 'Database error' });
-    db.run('BEGIN TRANSACTION', (err) => {
-      if (err) return res.status(500).json({ error: 'Failed to start transaction' });
-
-      db.run(
-        'UPDATE volley_actions SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_id = ?',
-        [now, videoId],
-        (err2) => {
-          if (err2) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: 'Failed to clear old actions' });
-          }
-
-          if (rows.length === 0) {
-            db.run('COMMIT', (err3) => {
-              if (err3) return res.status(500).json({ error: 'Failed to commit transaction' });
-              syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
-              insertActionAudit(videoId, oldRows, [], req.user);
-              emitCollectionChanged('actions');
-              return res.json({ message: 'Actions cleared successfully', count: 0 });
-            });
-            return;
-          }
-
-          const stmt = db.prepare(
-            `INSERT INTO volley_actions
-              (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation,
-               type, start_zone, end_zone, start_subzone, end_subzone, set_number, note, attack_zone,
-               start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto, deleted, dirty, local_updated_at, sync_uuid)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
-          );
-
-          rows.forEach((a, i) => {
-            const code = a.code;
-            const parts = dvCode.decomposeCode(code);
-            stmt.run(
-              videoId,
-              typeof a.action_index === 'number' ? a.action_index : i,
-              code,
-              a.timecode ?? null,
-              a.system_time ?? null,
-              a.team || parts.team,
-              a.player_number ?? parts.player_number,
-              a.action || parts.action,
-              a.evaluation || parts.evaluation,
-              parts.type || null,
-              a.start_zone ?? parts.start_zone ?? null,
-              a.end_zone ?? parts.end_zone ?? null,
-              a.start_subzone ?? parts.start_subzone ?? null,
-              a.end_subzone ?? parts.end_subzone ?? null,
-              a.set_number ?? null,
-              a.note ?? null,
-              a.attack_zone ?? parts.start_zone ?? null,
-              a.start_x ?? null,
-              a.start_y ?? null,
-              a.mid_x ?? null,
-              a.mid_y ?? null,
-              a.end_x ?? null,
-              a.end_y ?? null,
-              a.is_auto ? 1 : 0,
-              now,
-              a.sync_uuid || crypto.randomUUID()
-            );
-          });
-
-          stmt.finalize((err3) => {
-            if (err3) {
-              db.run('ROLLBACK');
-              return res.status(500).json({ error: 'Failed to save actions' });
-            }
-            db.run('COMMIT', (err4) => {
-              if (err4) return res.status(500).json({ error: 'Failed to commit transaction' });
-              syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
-              insertActionAudit(videoId, oldRows, rows, req.user);
-              emitCollectionChanged('actions');
-              res.json({ message: 'Actions saved successfully', count: rows.length });
-            });
-          });
-        }
-      );
-    });
-    });
   });
 });
 
-// Remplace les actions d'UN SEUL set (codage collaboratif)
+// Remplace les actions d'UN SEUL set (codage collaboratif).
 router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) => {
   const { videoId } = req.params;
   const setNumber = Number(req.params.setNumber);
-  const { actions } = req.body;
+  const { actions } = req.body || {};
 
   if (!Number.isInteger(setNumber) || setNumber <= 0) {
     return res.status(400).json({ error: 'Numéro de set invalide' });
   }
-  if (!actions || !Array.isArray(actions)) {
+  if (!Array.isArray(actions)) {
     return res.status(400).json({ error: 'Actions array is required' });
   }
+  for (const action of actions) {
+    if (!isValidCode(action.code)) {
+      return res.status(400).json({ error: `Code invalide : "${action.code}"` });
+    }
+  }
 
+  // Seules les actions du set revendiqué sont remplacées : les autres sets
+  // restent strictement intacts.
+  const scoped = actions
+    .filter((action) => action.set_number == null || Number(action.set_number) === setNumber)
+    .map((action) => ({ ...action, set_number: setNumber }));
+
+  verifyVideo(req, res, async () => {
+    try {
+      const result = await replaceActions({
+        videoId,
+        setNumber,
+        actions: scoped,
+        user: req.user,
+        allowEmpty: req.body?.allowEmpty === true,
+        reason: `replace-set-${setNumber}`,
+      });
+      return res.json({
+        message: 'Actions du set enregistrées',
+        count: result.count,
+        actions: result.actions,
+      });
+    } catch (err) {
+      if (err.status) return res.status(err.status).json({ error: err.message });
+      console.error(`Échec de la sauvegarde des actions du set ${setNumber} :`, err);
+      return res.status(500).json({ error: `Sauvegarde des actions impossible : ${err.message}` });
+    }
+  });
+});
+
+// Sauvegardes de secours du codage : liste et restauration.
+router.get('/:videoId/actions/backups', authenticateToken, (req, res) => {
   verifyVideo(req, res, () => {
-    for (const a of actions) {
-      if (!isValidCode(a.code)) {
-        return res.status(400).json({ error: `Code invalide : "${a.code}"` });
-      }
-    }
-
-    const rows = [];
-    for (const a of actions) {
-      for (const code of dvCode.expandSequence(a.code)) {
-        rows.push({ ...a, code });
-      }
-    }
-
-    const now = new Date().toISOString();
     db.all(
-      'SELECT * FROM volley_actions WHERE video_id = ? AND COALESCE(deleted, 0) = 0 AND COALESCE(set_number, 1) = ? ORDER BY action_index ASC, id ASC',
-      [videoId, setNumber],
-      (readErr, oldRows) => {
-    if (readErr) return res.status(500).json({ error: 'Database error' });
-    db.run('BEGIN TRANSACTION', (err) => {
-      if (err) return res.status(500).json({ error: 'Failed to start transaction' });
+      `SELECT id, video_id, reason, action_count, actor_name, created_at
+         FROM volley_action_backups WHERE video_id = ? ORDER BY id DESC LIMIT 50`,
+      [req.params.videoId],
+      (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ backups: rows || [] });
+      }
+    );
+  });
+});
 
-      db.run(
-        'UPDATE volley_actions SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_id = ? AND COALESCE(set_number, 1) = ?',
-        [now, videoId, setNumber],
-        (err2) => {
-          if (err2) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: 'Failed to clear old actions' });
-          }
-
-          if (rows.length === 0) {
-            return db.run('COMMIT', (err3) => {
-              if (err3) return res.status(500).json({ error: 'Failed to commit transaction' });
-              syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
-              insertActionAudit(videoId, oldRows, [], req.user);
-              emitCollectionChanged('actions');
-              return res.json({ message: 'Actions du set effacées', count: 0 });
-            });
-          }
-
-          const stmt = db.prepare(
-            `INSERT INTO volley_actions
-              (video_id, action_index, code, timecode, system_time, team, player_number, action, evaluation,
-               type, start_zone, end_zone, start_subzone, end_subzone, set_number, note, attack_zone,
-               start_x, start_y, mid_x, mid_y, end_x, end_y, is_auto, deleted, dirty, local_updated_at, sync_uuid)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
-          );
-
-          rows.forEach((a, i) => {
-            const code = a.code;
-            const parts = dvCode.decomposeCode(code);
-            stmt.run(
-              videoId,
-              typeof a.action_index === 'number' ? a.action_index : i,
-              code,
-              a.timecode ?? null,
-              a.system_time ?? null,
-              a.team || parts.team,
-              a.player_number ?? parts.player_number,
-              a.action || parts.action,
-              a.evaluation || parts.evaluation,
-              parts.type || null,
-              a.start_zone ?? parts.start_zone ?? null,
-              a.end_zone ?? parts.end_zone ?? null,
-              a.start_subzone ?? parts.start_subzone ?? null,
-              a.end_subzone ?? parts.end_subzone ?? null,
-              a.set_number ?? setNumber,
-              a.note ?? null,
-              a.attack_zone ?? parts.start_zone ?? null,
-              a.start_x ?? null,
-              a.start_y ?? null,
-              a.mid_x ?? null,
-              a.mid_y ?? null,
-              a.end_x ?? null,
-              a.end_y ?? null,
-              a.is_auto ? 1 : 0,
-              now,
-              a.sync_uuid || crypto.randomUUID()
-            );
-          });
-
-          stmt.finalize((err3) => {
-            if (err3) {
-              db.run('ROLLBACK');
-              return res.status(500).json({ error: 'Failed to save actions' });
-            }
-            db.run('COMMIT', (err4) => {
-              if (err4) return res.status(500).json({ error: 'Failed to commit transaction' });
-              syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
-              insertActionAudit(videoId, oldRows, rows, req.user);
-              emitCollectionChanged('actions');
-              res.json({ message: 'Actions du set enregistrées', count: rows.length });
-            });
-          });
+router.post('/:videoId/actions/restore/:backupId', authenticateToken, (req, res) => {
+  verifyVideo(req, res, () => {
+    db.get(
+      'SELECT * FROM volley_action_backups WHERE id = ? AND video_id = ?',
+      [req.params.backupId, req.params.videoId],
+      async (err, backup) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!backup) return res.status(404).json({ error: 'Sauvegarde introuvable' });
+        let actions = null;
+        try {
+          actions = JSON.parse(backup.payload);
+        } catch {
+          actions = null;
         }
-      );
-    });
+        if (!Array.isArray(actions)) {
+          return res.status(400).json({ error: 'Sauvegarde illisible' });
+        }
+        try {
+          const result = await replaceActions({
+            videoId: req.params.videoId,
+            actions,
+            user: req.user,
+            allowEmpty: true,
+            reason: `restore-${backup.id}`,
+          });
+          return res.json({
+            message: 'Sauvegarde restaurée',
+            count: result.count,
+            actions: result.actions,
+          });
+        } catch (restoreErr) {
+          console.error('Restauration des actions impossible :', restoreErr);
+          return res.status(500).json({ error: 'Restauration impossible' });
+        }
       }
     );
   });
@@ -378,17 +527,20 @@ router.delete('/:videoId/actions', authenticateToken, (req, res) => {
       [req.params.videoId],
       (readErr, oldRows) => {
         if (readErr) return res.status(500).json({ error: 'Database error' });
-        db.run(
-          'UPDATE volley_actions SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_id = ?',
-          [now, req.params.videoId],
-          function (err) {
-            if (err) return res.status(500).json({ error: 'Failed to delete actions' });
-            insertActionAudit(req.params.videoId, oldRows, [], req.user);
-            syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
-            emitCollectionChanged('actions');
-            res.json({ message: 'Actions deleted successfully' });
-          }
-        );
+        // Même une suppression volontaire laisse une sauvegarde récupérable.
+        backupActions(req.params.videoId, oldRows, 'delete-all', req.user).then(() => {
+          db.run(
+            'UPDATE volley_actions SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_id = ?',
+            [now, req.params.videoId],
+            function (err) {
+              if (err) return res.status(500).json({ error: 'Failed to delete actions' });
+              insertActionAudit(req.params.videoId, oldRows, [], req.user);
+              syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+              emitCollectionChanged('actions');
+              res.json({ message: 'Actions deleted successfully' });
+            }
+          );
+        });
       }
     );
   });

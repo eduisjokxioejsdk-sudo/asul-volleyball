@@ -1891,9 +1891,36 @@ export function makeUid() {
   return `a${Date.now().toString(36)}${_uidSeq}`;
 }
 
-/** Ajoute un `uid` aux actions qui n'en ont pas (données chargées du serveur). */
+/**
+ * Identifiant partagé (cloud + serveur) d'une action. Il est généré dès la
+ * création de l'action : chaque sauvegarde met ainsi à jour la même ligne au
+ * lieu d'en recréer une (l'index UNIQUE de `sync_uuid` l'imposait, sinon les
+ * actions déjà enregistrées étaient perdues à la sauvegarde suivante).
+ */
+export function makeSyncUuid() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // contexte sans crypto.randomUUID : repli ci-dessous
+  }
+  const hex = '0123456789abcdef';
+  let out = '';
+  for (let i = 0; i < 36; i += 1) {
+    if (i === 8 || i === 13 || i === 18 || i === 23) out += '-';
+    else if (i === 14) out += '4';
+    else out += hex[Math.floor(Math.random() * 16)];
+  }
+  return out;
+}
+
+/** Ajoute un `uid` et un `sync_uuid` aux actions qui n'en ont pas. */
 export function ensureUids(actions) {
-  return (actions || []).map((a) => (a.uid ? a : { ...a, uid: makeUid() }));
+  return (actions || []).map((a) => {
+    if (a.uid && a.sync_uuid) return a;
+    return { ...a, uid: a.uid || makeUid(), sync_uuid: a.sync_uuid || makeSyncUuid() };
+  });
 }
 
 /** Réattribue action_index selon l'ordre courant du tableau. */
@@ -1911,6 +1938,7 @@ export function makeAction(code, currentTimecode = null, extra = {}) {
   const hasTime = typeof currentTimecode === 'number' && !Number.isNaN(currentTimecode);
   return {
     uid: makeUid(),
+    sync_uuid: makeSyncUuid(),
     code,
     timecode: hasTime ? currentTimecode : null,
     system_time: hasTime ? Math.floor(Date.now() / 1000) : null,

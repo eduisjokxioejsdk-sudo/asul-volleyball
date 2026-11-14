@@ -89,6 +89,10 @@ export const datavolleyAPI = {
   saveActions: (videoId, actions) => api.post(`/datavolley/${videoId}/actions`, { actions }),
   saveSetActions: (videoId, setNumber, actions) =>
     api.post(`/datavolley/${videoId}/actions/set/${setNumber}`, { actions }),
+  // Sauvegardes de secours du codage (instantané avant chaque sauvegarde).
+  getActionBackups: (videoId) => api.get(`/datavolley/${videoId}/actions/backups`),
+  restoreActionBackup: (videoId, backupId) =>
+    api.post(`/datavolley/${videoId}/actions/restore/${backupId}`),
   deleteActions: (videoId) => api.delete(`/datavolley/${videoId}/actions`),
   getSync: (videoId) => api.get(`/datavolley/${videoId}/sync`),
   saveSync: (videoId, sync) => api.put(`/datavolley/${videoId}/sync`, sync),
