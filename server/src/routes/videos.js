@@ -355,10 +355,14 @@ router.post('/purge-local', authenticateToken, (req, res) => {
 // comptes et tous les postes : la bibliothèque est identique partout)
 router.get('/', authenticateToken, (req, res) => {
   db.all(
-    `SELECT * FROM videos
-      WHERE COALESCE(deleted, 0) = 0
-        AND TRIM(COALESCE(youtube_url, '')) <> ''
-      ORDER BY created_at DESC, id DESC`,
+    `SELECT v.*,
+            (SELECT GROUP_CONCAT(DISTINCT vf.folder_id)
+               FROM video_folders vf
+              WHERE vf.video_id = v.id) AS folder_ids
+       FROM videos v
+      WHERE COALESCE(v.deleted, 0) = 0
+        AND TRIM(COALESCE(v.youtube_url, '')) <> ''
+      ORDER BY v.created_at DESC, v.id DESC`,
     [],
     (err, rows) => {
       if (err) {
@@ -746,6 +750,51 @@ router.get('/folders/:id/videos', authenticateToken, (req, res) => {
           res.json({ videos: videos || [] });
         }
       );
+    }
+  );
+});
+
+// Déplacer une vidéo vers un dossier unique (ou la retirer des dossiers).
+// Utilisé par le glisser-déposer de la page Data Volley.
+router.put('/:id/folder', authenticateToken, (req, res) => {
+  const raw = req.body?.folder_id;
+  const folderId = raw == null || raw === '' ? null : Number(raw);
+  if (folderId != null && (!Number.isInteger(folderId) || folderId <= 0)) {
+    return res.status(400).json({ error: 'Dossier invalide' });
+  }
+
+  db.get(
+    'SELECT id FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id],
+    (err, video) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
+
+      const apply = () => {
+        db.run('DELETE FROM video_folders WHERE video_id = ?', [req.params.id], (delErr) => {
+          if (delErr) return res.status(500).json({ error: 'Failed to move video' });
+          if (!folderId) {
+            emitCollectionChanged('videos');
+            return res.json({ video_id: Number(req.params.id), folder_id: null });
+          }
+          db.run(
+            'INSERT OR IGNORE INTO video_folders (video_id, folder_id) VALUES (?, ?)',
+            [req.params.id, folderId],
+            (insErr) => {
+              if (insErr) return res.status(500).json({ error: 'Failed to move video' });
+              emitCollectionChanged('videos');
+              res.json({ video_id: Number(req.params.id), folder_id: folderId });
+            }
+          );
+        });
+      };
+
+      if (!folderId) return apply();
+      db.get('SELECT id FROM folders WHERE id = ?', [folderId], (fErr, folder) => {
+        if (fErr) return res.status(500).json({ error: 'Database error' });
+        if (!folder) return res.status(404).json({ error: 'Folder not found' });
+        apply();
+      });
     }
   );
 });

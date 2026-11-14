@@ -97,8 +97,12 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderColor, setNewFolderColor] = useState('#c8a165');
+  // Glisser-déposer d'une vidéo sur un dossier existant.
+  const [draggingVideoId, setDraggingVideoId] = useState(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState(null);
 
   const [showUpload, setShowUpload] = useState(false);
+  const [uploadFolderId, setUploadFolderId] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [youtubeUrlAngle2, setYoutubeUrlAngle2] = useState('');
   const [angle2Offset, setAngle2Offset] = useState(0);
@@ -124,8 +128,8 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
     loadAll();
   }, []);
 
-  const loadAll = async () => {
-    setLoading(true);
+  const loadAll = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [vidsRes, foldsRes, teamsRes, finRes] = await Promise.all([
         videosAPI.getAll(),
@@ -144,11 +148,11 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
     } catch (err) {
       console.error('Erreur chargement Data Volley matchs:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
-  useOnCollectionsChanged(['videos', 'teams', 'matches'], loadAll);
+  useOnCollectionsChanged(['videos', 'teams', 'matches'], () => loadAll({ silent: true }));
 
   const handleQuickCreateTeam = async () => {
     if (!newTeamName.trim()) return;
@@ -225,11 +229,24 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
       formData.append('team1_name', homeTeam?.name || 'Équipe 1');
       formData.append('team2_name', awayTeam?.name || 'Équipe 2');
 
-      await videosAPI.upload(formData);
+      const uploadRes = await videosAPI.upload(formData);
+      const createdId = uploadRes.data?.id;
+      let folderWarning = '';
+      if (createdId && uploadFolderId) {
+        try {
+          await videosAPI.setFolder(createdId, Number(uploadFolderId));
+        } catch (folderErr) {
+          folderWarning = `Match créé, mais impossible de le placer dans le dossier : ${
+            folderErr.response?.data?.error || folderErr.message
+          }`;
+        }
+      }
       setShowUpload(false);
       setYoutubeUrl('');
       setYoutubeUrlAngle2('');
       setAngle2Offset(0);
+      setUploadFolderId('');
+      if (folderWarning) alert(folderWarning);
       loadAll();
     } catch (err) {
       setUploadError(err.response?.data?.error || `Erreur création : ${err.message}`);
@@ -305,14 +322,92 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
     }
   };
 
-  const subfolders = folders.filter(
-    (f) => f.parent_folder_id === (currentFolder?.id || null)
-  );
+  const folderIdsOf = (video) =>
+    String(video?.folder_ids || '')
+      .split(',')
+      .map((n) => Number(n))
+      .filter((n) => Number.isInteger(n) && n > 0);
 
-  const displayedVideos = (currentFolder
-    ? videos.filter((v) => v.folder_id === currentFolder.id)
-    : videos
-  ).filter((v) => {
+  /** Chemin lisible d'un dossier (dossiers imbriqués). */
+  const folderLabel = (folder) => {
+    const byId = new Map(folders.map((f) => [Number(f.id), f]));
+    const names = [];
+    const seen = new Set();
+    let current = folder;
+    while (current && !seen.has(Number(current.id))) {
+      seen.add(Number(current.id));
+      names.unshift(current.name);
+      current = current.parent_folder_id ? byId.get(Number(current.parent_folder_id)) : null;
+    }
+    return names.join(' / ');
+  };
+
+  const videosInFolder = (folderId) =>
+    videos.filter((v) => folderIdsOf(v).includes(Number(folderId))).length;
+
+  /** Déplace une vidéo vers un dossier ; `null` la remet sans dossier. */
+  const moveVideoToFolder = async (videoId, folderId) => {
+    const target = folderId ? Number(folderId) : null;
+    const id = Number(videoId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    const previous = videos;
+    setVideos((prev) =>
+      prev.map((v) => (Number(v.id) === id ? { ...v, folder_ids: target ? String(target) : '' } : v))
+    );
+    setDraggingVideoId(null);
+    setDragOverFolderId(null);
+    try {
+      await videosAPI.setFolder(id, target);
+    } catch (err) {
+      setVideos(previous);
+      alert(`Erreur déplacement : ${err.response?.data?.error || err.message}`);
+    }
+  };
+
+  const handleDragStart = (e, video) => {
+    e.stopPropagation();
+    setDraggingVideoId(video.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(video.id));
+  };
+
+  const handleDragEnd = () => {
+    setDraggingVideoId(null);
+    setDragOverFolderId(null);
+  };
+
+  const handleFolderDragOver = (e, folderId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggingVideoId) setDragOverFolderId(folderId == null ? 0 : Number(folderId));
+  };
+
+  const handleFolderDragLeave = (e, folderId) => {
+    e.preventDefault();
+    const key = folderId == null ? 0 : Number(folderId);
+    if (dragOverFolderId === key) setDragOverFolderId(null);
+  };
+
+  const handleFolderDrop = (e, folderId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropped = Number(e.dataTransfer.getData('text/plain')) || draggingVideoId;
+    if (dropped) moveVideoToFolder(dropped, folderId);
+  };
+
+  const parentFolderId = currentFolder ? Number(currentFolder.id) : null;
+  const subfolders = folders.filter((f) => {
+    const pid = f.parent_folder_id == null ? null : Number(f.parent_folder_id);
+    return pid === parentFolderId;
+  });
+
+  const displayedVideos = videos
+    .filter((v) => {
+      const ids = folderIdsOf(v);
+      return currentFolder ? ids.includes(Number(currentFolder.id)) : ids.length === 0;
+    })
+    .filter((v) => {
     if (selectedTeamFilter !== 'ALL') {
       const targetTeam = teams.find((t) => String(t.id) === String(selectedTeamFilter));
       const matchById =
@@ -332,6 +427,12 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
     const t2 = (v.team2_name || '').toLowerCase();
     return name.includes(q) || t1.includes(q) || t2.includes(q);
   });
+
+  const openUploadModal = () => {
+    setUploadError('');
+    setUploadFolderId(currentFolder ? String(currentFolder.id) : '');
+    setShowUpload(true);
+  };
 
   return (
     <div className="dv-matches-page">
@@ -357,10 +458,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
             <button
               type="button"
               className="btn btn-primary btn-lg"
-              onClick={() => {
-                setUploadError('');
-                setShowUpload(true);
-              }}
+              onClick={openUploadModal}
             >
               <Plus size={15} /> Nouveau match YouTube
             </button>
@@ -412,34 +510,61 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 14px', background: '#141418', border: '1px solid #27272a' }}>
             <button
               type="button"
-              className={`btn btn-sm ${!currentFolder ? 'btn-primary' : 'btn-secondary'}`}
+              className={`btn btn-sm ${!currentFolder ? 'btn-primary' : 'btn-secondary'} ${
+                dragOverFolderId === 0 ? 'drag-over' : ''
+              }`}
               onClick={() => navigateToFolder(-1)}
+              onDragOver={(e) => handleFolderDragOver(e, null)}
+              onDragLeave={(e) => handleFolderDragLeave(e, null)}
+              onDrop={(e) => handleFolderDrop(e, null)}
+              title="Revenir à la racine ou déposer une vidéo pour la retirer de son dossier"
             >
-              Tous les dossiers
+              Sans dossier
             </button>
             {folderPath.map((folder, index) => (
               <React.Fragment key={folder.id}>
                 <span style={{ color: '#71717a' }}>/</span>
                 <button
                   type="button"
-                  className={`btn btn-sm ${index === folderPath.length - 1 ? 'btn-primary' : 'btn-secondary'}`}
+                  className={`btn btn-sm ${
+                    index === folderPath.length - 1 ? 'btn-primary' : 'btn-secondary'
+                  } ${dragOverFolderId === Number(folder.id) ? 'drag-over' : ''}`}
                   onClick={() => navigateToFolder(index)}
+                  onDragOver={(e) => handleFolderDragOver(e, folder.id)}
+                  onDragLeave={(e) => handleFolderDragLeave(e, folder.id)}
+                  onDrop={(e) => handleFolderDrop(e, folder.id)}
                 >
                   {folder.name}
                 </button>
               </React.Fragment>
             ))}
+          </div>
+        )}
+
+        {/* Dossiers : zones de dépôt pour déplacer une vidéo */}
+        {subfolders.length > 0 && (
+          <div className="pk-folder-grid">
             {subfolders.map((folder) => (
               <button
                 key={folder.id}
                 type="button"
-                className="btn btn-secondary btn-sm"
+                className={`pk-folder-card ${dragOverFolderId === Number(folder.id) ? 'drag-over' : ''}`}
                 onClick={() => openFolder(folder)}
-                style={{ borderLeft: `3px solid ${folder.color || '#c8a165'}` }}
+                onDragOver={(e) => handleFolderDragOver(e, folder.id)}
+                onDragLeave={(e) => handleFolderDragLeave(e, folder.id)}
+                onDrop={(e) => handleFolderDrop(e, folder.id)}
+                style={{ borderLeftColor: folder.color || '#c8a165' }}
+                title="Ouvrir ce dossier ou y déposer une vidéo"
               >
-                📁 {folder.name}
+                <span className="pk-folder-card-name">📁 {folder.name}</span>
+                <span className="pk-folder-card-count">{videosInFolder(folder.id)} match(s)</span>
               </button>
             ))}
+          </div>
+        )}
+        {draggingVideoId && (
+          <div className="pk-folder-drag-hint">
+            Déposez la vidéo sur un dossier pour la déplacer.
           </div>
         )}
 
@@ -453,12 +578,16 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
             <p style={{ fontSize: 15, fontWeight: 700, color: '#f4f4f5', marginBottom: 8 }}>
               {selectedTeamFilter !== 'ALL'
                 ? 'Aucune vidéo trouvée pour cette équipe.'
-                : 'Aucun match enregistré.'}
+                : currentFolder
+                  ? 'Aucun match dans ce dossier.'
+                  : 'Aucun match sans dossier.'}
             </p>
             <p style={{ marginBottom: 16 }}>
-              Créez un match avec un lien YouTube (public ou non répertorié) : la vidéo et les statistiques sont visibles sur tous les comptes et tous les postes.
+              {currentFolder
+                ? 'Revenez au dossier parent et déposez une vidéo sur le nom de ce dossier pour la déplacer ici.'
+                : 'Créez un match avec un lien YouTube (public ou non répertorié) : la vidéo et les statistiques sont visibles sur tous les comptes et tous les postes.'}
             </p>
-            <button type="button" className="btn btn-primary" onClick={() => setShowUpload(true)}>
+            <button type="button" className="btn btn-primary" onClick={openUploadModal}>
               + Nouveau match (YouTube)
             </button>
           </div>
@@ -471,8 +600,15 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
               return (
                 <div
                   key={video.id}
-                  className="pk-match-item"
-                  onClick={() => navigate(`/datavolley/${video.id}`)}
+                  className={`pk-match-item ${draggingVideoId === video.id ? 'dragging' : ''}`}
+                  draggable
+                  title="Glissez ce match sur un dossier pour le déplacer"
+                  onDragStart={(e) => handleDragStart(e, video)}
+                  onDragEnd={handleDragEnd}
+                  onClick={() => {
+                    if (draggingVideoId) return;
+                    navigate(`/datavolley/${video.id}`);
+                  }}
                 >
                   <div>
                     <div className="pk-match-item-head">
@@ -595,6 +731,20 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                     </span>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <select
+                        className="pk-folder-select"
+                        value={folderIdsOf(video)[0] || ''}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => moveVideoToFolder(video.id, e.target.value)}
+                        title="Placer ce match dans un dossier"
+                      >
+                        <option value="">Sans dossier</option>
+                        {folders.map((folder) => (
+                          <option key={folder.id} value={folder.id}>
+                            {folderLabel(folder)}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
@@ -729,6 +879,25 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
                   </div>
                 </div>
 
+                <div className="form-group" style={{ marginBottom: 16 }}>
+                  <label>5. Dossier de destination (optionnel)</label>
+                  <select
+                    className="form-control"
+                    value={uploadFolderId}
+                    onChange={(e) => setUploadFolderId(e.target.value)}
+                  >
+                    <option value="">Sans dossier</option>
+                    {folders.map((folder) => (
+                      <option key={folder.id} value={folder.id}>
+                        {folderLabel(folder)}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={{ fontSize: 11, color: '#a1a1aa', display: 'block', marginTop: 4 }}>
+                    Le match sera directement rangé dans ce dossier.
+                  </span>
+                </div>
+
                 {showQuickTeam && (
                   <div style={{ padding: 12, background: '#0d0d11', border: '1px solid #3f3f46', marginBottom: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -797,6 +966,9 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
               </div>
 
               <form onSubmit={handleCreateFolder} style={{ padding: '20px' }}>
+                <p className="dv-hint" style={{ marginTop: 0 }}>
+                  Dossier parent : <strong>{currentFolder ? folderLabel(currentFolder) : 'Racine (sans dossier)'}</strong>
+                </p>
                 <div className="form-group" style={{ marginBottom: 16 }}>
                   <label>Nom du dossier</label>
                   <input

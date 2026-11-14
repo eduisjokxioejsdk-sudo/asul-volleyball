@@ -1,8 +1,21 @@
 {
-  "version": "3.20.1",
+  "version": "3.21.0",
   "releasedAt": "2026-11-12",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.21.0",
+      "date": "2026-11-12",
+      "title": "Data Volley : dossiers et déplacement des vidéos par glisser-déposer",
+      "items": [
+        "Les dossiers de matchs sont maintenant de vraies zones de classement : les vidéos peuvent être déposées directement sur le nom d’un dossier pour y être rangées",
+        "Chaque carte de match est déplaçable par glisser-déposer ; un sélecteur de dossier permet aussi de choisir la destination sur ordinateur ou tablette",
+        "Les dossiers affichent leur nombre de matchs et le bouton « Sans dossier » permet de retirer une vidéo de son dossier",
+        "Lors de la création d’un match, un dossier de destination peut être choisi ; les dossiers imbriqués sont pris en charge",
+        "Correction de l’association vidéo-dossier : les dossiers sont désormais réellement enregistrés et rechargés avec la liste des matchs",
+        "Validation : build, tests, contrôles de portée et rendu de la page sans erreur"
+      ]
+    },
     {
       "version": "3.20.1",
       "date": "2026-11-12",

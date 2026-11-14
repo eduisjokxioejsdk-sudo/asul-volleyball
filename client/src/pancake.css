@@ -1152,6 +1152,72 @@ kbd, .pk-kbd {
   flex-wrap: wrap;
 }
 
+/* Dossiers Data Volley : cartes et zones de dépôt du glisser-déposer. */
+.pk-folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+.pk-folder-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #141418;
+  border: 1px solid #27272a;
+  border-left: 3px solid #c8a165;
+  color: #e4e4e7;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s ease;
+}
+.pk-folder-card:hover {
+  background: #1b1b22;
+  border-color: #52525b;
+  border-left-color: #e8c98f;
+  transform: translateY(-1px);
+}
+.pk-folder-card.drag-over,
+.btn.drag-over {
+  background: rgba(200, 161, 101, 0.18) !important;
+  border-color: #c8a165 !important;
+  box-shadow: 0 0 0 2px rgba(200, 161, 101, 0.35);
+}
+.pk-folder-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.pk-folder-card-count {
+  flex: 0 0 auto;
+  color: #a1a1aa;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+.pk-folder-select {
+  max-width: 200px;
+  padding: 4px 6px;
+  background: #0d0d11;
+  border: 1px solid #3f3f46;
+  color: #e4e4e7;
+  font-size: 11px;
+}
+.pk-folder-drag-hint {
+  padding: 8px 12px;
+  background: rgba(200, 161, 101, 0.1);
+  border: 1px dashed #c8a165;
+  color: #e8c98f;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pk-match-item.dragging {
+  opacity: 0.5;
+  border-left-color: #c8a165;
+}
+
 /* ---------------------------------------------------------------------------
    8. ONGLET FORMATION : Bandeau extravagant + Boutons clairement démarqués
    --------------------------------------------------------------------------- */

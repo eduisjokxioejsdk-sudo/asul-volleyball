@@ -65,6 +65,7 @@ export const videosAPI = {
 
   addToFolder: (videoId, folderId) => api.post(`/videos/${videoId}/folders`, { folder_id: folderId }),
   removeFromFolder: (videoId, folderId) => api.delete(`/videos/${videoId}/folders/${folderId}`),
+  setFolder: (videoId, folderId) => api.put(`/videos/${videoId}/folder`, { folder_id: folderId }),
   getFolders: (videoId) => api.get(`/videos/${videoId}/folders`),
   // Partage à distance (métadonnées vidéo seulement, jamais les fichiers).
   sync: () => api.post('/videos/sync'),
