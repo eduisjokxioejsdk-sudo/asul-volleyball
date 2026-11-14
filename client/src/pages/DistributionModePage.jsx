@@ -23,10 +23,16 @@ import {
   mapDistribToCourtBox,
 } from '../utils/excelDistributionEngine';
 import {
+  buildDemoDistributionPossessions,
+  DEMO_TEAM_NAME,
+} from '../utils/distributionDemo';
+import {
   Check,
   House,
   ListChecks,
   Plane,
+  RefreshCw,
+  Sparkles,
   Table,
   Users,
   Volleyball,
@@ -51,6 +57,11 @@ export default function DistributionModePage({ user, onLogout }) {
   const [excelFileName, setExcelFileName] = useState('');
   const [excelError, setExcelError] = useState('');
   const [selectedExcelMatches, setSelectedExcelMatches] = useState([]);
+
+  // État Mode Démo (tableau fictif généré localement, aucun appel réseau)
+  const [demoPossessions, setDemoPossessions] = useState([]);
+  const [demoSeed, setDemoSeed] = useState(1);
+  const [selectedDemoMatches, setSelectedDemoMatches] = useState([]);
 
   // Filtres du rapport (Passeur, Phase)
   const [selectedSetter, setSelectedSetter] = useState('ALL');
@@ -217,6 +228,43 @@ export default function DistributionModePage({ user, onLogout }) {
     }
   };
 
+  // 5bis. Mode démo : génère un tableau fictif complet, sans aucun match réel
+  const loadDemoPossessions = (seed = demoSeed) => {
+    const demo = buildDemoDistributionPossessions({ seed });
+    setDemoPossessions(demo);
+    setSelectedDemoMatches([...new Set(demo.map((p) => p.matchLabel))]);
+    setSelectedSetter('ALL');
+    setPhaseFilter('ALL');
+    setExcelError('');
+    setDataSource('demo');
+  };
+
+  const handleDemoMode = () => loadDemoPossessions(demoSeed);
+
+  const handleRegenerateDemo = () => {
+    const nextSeed = demoSeed + 1;
+    setDemoSeed(nextSeed);
+    loadDemoPossessions(nextSeed);
+  };
+
+  const toggleDemoMatch = (matchLabel) => {
+    setSelectedDemoMatches((prev) =>
+      prev.includes(matchLabel) ? prev.filter((x) => x !== matchLabel) : [...prev, matchLabel]
+    );
+  };
+
+  // Liste des matchs fictifs du mode démo (libellés d'origine, non normalisés)
+  const demoDistinctMatches = useMemo(() => {
+    const counts = new Map();
+    for (const p of demoPossessions) {
+      if (!mapDistribToCourtBox(p.distribCode || p.distribBox, null)) continue;
+      const label = p.matchLabel || '';
+      if (!label) continue;
+      counts.set(label, (counts.get(label) || 0) + 1);
+    }
+    return [...counts.entries()].map(([name, count]) => ({ name, count }));
+  }, [demoPossessions]);
+
   // Liste des matchs distincts dans le fichier Excel importé
   const excelDistinctMatches = useMemo(() => {
     const counts = new Map();
@@ -231,6 +279,15 @@ export default function DistributionModePage({ user, onLogout }) {
 
   // Possessions actives selon la source choisie (filtrées par les matchs cochés)
   const activePossessions = useMemo(() => {
+    if (dataSource === 'demo') {
+      const mSet = new Set(selectedDemoMatches.map((m) => cleanVal(m)));
+      return demoPossessions.filter(
+        (p) =>
+          mapDistribToCourtBox(p.distribCode || p.distribBox, null) &&
+          mSet.size > 0 &&
+          mSet.has(cleanVal(p.matchLabel))
+      );
+    }
     if (dataSource === 'excel') {
       const mSet = new Set(selectedExcelMatches.map((m) => cleanVal(m)));
       return excelPossessions.filter(
@@ -240,7 +297,7 @@ export default function DistributionModePage({ user, onLogout }) {
       );
     }
     return dvPossessions.filter((p) => mapDistribToCourtBox(p.distribCode || p.distribBox, null));
-  }, [dataSource, excelPossessions, selectedExcelMatches, dvPossessions]);
+  }, [dataSource, demoPossessions, selectedDemoMatches, excelPossessions, selectedExcelMatches, dvPossessions]);
 
   // Liste des passeurs détectés dans les possessions actives
   const availableSetters = useMemo(() => {
@@ -296,7 +353,9 @@ export default function DistributionModePage({ user, onLogout }) {
   };
 
   const activeTeamTitle =
-    dataSource === 'excel'
+    dataSource === 'demo'
+      ? DEMO_TEAM_NAME
+      : dataSource === 'excel'
       ? excelFileName.replace(/\.(xlsx|csv)$/i, '') || 'Import Excel'
       : selectedTeam || 'Toutes équipes';
 
@@ -348,7 +407,7 @@ export default function DistributionModePage({ user, onLogout }) {
                 </span>
               </div>
               <p style={{ margin: '4px 0 0 0', fontSize: 12.5, color: '#a1a1aa' }}>
-                Sélectionnez une équipe et plusieurs matchs codés en mode DataVolley (ou importez un fichier Excel <code style={{ color: '#e8c98f' }}>saisie</code>) pour générer le rapport complet de distribution par passeur.
+                Sélectionnez une équipe et plusieurs matchs codés en mode DataVolley (ou importez un fichier Excel <code style={{ color: '#e8c98f' }}>saisie</code>) pour générer le rapport complet de distribution par passeur. Le <strong style={{ color: '#c8a165' }}>Mode démo</strong> remplit le tableau avec des données fictives pour découvrir son fonctionnement.
               </p>
             </div>
           </div>
@@ -371,6 +430,15 @@ export default function DistributionModePage({ user, onLogout }) {
                   Fichier : {excelFileName} ({excelPossessions.length})
                 </button>
               )}
+              {demoPossessions.length > 0 && (
+                <button
+                  type="button"
+                  className={`btn btn-sm ${dataSource === 'demo' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setDataSource('demo')}
+                >
+                  <Sparkles size={13} /> Démo ({demoPossessions.length})
+                </button>
+              )}
             </div>
 
             <input
@@ -390,6 +458,21 @@ export default function DistributionModePage({ user, onLogout }) {
 
             <button
               type="button"
+              className={`btn btn-sm ${dataSource === 'demo' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={handleDemoMode}
+              title="Remplit le tableau avec un jeu de données fictif pour découvrir son fonctionnement"
+            >
+              <Sparkles size={13} /> Mode démo
+            </button>
+
+            {dataSource === 'demo' && demoPossessions.length > 0 && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handleRegenerateDemo}>
+                <RefreshCw size={13} /> Régénérer
+              </button>
+            )}
+
+            <button
+              type="button"
               className="btn btn-secondary btn-sm"
               onClick={() => setShowMatchSelector((v) => !v)}
             >
@@ -397,6 +480,26 @@ export default function DistributionModePage({ user, onLogout }) {
             </button>
           </div>
         </header>
+
+        {dataSource === 'demo' && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              padding: '10px 14px',
+              background: 'rgba(200, 161, 101, 0.1)',
+              border: '1px solid #c8a165',
+              borderLeft: '4px solid #c8a165',
+            }}
+          >
+            <Sparkles size={16} style={{ color: '#c8a165', flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 12.5, color: '#e4e4e7', lineHeight: 1.5 }}>
+              <strong style={{ color: '#c8a165' }}>Mode démonstration — données fictives.</strong>{' '}
+              {DEMO_TEAM_NAME} · {demoDistinctMatches.length} matchs · {demoPossessions.length} possessions générées localement (aucun match réel n’est utilisé). Cliquez sur « Régénérer » pour obtenir un autre tirage, ou sélectionnez les matchs fictifs ci-dessous pour filtrer le rapport.
+            </div>
+          </div>
+        )}
 
         {excelError && (
           <div className="dv-flash err" style={{ margin: 0 }}>
@@ -607,6 +710,100 @@ export default function DistributionModePage({ user, onLogout }) {
                   )}
                 </div>
               </>
+            ) : dataSource === 'demo' ? (
+              /* Mode démo : sélection des matchs fictifs générés localement */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: '#c8a165',
+                    }}
+                  >
+                    <Sparkles size={14} /> Mode démo · Matchs fictifs ({selectedDemoMatches.length} / {demoDistinctMatches.length} sélectionnés)
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-secondary"
+                      onClick={() => setSelectedDemoMatches(demoDistinctMatches.map((m) => m.name))}
+                    >
+                      Tous les matchs ({demoDistinctMatches.length})
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-secondary"
+                      onClick={() =>
+                        setSelectedDemoMatches(demoDistinctMatches.slice(0, 3).map((m) => m.name))
+                      }
+                    >
+                      J1 à 3
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-secondary"
+                      onClick={() =>
+                        setSelectedDemoMatches(demoDistinctMatches.slice(3).map((m) => m.name))
+                      }
+                    >
+                      J4 à 6
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-secondary"
+                      onClick={() => setSelectedDemoMatches([])}
+                    >
+                      Aucun
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-secondary"
+                      onClick={handleRegenerateDemo}
+                    >
+                      <RefreshCw size={12} /> Régénérer
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 11.5, color: '#a1a1aa' }}>
+                  Jeu de données généré localement : {DEMO_TEAM_NAME}, 2 passeurs (#6 et #12), 6 rotations,
+                  13 zones de passe et 4 bases offensives. Décochez un match fictif pour voir le rapport se
+                  recalculer instantanément.
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {demoDistinctMatches.map((m) => {
+                    const checked = selectedDemoMatches.includes(m.name);
+                    return (
+                      <button
+                        key={m.name}
+                        type="button"
+                        className={`btn btn-sm ${checked ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => toggleDemoMatch(m.name)}
+                      >
+                        <span>{m.name}</span>
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            padding: '1px 5px',
+                            fontSize: 10.5,
+                            fontFamily: 'var(--font-mono)',
+                            background: 'rgba(0,0,0,0.28)',
+                          }}
+                        >
+                          {m.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             ) : (
               /* Sélection des Matchs / Journées quand un fichier Excel a été importé */
               <div>
@@ -870,7 +1067,19 @@ export default function DistributionModePage({ user, onLogout }) {
               Aucune possession d'attaque trouvée pour les critères sélectionnés.
             </div>
             <p style={{ fontSize: 12.5, color: '#a1a1aa', maxWidth: 620, margin: '0 auto' }}>
-              Cochez un ou plusieurs matchs codés en mode DataVolley ci-dessus, ou cliquez sur <strong>« Importer Excel (.xlsx) / CSV »</strong> pour charger directement votre fichier <code style={{ color: '#e8c98f' }}>DISTRIBUTION_PASSEUR_.xlsx</code>.
+              {dataSource === 'demo' ? (
+                <>
+                  Sélectionnez au moins un match fictif ci-dessus (ou cliquez sur{' '}
+                  <strong>« Tous les matchs »</strong>) pour afficher à nouveau le rapport de démonstration,
+                  ou cliquez sur <strong>« Régénérer »</strong> pour créer un nouveau tirage.
+                </>
+              ) : (
+                <>
+                  Cochez un ou plusieurs matchs codés en mode DataVolley ci-dessus, ou cliquez sur{' '}
+                  <strong>« Importer Excel (.xlsx) / CSV »</strong> pour charger directement votre fichier{' '}
+                  <code style={{ color: '#e8c98f' }}>DISTRIBUTION_PASSEUR_.xlsx</code>.
+                </>
+              )}
             </p>
           </div>
         ) : (

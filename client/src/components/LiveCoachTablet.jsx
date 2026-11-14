@@ -12,6 +12,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { DistributionCourt } from './AttackCourt';
+import MatchDistributionPanel from './MatchDistributionPanel';
 import { computeSetterDistributionByRotation } from '../utils/distribution';
 import { blockerTableRows } from '../utils/scouting';
 import { AlertTriangle, Crosshair, House, MessageSquare, Plane, RotateCcw, Send, Target, Trophy, Users, Volleyball } from './icons';
@@ -39,7 +40,9 @@ export default function LiveCoachTablet({
   homeConfig = {},
   awayConfig = {},
   videoSlot = null,
+  video = null,
   events = [],
+  onSeekAction = null,
   onSendMessage,
 }) {
   // Équipe observée comme "Adversaire" par le coach (par défaut 'away')
@@ -711,6 +714,24 @@ export default function LiveCoachTablet({
             </div>
 
             <DistributionCourt distribution={activeDistribution} />
+          </div>
+
+          {/* Synthèse du rapport passeur (mêmes chiffres que la fenêtre
+              Distribution du mode Analyse), format compact pour le banc. */}
+          <div style={{ background: '#141418', border: '1px solid #27272a', padding: 12 }}>
+            <MatchDistributionPanel
+              variant="synthetic"
+              video={video}
+              actions={actions}
+              setups={setups}
+              events={events}
+              homeConfig={homeConfig}
+              awayConfig={awayConfig}
+              team1={team1}
+              team2={team2}
+              initialTeam={oppTeam}
+              onSeekAction={onSeekAction}
+            />
           </div>
         </div>
       </div>

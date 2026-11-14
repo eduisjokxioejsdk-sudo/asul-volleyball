@@ -443,6 +443,131 @@ console.log('\n== Fenêtre Six & rôles ==');
   check('le rôle du passeur est affiché', /Passeur|PAS|setter/.test(html));
 }
 
+console.log('\n== Distribution d’un match : Analyse (complet) & Banc (synthèse) ==');
+{
+  const engine = await vite.ssrLoadModule('/src/utils/excelDistributionEngine.js');
+  let distUid = 0;
+  const mk = (team, n, action, extra = {}) => ({
+    uid: `t${(distUid += 1)}`,
+    action_index: distUid,
+    team,
+    player_number: n,
+    action,
+    ...extra,
+  });
+  const distActions = [
+    // Rallye 1 : réception ASUL puis attaque en zone 4 (K1 / side-out).
+    mk('away', 1, 'S', { type: 'M', evaluation: '#' }),
+    mk('home', 5, 'R', { evaluation: '#', end_zone: '3' }),
+    mk('home', 7, 'E', { call: 'K1', evaluation: '#' }),
+    mk('home', 9, 'A', { start_zone: '4', evaluation: '#' }),
+    // Rallye 2 : défense ASUL puis attaque au centre (K2 / transition).
+    mk('home', 1, 'S', { type: 'M', evaluation: '+' }),
+    mk('away', 5, 'R', { evaluation: '+' }),
+    mk('away', 2, 'E', { call: 'K1', evaluation: '+' }),
+    mk('away', 11, 'A', { start_zone: '2', evaluation: '+' }),
+    mk('home', 4, 'D', { evaluation: '+' }),
+    mk('home', 7, 'E', { call: 'K1', evaluation: '#' }),
+    mk('home', 10, 'A', { start_zone: '3', evaluation: '#', combo: 'X1' }),
+  ];
+  const distVideo = { id: 42, title: 'ASUL - Nantes', team1_name: 'ASUL', team2_name: 'Nantes' };
+  const distSetups = {
+    1: {
+      first_server: 'team1',
+      home_setter_pos: 'P1',
+      away_setter_pos: 'P1',
+      home_lineup: { P1: 7, P2: 9, P3: 10, P4: 5, P5: 4, P6: 1 },
+      away_lineup: { P1: 2, P2: 11, P3: 12, P4: 5, P5: 6, P6: 1 },
+    },
+  };
+  const distRoster = [
+    { number: 7, name: 'Passeur', role: 'setter' },
+    { number: 9, name: 'Pointu', role: 'opposite' },
+    { number: 10, name: 'Central', role: 'middle' },
+  ];
+
+  const possessions = engine.extractPossessionsFromMatches(
+    [{ video: distVideo, actions: distActions, setups: distSetups, events: [], players: distRoster }],
+    'ASUL'
+  );
+  check('les possessions du match sont extraites', possessions.length === 2, `${possessions.length}`);
+  check(
+    'passeur et rotation identifiés',
+    possessions.length === 2 && possessions.every((p) => p.setterNumber === '7' && p.rotation === 1)
+  );
+  check(
+    'phases K1 et K2 séparées',
+    possessions.length === 2 && possessions[0].serviceType !== 'C' && possessions[1].serviceType === 'C'
+  );
+
+  const distReport = engine.computeExcelDistributionReport(possessions, {
+    setterFilter: 'ALL',
+    phaseFilter: 'ALL',
+  });
+  check('le rapport couvre toutes les possessions', distReport.globalCourt.totalActions === possessions.length);
+  check(
+    'deux zones de distribution distinctes',
+    distReport.globalCourt.boxes['EN 4'].q === 1 && distReport.globalCourt.boxes['FIX AV'].q === 1
+  );
+
+  const distMod = await vite.ssrLoadModule('/src/components/MatchDistributionPanel.jsx');
+  try {
+    const html = renderToString(React.createElement(distMod.DistributionSynthesis, { report: distReport }));
+    check('la synthèse banc se rend', /Répartition par zone/.test(html) && /Poste 4/.test(html));
+  } catch (err) {
+    check('la synthèse banc se rend', false, `${err.name}: ${err.message}`);
+  }
+  try {
+    const html = renderToString(
+      React.createElement(distMod.default, {
+        variant: 'full',
+        video: distVideo,
+        actions: distActions,
+        setups: distSetups,
+        events: [],
+        homeConfig: { roster: distRoster, libero: null },
+        awayConfig: { roster: [], libero: null },
+        team1: 'ASUL',
+        team2: 'Nantes',
+      })
+    );
+    check(
+      'le rapport complet (identique à l’onglet Distribution) se rend',
+      /Distribution du passeur/.test(html) && /Distribution par Rotation/.test(html)
+    );
+  } catch (err) {
+    check('le rapport complet (identique à l’onglet Distribution) se rend', false, `${err.name}: ${err.message}`);
+  }
+  try {
+    const tabletMod = await vite.ssrLoadModule('/src/components/LiveCoachTablet.jsx');
+    const html = renderToString(
+      React.createElement(tabletMod.default, {
+        team1: 'ASUL',
+        team2: 'Nantes',
+        boardState: {
+          currentSet: 1,
+          homeSetterPos: 'P1',
+          awaySetterPos: 'P1',
+          homeLineup: { P1: 7, P2: 9, P3: 10, P4: 5, P5: 4, P6: 1 },
+          awayLineup: { P1: 2, P2: 11, P3: 12, P4: 5, P5: 6, P6: 1 },
+        },
+        scouting: null,
+        actions: distActions,
+        rallies: [],
+        setups: distSetups,
+        setterNumbers: { home: 7, away: 2 },
+        homeConfig: { roster: distRoster, libero: null },
+        awayConfig: { roster: [], libero: null },
+        video: distVideo,
+        events: [],
+      })
+    );
+    check('le mode Banc affiche la synthèse distribution', /Synthèse distribution/.test(html));
+  } catch (err) {
+    check('le mode Banc affiche la synthèse distribution', false, `${err.name}: ${err.message}`);
+  }
+}
+
 await vite.close();
 console.log(failures === 0 ? '\nTOUT EST OK\n' : `\n${failures} ÉCHEC(S)\n`);
 process.exit(failures === 0 ? 0 : 1);

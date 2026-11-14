@@ -10,13 +10,8 @@ import { extractYouTubeId } from '../utils/youtube';
 import { isUndefinedTeam } from '../utils/teams';
 import { computeMatchState, rotateSetterPos, emptyLineup, COURT_POSITIONS, firstServerForSet } from '../utils/rotation';
 import {
-  computeSetterDistributionByRotation,
-  computeSetterTendencies,
   attackZoneOf,
   normalizeAttackZone,
-  DISTRIBUTION_PHASES,
-  PASS_ZONE_FILTERS,
-  DEFENDER_ROLE_FILTERS,
 } from '../utils/distribution';
 import { loadCourtCalibration, saveCourtCalibration } from '../utils/homography';
 import VideoTvOverlay from '../components/VideoTvOverlay';
@@ -63,9 +58,8 @@ import AttackDirectionCourt from '../components/AttackDirectionCourt';
 import LineupEditor from '../components/LineupEditor';
 import PointTimeline from '../components/PointTimeline';
 import { DvKeyPad, DvSyntaxHelp } from '../components/DvKeypad';
-import { RotationBoard, PlayerDistributionTable, SetterTendencies, SetterFan } from '../components/DistributionBoard';
-import { DistributionCoverage, DistributionCodeTable } from '../components/DistributionMetaViews';
-import { AttackCourtPicker, DistributionCourt, HIDDEN_DISTRIBUTION_ZONES } from '../components/AttackCourt';
+import { AttackCourtPicker } from '../components/AttackCourt';
+import MatchDistributionPanel from '../components/MatchDistributionPanel';
 import { buildTimelineEvents, buildTimelinePoints } from '../utils/matchTimeline';
 import {
   AlertTriangle,
@@ -124,7 +118,6 @@ import {
 import {
   DV_ACTIONS,
   DV_EVAL_KEYS,
-  DV_SETTER_CALLS,
   DV_ZONE_KEYS,
   appendSequence,
   buildPointSegments,
@@ -329,17 +322,6 @@ function DataVolleyDashboard({ user, onLogout }) {
   // Fiches globales des deux équipes (rôles et libéro appliqués automatiquement).
   const [homeTeamData, setHomeTeamData] = useState(null);
   const [awayTeamData, setAwayTeamData] = useState(null);
-  const [distPos, setDistPos] = useState('Total');
-  const [distTeam, setDistTeam] = useState('home');
-  const [distFilters, setDistFilters] = useState({
-    phase: 'K1',
-    passZone: 'ALL',
-    setterCall: 'ALL',
-    defenderRole: 'ALL',
-  });
-  const [distShowAllZones, setDistShowAllZones] = useState(true);
-  const [distView, setDistView] = useState('court');
-  const [distDetail, setDistDetail] = useState(null);
 
   // TV Overlay, Calibration Homographique 4 coins & Multi-Caméras (Angle 1 / Angle 2)
   const [showTvOverlay, setShowTvOverlay] = useState(true);
@@ -617,7 +599,6 @@ function DataVolleyDashboard({ user, onLogout }) {
 
   const team1 = video?.team1_name || 'Domicile';
   const team2 = video?.team2_name || 'Extérieur';
-  const teamLabel = (t) => (t === 'home' ? team1 : team2);
   // Fiches globales des équipes associées au match : elles fournissent les
   // numéros, noms et rôles à appliquer automatiquement dans le six.
   useEffect(() => {
@@ -1283,16 +1264,6 @@ function DataVolleyDashboard({ user, onLogout }) {
         setterNumbers,
       }),
     [statsActions, statsRallies, homeConfig, awayConfig, team1, team2, reportSets, actionSetMap, setups, setterNumbers]
-  );
-
-  // Distribution du passeur par rotation (onglet Distribution).
-  const setterTrends = useMemo(
-    () => computeSetterTendencies(statsActions, statsRallies, distFilters),
-    [statsActions, statsRallies, distFilters]
-  );
-  const setterDist = useMemo(
-    () => computeSetterDistributionByRotation(statsActions, statsRallies, setups, setterNumbers, distFilters),
-    [statsActions, statsRallies, setups, setterNumbers, distFilters]
   );
 
   // Action active au timecode courant (pour l'incrustation TV Overlay)
@@ -2701,7 +2672,7 @@ function DataVolleyDashboard({ user, onLogout }) {
       hint: `Fenêtre ${t.label}`,
     })),
     { key: 'frise', label: 'Points', icon: ChartColumn, hint: 'Frise chronologique des points et des événements' },
-    { key: 'distribution', label: 'Distribution', icon: Target, hint: 'Distribution du passeur par rotation' },
+    { key: 'distribution', label: 'Distribution', icon: Target, hint: 'Distribution du passeur : rapport identique à l’onglet Distribution (rotations, bases, zones, synthèse)' },
   ];
 
   if (loading) {
@@ -3605,6 +3576,9 @@ function DataVolleyDashboard({ user, onLogout }) {
                   homeConfig={homeConfig}
                   awayConfig={awayConfig}
                   videoSlot={videoNode}
+                  video={video}
+                  events={events}
+                  onSeekAction={seekToAction}
                 />
               )}
 
@@ -3849,209 +3823,18 @@ function DataVolleyDashboard({ user, onLogout }) {
                 )}
                 {mode === 'analyse' && tab === 'distribution' && (
                   <motion.div key="distribution" className="dv-panel dv-analysis-window" variants={tabVariants} initial="hidden" animate="visible" exit="exit">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <div>
-                        <h4>Distribution du passeur (Situationnelle & Transition)</h4>
-                        <p className="dv-hint" style={{ marginBottom: 6 }}>
-                          Filtrez par phase de jeu (Side-Out K1, Transition K2, Ballon gratuit), zone du 1er contact, appel du passeur et qui a défendu le 1er ballon (Passeur vs Autre joueur).
-                        </p>
-                      </div>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#a1a1aa', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={distShowAllZones}
-                          onChange={(e) => setDistShowAllZones(e.target.checked)}
-                        />
-                        Afficher les 9 zones
-                      </label>
-                    </div>
-
-                    {/* Barre de filtres situationnels (Features 7 & 10) */}
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                        gap: 8,
-                        padding: 8,
-                        marginBottom: 10,
-                        background: '#09090b',
-                        border: '1px solid #27272a',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#a1a1aa', marginBottom: 4 }}>
-                          Phase de jeu
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                          {DISTRIBUTION_PHASES.map((ph) => (
-                            <button
-                              key={ph.id}
-                              type="button"
-                              className={`btn btn-sm ${distFilters.phase === ph.id ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => setDistFilters((f) => ({ ...f, phase: ph.id }))}
-                              title={ph.label}
-                              style={{ fontSize: 10, padding: '2px 6px' }}
-                            >
-                              {ph.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#a1a1aa', marginBottom: 4 }}>
-                          Zone Réception / 1er Contact
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                          {PASS_ZONE_FILTERS.map((pz) => (
-                            <button
-                              key={pz.id}
-                              type="button"
-                              className={`btn btn-sm ${distFilters.passZone === pz.id ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => setDistFilters((f) => ({ ...f, passZone: pz.id }))}
-                              style={{ fontSize: 10, padding: '2px 6px' }}
-                            >
-                              {pz.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#a1a1aa', marginBottom: 4 }}>
-                          Appel Passeur (Setter Call)
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                          <button
-                            type="button"
-                            className={`btn btn-sm ${distFilters.setterCall === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
-                            onClick={() => setDistFilters((f) => ({ ...f, setterCall: 'ALL' }))}
-                            style={{ fontSize: 10, padding: '2px 6px' }}
-                          >
-                            Tous
-                          </button>
-                          {DV_SETTER_CALLS.map((sc) => (
-                            <button
-                              key={sc.code}
-                              type="button"
-                              className={`btn btn-sm ${distFilters.setterCall === sc.code ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => setDistFilters((f) => ({ ...f, setterCall: sc.code }))}
-                              title={sc.label}
-                              style={{ fontSize: 10, padding: '2px 6px', fontFamily: 'JetBrains Mono, monospace' }}
-                            >
-                              {sc.code}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#a1a1aa', marginBottom: 4 }}>
-                          Défenseur 1er Ballon (Transition)
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                          {DEFENDER_ROLE_FILTERS.map((dr) => (
-                            <button
-                              key={dr.id}
-                              type="button"
-                              className={`btn btn-sm ${distFilters.defenderRole === dr.id ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => setDistFilters((f) => ({ ...f, defenderRole: dr.id }))}
-                              title={dr.label}
-                              style={{ fontSize: 10, padding: '2px 6px' }}
-                            >
-                              {dr.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                      <div className="dv-stat-tabs" style={{ margin: 0 }}>
-                        {['Total', ...COURT_POSITIONS].map((pos) => (
-                          <button key={pos} className={`video-tab ${distPos === pos ? 'active' : ''}`} onClick={() => setDistPos(pos)}>{pos}</button>
-                        ))}
-                      </div>
-                      <div className="btn-group-horizontal">
-                        <button type="button" className={`btn-choice ${distTeam === 'home' ? 'active team1' : ''}`} onClick={() => setDistTeam('home')}><House size={13} /> {team1}</button>
-                        <button type="button" className={`btn-choice ${distTeam === 'away' ? 'active team2' : ''}`} onClick={() => setDistTeam('away')}><Plane size={13} /> {team2}</button>
-                      </div>
-                    </div>
-                    <div className="dv-stat-team">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
-                        <h5 style={{ margin: 0 }}>
-                          {teamLabel(distTeam)}{distPos !== 'Total' ? ` — passeur en ${distPos}` : ''}
-                        </h5>
-                        {setterDist.meta?.[distTeam]?.setterDugCount > 0 && (
-                          <span
-                            style={{
-                              fontSize: 11,
-                              fontFamily: 'JetBrains Mono, monospace',
-                              padding: '2px 8px',
-                              background: 'rgba(245,158,11,0.14)',
-                              border: '1px solid #f59e0b',
-                              color: '#fbbf24',
-                            }}
-                          >
-                            Passeur a défendu le 1er ballon : {setterDist.meta[distTeam].setterDugCount} fois (Passe de secours)
-                          </span>
-                        )}
-                      </div>
-                      <DistributionCoverage meta={setterDist.meta?.[distTeam]} />
-                      <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-                        {[
-                          ['court', 'Terrain'],
-                          ['board', 'Rotations'],
-                          ['calls', 'Appels passeur'],
-                          ['combos', 'Combinaisons'],
-                          ['advanced', 'Analyse avancée'],
-                        ].map(([key, label]) => (
-                          <button key={key} type="button" className={`btn btn-sm ${distView === key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDistView(key)}>{label}</button>
-                        ))}
-                      </div>
-                      {distView === 'board' && (
-                        <RotationBoard
-                          distribution={setterDist[distTeam]}
-                          onPick={(p) => setDistDetail({ title: `Zone ${p.zone} · ${p.rotation} · ${p.situation}`, actions: p.cell.actions })}
-                        />
-                      )}
-                      {distView === 'calls' && (
-                        <DistributionCodeTable title="Setter Calls Distribution" data={setterDist.calls?.[distTeam]} rotation={distPos} onPick={(p) => setDistDetail({ title: `Appel ${p.code}`, actions: p.actions })} />
-                      )}
-                      {distView === 'combos' && (
-                        <DistributionCodeTable title="Combination Analysis" data={setterDist.combos?.[distTeam]} rotation={distPos} onPick={(p) => setDistDetail({ title: `Combinaison ${p.code}`, actions: p.actions })} />
-                      )}
-                      {distView === 'advanced' && (
-                        <>
-                          <h5>Répartition par attaquant</h5>
-                          <PlayerDistributionTable rows={setterDist.players?.[distTeam]} />
-                          <h5 style={{ marginTop: 14 }}>Tendances du passeur</h5>
-                          <SetterTendencies data={setterTrends[distTeam]} />
-                          <h5 style={{ marginTop: 14 }}>Éventail du passeur</h5>
-                          <SetterFan side={setterDist[distTeam]?.[distPos]} passZones={setterDist.meta?.[distTeam]?.byPassZone} />
-                        </>
-                      )}
-                      {distView === 'court' && <DistributionCourt
-                        distribution={setterDist[distTeam]?.[distPos]}
-                        hidden={distShowAllZones ? [] : HIDDEN_DISTRIBUTION_ZONES}
-                        onPick={(p) => setDistDetail({ title: `Zone ${p.zone} · ${distPos} · ${p.situation}`, actions: p.cell.actions })}
-                      />}
-                      {distDetail && (
-                        <div style={{ marginTop: 12, padding: 10, border: '1px solid #27272a', background: '#09090b' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                            <strong>{distDetail.title} — {distDetail.actions.length} attaque(s)</strong>
-                            <button type="button" className="btn btn-sm btn-secondary" onClick={() => setDistDetail(null)}>Fermer</button>
-                          </div>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
-                            {distDetail.actions.map((a) => (
-                              <button key={a.uid ?? a.id ?? a.action_index} type="button" className="btn btn-sm btn-secondary" onClick={() => seekToAction(a)} title="Voir cette attaque dans la vidéo">
-                                {a.code || `n°${a.player_number} ${a.evaluation || ''}`}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <MatchDistributionPanel
+                      video={video}
+                      actions={actions}
+                      setups={setups}
+                      events={events}
+                      homeConfig={homeConfig}
+                      awayConfig={awayConfig}
+                      team1={team1}
+                      team2={team2}
+                      variant="full"
+                      onSeekAction={seekToAction}
+                    />
                   </motion.div>
                 )}
 

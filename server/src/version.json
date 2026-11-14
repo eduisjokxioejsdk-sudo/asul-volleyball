@@ -1,8 +1,22 @@
 {
-  "version": "3.22.0",
+  "version": "3.23.0",
   "releasedAt": "2026-11-14",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.23.0",
+      "date": "2026-11-14",
+      "title": "Data Volley : distribution identique à l’onglet Distribution en Analyse, synthèse pour le Banc",
+      "items": [
+        "Le mode Analyse d’un match affiche le rapport de distribution des passeurs complet, identique à l’onglet « Distribution » : rotations, bases, couloirs de réception, 13 zones de passe et feuille « saisie »",
+        "Filtres passeur (Tous, Passeur N°X, NP) et phase (K1 / K2) directement dans la fenêtre d’analyse du match",
+        "Le mode Banc / Coach reçoit une synthèse compacte du même rapport : KPI (poste 4, poste 2/1, centre + pipe), répartition par zone, attaquants les plus sollicités et qualité de réception",
+        "Un seul moteur de calcul pour tout le match : les chiffres de l’analyse et du banc sont exactement ceux de l’onglet Distribution",
+        "Un clic sur un chiffre du rapport relit l’action correspondante dans la vidéo",
+        "Onglet Distribution : mode Démo avec un jeu de données fictif reproductible, pour présenter le rapport sans aucun match codé (régénération par graine)",
+        "Validation : build de l’interface, suites de tests et rendu du rapport complet comme de la synthèse contrôlés sans erreur"
+      ]
+    },
     {
       "version": "3.22.0",
       "date": "2026-11-14",
