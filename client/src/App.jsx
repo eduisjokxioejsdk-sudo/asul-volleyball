@@ -15,6 +15,7 @@ import Dashboard from './pages/Dashboard';
 const DataVolleyDashboard = lazy(() => import('./pages/DataVolleyDashboard'));
 const DataVolleyMatchesPage = lazy(() => import('./pages/DataVolleyMatchesPage'));
 const MultiMatchAnalysisPage = lazy(() => import('./pages/MultiMatchAnalysisPage'));
+const DistributionModePage = lazy(() => import('./pages/DistributionModePage'));
 const CodeAutomationPage = lazy(() => import('./pages/CodeAutomationPage'));
 const PracticeModePage = lazy(() => import('./pages/PracticeModePage'));
 const DetachedVideoPage = lazy(() => import('./pages/DetachedVideoPage'));
@@ -171,6 +172,22 @@ function App() {
                 element={
                   <AnimatedPage>
                     {user ? <MultiMatchAnalysisPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
+                  </AnimatedPage>
+                }
+              />
+              <Route
+                path="/distribution"
+                element={
+                  <AnimatedPage>
+                    {user ? <DistributionModePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
+                  </AnimatedPage>
+                }
+              />
+              <Route
+                path="/datavolley/distribution"
+                element={
+                  <AnimatedPage>
+                    {user ? <DistributionModePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
                   </AnimatedPage>
                 }
               />

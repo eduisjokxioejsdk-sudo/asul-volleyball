@@ -1,8 +1,25 @@
 {
-  "version": "3.21.0",
-  "releasedAt": "2026-11-12",
+  "version": "3.22.0",
+  "releasedAt": "2026-11-14",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.22.0",
+      "date": "2026-11-14",
+      "title": "Mode Distribution : rapport passeur complet, au modèle Excel",
+      "items": [
+        "Nouveau mode « Distribution » accessible depuis le menu, l’accueil et la page des matchs Data Volley : il génère le rapport complet de distribution des passeurs pour une équipe",
+        "Sélection d’une équipe puis de plusieurs matchs codés en DataVolley, avec normalisation automatique Domicile / Extérieur et compteur de matchs par équipe",
+        "Import d’un fichier Excel (.xlsx, feuille « saisie » du modèle DISTRIBUTION_PASSEUR) ou CSV / TSV : le rapport se construit même sans codage, avec sélection des matchs ou journées du fichier",
+        "Filtres par passeur (Tous, Passeur N°X, NP) et par phase (K1 / K2), avec boutons rapides pour les journées (J1 à 3 / J4 à 6)",
+        "Rapport complet : distribution par rotation (ZP1 → ZP2), organisation offensive, distribution globale et par annonce du central (Bases 1, 2, 7 et 0)",
+        "Distribution selon le couloir de réception (gauche 1-9-2, centre 6-8-3, droite 5-7-4) et les 13 zones de passe (situations mini, moyenne et bonne)",
+        "Synthèse de la feuille « Saisie » : carte des 13 zones, graphiques de répartition et tableau des actions ; notes tactiques éditables et conservées sur chaque terrain",
+        "Export CSV au format « saisie » et impression / PDF du rapport ; nouvel onglet « Rapport Distribution (Modèle Excel) » dans l’analyse multi-matchs",
+        "Correction du décodage DataVolley : une sous-zone est acceptée après une seule zone (ex. 9A) et les appels passeur KE / KC sont reconnus, côté interface comme côté serveur",
+        "Validation : build de l’interface, cohérence du journal des versions et des paquets, puis construction et publication de l’installeur par l’intégration continue"
+      ]
+    },
     {
       "version": "3.21.0",
       "date": "2026-11-12",

@@ -18,6 +18,8 @@ import MultiMatchTeamView from '../components/MultiMatchTeamView';
 import { prepareMatches, buildMultiContext, allActions } from '../utils/multiMatch';
 import { RotationBoard } from '../components/DistributionBoard';
 import { DistributionCoverage, DistributionCodeTable } from '../components/DistributionMetaViews';
+import ExcelDistributionReport from '../components/ExcelDistributionReport';
+import { extractPossessionsFromMatches, computeExcelDistributionReport } from '../utils/excelDistributionEngine';
 import { cumulativeDistributionReport } from '../utils/multiMatchAnalytics';
 import { videosAPI, datavolleyAPI } from '../services/api';
 import { computeScouting } from '../utils/scouting';
@@ -240,6 +242,25 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
     phase: 'K1', passZone: 'ALL', setterCall: 'ALL', defenderRole: 'ALL',
   }), [preparedMatches]);
 
+  // Rapport Excel complet de distribution passeur sur les matchs sélectionnés
+  const excelDistReport = useMemo(() => {
+    const rawInputs = selectedVideoIds
+      .map((vid) => {
+        const video = videos.find((x) => x.id === vid);
+        if (!video) return null;
+        const extras = matchExtras[vid] || {};
+        return {
+          video,
+          actions: matchActionsMap[vid] || [],
+          setups: extras.setups || {},
+          events: extras.events || [],
+        };
+      })
+      .filter(Boolean);
+    const possessions = extractPossessionsFromMatches(rawInputs, targetTeam);
+    return computeExcelDistributionReport(possessions, { setterFilter: 'ALL', phaseFilter: 'ALL' });
+  }, [selectedVideoIds, videos, matchActionsMap, matchExtras, targetTeam]);
+
   // Export CSV Cumulé
   const exportCumulativeCsv = () => {
     const scoredActions = normalizedActions.filter((a) => a && a.evaluation);
@@ -441,6 +462,22 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
           >
             <Users size={14} /> Distribution Passeur Cumulée
           </button>
+          <button
+            type="button"
+            className={`btn ${activeView === 'excel_distribution' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setActiveView('excel_distribution')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <Volleyball size={14} /> Rapport Distribution (Modèle Excel)
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate('/distribution')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}
+          >
+            Ouvrir Mode Distribution Dédié →
+          </button>
         </div>
 
         {/* Contenu selon la vue active */}
@@ -489,6 +526,14 @@ export default function MultiMatchAnalysisPage({ user, onLogout }) {
             <DistributionCodeTable title="Setter Calls Distribution (cumul)" data={cumulativeDist.calls?.home} />
             <DistributionCodeTable title="Combination Analysis (cumul)" data={cumulativeDist.combos?.home} />
           </div>
+        )}
+
+        {activeView === 'excel_distribution' && (
+          <ExcelDistributionReport
+            report={excelDistReport}
+            teamName={targetTeam || 'Équipe'}
+            setterLabel="Tous les passeurs"
+          />
         )}
       </main>
     </div>

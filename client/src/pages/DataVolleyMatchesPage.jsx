@@ -452,6 +452,9 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => navigate('/distribution')}>
+              Rapport Distribution Passeur
+            </button>
             <button type="button" className="btn btn-secondary" onClick={() => setShowFolderModal(true)}>
               + Nouveau dossier
             </button>

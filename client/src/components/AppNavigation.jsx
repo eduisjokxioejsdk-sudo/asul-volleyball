@@ -10,7 +10,7 @@ import PancakeLogo from './PancakeLogo';
 // Sous-pages de Data Volley qui ont leur propre onglet ou leur propre
 // destination (bouton « Codes Auto ») : l'onglet « Data Volley » ne doit
 // pas rester surligné sur ces routes.
-const DATAVOLLEY_SUBROUTES = new Set(['multi', 'auto-codes']);
+const DATAVOLLEY_SUBROUTES = new Set(['multi', 'auto-codes', 'distribution']);
 
 const TABS = [
   {
@@ -40,6 +40,17 @@ const TABS = [
     label: 'Multi-Matchs',
     hint: 'Analyse cumulative & Plan de jeu adverse',
     isActive: (p) => p === '/datavolley/multi' || p.startsWith('/datavolley/multi/'),
+  },
+  {
+    key: 'distribution',
+    path: '/distribution',
+    label: 'Distribution',
+    hint: 'Rapport de distribution des passeurs (Multi-Matchs DataVolley & Excel)',
+    isActive: (p) =>
+      p === '/distribution' ||
+      p.startsWith('/distribution/') ||
+      p === '/datavolley/distribution' ||
+      p.startsWith('/datavolley/distribution/'),
   },
   {
     key: 'practice',

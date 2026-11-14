@@ -36,7 +36,7 @@ const DV_ATTACK_COMBOS = {
 };
 
 // Appels passeur (2 caractères, après une passe E) — miroir du client.
-const DV_SETTER_CALLS = ['K0', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7', 'K8', 'K9', 'KM', 'KP'];
+const DV_SETTER_CALLS = ['K0', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7', 'K8', 'K9', 'KE', 'KC', 'KM', 'KP'];
 
 // Correspondance officielle service ⇄ réception.
 const SERVE_RECEPTION_PAIR = { '=': '#', '/': '+', '-': '+', '!': '!', '+': '-', '#': '-' };
@@ -148,7 +148,7 @@ function scanCode(str, start) {
     zones.push(s[i]);
     i += 1;
   }
-  if (zones.length === 2 && i < s.length && DV_SUBZONE_KEYS.includes(s[i].toUpperCase())) {
+  if (zones.length >= 1 && i < s.length && DV_SUBZONE_KEYS.includes(s[i].toUpperCase())) {
     out.end_subzone = s[i].toUpperCase();
     i += 1;
   }

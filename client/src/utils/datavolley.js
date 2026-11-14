@@ -641,7 +641,7 @@ export function scanCode(str, start = 0, opts = {}) {
     zones.push(s[i]);
     i += 1;
   }
-  if (zones.length === 2 && i < s.length && DV_SUBZONE_KEYS.includes(s[i].toUpperCase())) {
+  if (zones.length >= 1 && i < s.length && DV_SUBZONE_KEYS.includes(s[i].toUpperCase())) {
     out.end_subzone = s[i].toUpperCase();
     i += 1;
   }

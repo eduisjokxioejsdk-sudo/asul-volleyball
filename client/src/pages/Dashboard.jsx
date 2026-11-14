@@ -32,6 +32,15 @@ const MODES = [
   },
   {
     num: '03',
+    key: 'distribution',
+    title: 'Distribution Passeur',
+    desc: 'Sélectionnez plusieurs matchs codés en DataVolley et générez le rapport complet de distribution des passeurs par équipe.',
+    cta: 'Ouvrir Distribution',
+    accent: '#22c55e',
+    path: '/distribution',
+  },
+  {
+    num: '04',
     key: 'trajectories',
     title: 'Trajectoires & Radar',
     desc: 'Tracez les impacts de service et d’attaque, liez vos fiches aux vidéos et compilez des bilans par équipe.',
@@ -40,7 +49,7 @@ const MODES = [
     path: '/trajectories',
   },
   {
-    num: '04',
+    num: '05',
     key: 'video',
     title: 'Centre Vidéo',
     desc: 'Consultez toutes les vidéos de match filtrées par équipe, par joueur, par type d’action et par évaluation.',
@@ -49,7 +58,7 @@ const MODES = [
     path: '/video-center',
   },
   {
-    num: '05',
+    num: '06',
     key: 'live',
     title: 'Mode En Direct',
     desc: 'Scouting collaboratif en temps réel au bord du terrain avec synchronisation multi-postes et retour caméra.',
@@ -58,7 +67,7 @@ const MODES = [
     path: null,
   },
   {
-    num: '06',
+    num: '07',
     key: 'practice',
     title: 'Entraînement',
     desc: 'Scouting de séances et ateliers d’entraînement pour travailler la lecture du jeu en équipe.',
@@ -67,7 +76,7 @@ const MODES = [
     path: '/practice',
   },
   {
-    num: '07',
+    num: '08',
     key: 'training',
     title: 'Académie',
     desc: 'Maîtrisez la syntaxe DataVolley grâce aux 11 leçons progressives, QCM, jeux de paires et traductions.',
