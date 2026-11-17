@@ -249,6 +249,9 @@ db.serialize(() => {
     video_delay REAL DEFAULT 10,
     home_team_id INTEGER,
     away_team_id INTEGER,
+    session_kind TEXT DEFAULT 'datavolley',
+    fast_direct_state TEXT,
+    fast_direct_revision INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
@@ -670,6 +673,15 @@ db.serialize(() => {
     }
     if (names.length > 0 && !names.includes('point_completed')) {
       db.run('ALTER TABLE live_sessions ADD COLUMN point_completed TEXT');
+    }
+    if (names.length > 0 && !names.includes('session_kind')) {
+      db.run("ALTER TABLE live_sessions ADD COLUMN session_kind TEXT DEFAULT 'datavolley'");
+    }
+    if (names.length > 0 && !names.includes('fast_direct_state')) {
+      db.run('ALTER TABLE live_sessions ADD COLUMN fast_direct_state TEXT');
+    }
+    if (names.length > 0 && !names.includes('fast_direct_revision')) {
+      db.run('ALTER TABLE live_sessions ADD COLUMN fast_direct_revision INTEGER DEFAULT 0');
     }
   });
 

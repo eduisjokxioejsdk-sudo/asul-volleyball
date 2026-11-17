@@ -253,6 +253,40 @@ Asulv2/
 └── .gitignore
 ```
 
+## ⚡ Fast Direct — distribution séparée du codage DataVolley
+
+Fast Direct reprend la saisie de distribution de `pancake-distribution` dans Pancake,
+avec les mêmes sessions multi-appareils que le direct :
+
+1. Sur le PC hôte, ouvrir **Fast Direct**, créer une session et communiquer son code.
+2. Sur l'appareil de saisie, rejoindre avec le rôle **Prise de distribution**.
+3. Sur la tablette du banc, rejoindre avec le rôle **Banc / Coach** : toutes les actions,
+   synthèses et feuilles sont consultables, sans aucune modification possible.
+4. Sur le téléphone, rejoindre avec le rôle **Caméra**.
+
+L'hôte reste administrateur de la session. Le rôle de codage de statistiques basiques
+est prévu dans l'architecture mais n'est pas encore proposé.
+
+- Données enregistrées **par session**, avec révision et fusion des modifications en
+  attente après une coupure réseau.
+- Les données de démonstration du projet d'origine ne sont jamais importées.
+- Les exports Excel, les sauvegardes locales JSON et le modèle original restent
+  disponibles.
+- Les écritures Fast Direct sont refusées côté serveur pour les rôles `viewer` et
+  `camera`.
+- La caméra est visible sur l'hôte, la distribution et le banc avec les contrôles DVR.
+
+> Pour une synchronisation Supabase entre plusieurs postes, exécuter à nouveau
+> `server/scripts/supabase-shared.sql` : il ajoute les colonnes Fast Direct sans
+> supprimer les sessions existantes.
+
+Tests dédiés :
+
+```bash
+npm --prefix server run test:fast-direct   # serveur local démarré
+npm --prefix client run test:fast-direct
+```
+
 ## 📹 Caméra du match en direct (téléphone → PCs)
 
 Pendant un match, un téléphone peut filmer le terrain et la vidéo s'affiche sur les

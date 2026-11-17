@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Scrollbar compacte pour tableaux Excel */
+.excel-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.excel-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+.excel-scroll::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+.excel-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}

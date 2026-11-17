@@ -919,6 +919,9 @@ const LIVE_COMPARE_FIELDS = [
   'current_point',
   'point_completed',
   'video_delay',
+  'session_kind',
+  'fast_direct_state',
+  'fast_direct_revision',
   'deleted_at',
   'deleted_items',
   'members',
@@ -1047,6 +1050,12 @@ function mergeLiveSession(local, remote, localWins) {
         ? winner.point_completed
         : JSON.stringify(parseJsonArray(winner.point_completed)),
     video_delay: Number.isFinite(Number(winner.video_delay)) ? Number(winner.video_delay) : 8,
+    session_kind: winner.session_kind || loser.session_kind || 'datavolley',
+    fast_direct_state: winner.fast_direct_state ?? loser.fast_direct_state ?? null,
+    fast_direct_revision: Math.max(
+      Number(local.fast_direct_revision) || 0,
+      Number(remote.fast_direct_revision) || 0
+    ),
     deleted_at: winner.deleted_at ?? null,
     created_at: local.created_at || remote.created_at || new Date().toISOString(),
     deleted_items: deletedItems,
@@ -1229,6 +1238,9 @@ const liveCollection = {
             ? s.point_completed
             : JSON.stringify(parseJsonArray(s.point_completed)),
         video_delay: Number.isFinite(Number(s.video_delay)) ? Number(s.video_delay) : 8,
+        session_kind: s.session_kind || 'datavolley',
+        fast_direct_state: s.fast_direct_state || null,
+        fast_direct_revision: Number(s.fast_direct_revision) || 0,
         deleted_at: s.deleted_at || null,
         deleted_items: deletedItems,
         members: sessMembers,
@@ -1257,6 +1269,9 @@ const liveCollection = {
         ? row.point_completed
         : JSON.stringify(parseJsonArray(row.point_completed)),
     video_delay: Number.isFinite(Number(row.video_delay)) ? Number(row.video_delay) : 8,
+    session_kind: row.session_kind || 'datavolley',
+    fast_direct_state: row.fast_direct_state || null,
+    fast_direct_revision: Number(row.fast_direct_revision) || 0,
     deleted_at: row.deleted_at || null,
     created_at: row.created_at || new Date().toISOString(),
     deleted_items: Array.isArray(row.deleted_items) ? row.deleted_items : parseJsonArray(row.deleted_items),
@@ -1383,6 +1398,12 @@ const liveCollection = {
       typeof entry.point_completed === 'string'
         ? entry.point_completed
         : JSON.stringify(parseJsonArray(entry.point_completed));
+    const fastDirectStateStr =
+      entry.fast_direct_state == null
+        ? null
+        : typeof entry.fast_direct_state === 'string'
+        ? entry.fast_direct_state
+        : JSON.stringify(entry.fast_direct_state);
 
     if (existingSession) {
       await runAsync(
@@ -1452,6 +1473,18 @@ const liveCollection = {
         ]
       );
     }
+
+    await runAsync(
+      `UPDATE live_sessions
+          SET session_kind = ?, fast_direct_state = ?, fast_direct_revision = ?
+        WHERE id = ?`,
+      [
+        entry.session_kind === 'fast_direct' ? 'fast_direct' : 'datavolley',
+        fastDirectStateStr,
+        Number(entry.fast_direct_revision) || 0,
+        sessionId,
+      ]
+    );
 
     // --- Synchronisation des membres (mise à jour sur place par sync_uuid) ---
     const existingMembers = await allAsync('SELECT * FROM live_members WHERE session_id = ?', [sessionId]);

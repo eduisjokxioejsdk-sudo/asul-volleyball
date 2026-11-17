@@ -1,0 +1,2401 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Pancake Saisie — iPad</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #020617;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.35;
+      touch-action: manipulation;
+      -webkit-text-size-adjust: 100%;
+    }
+    button, select, input {
+      font-family: inherit;
+      font-size: inherit;
+      color: inherit;
+    }
+    button {
+      cursor: pointer;
+      border: 1px solid #334155;
+      background: #1e293b;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-weight: 700;
+      text-align: center;
+      -webkit-appearance: none;
+    }
+    button:active {
+      opacity: 0.78;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .app {
+      max-width: 1100px;
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 8px 10px 12px 10px;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+    }
+
+    /* Top bar & context bar */
+    .topbar, .ctx-bar {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-wrap: wrap;
+      flex-wrap: wrap;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: space-between;
+      justify-content: space-between;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 6px 10px;
+      margin-bottom: 6px;
+    }
+    .topbar-group {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-wrap: wrap;
+      flex-wrap: wrap;
+      -webkit-align-items: center;
+      align-items: center;
+      margin: 2px 0;
+    }
+    .topbar-group > * {
+      margin-right: 6px;
+      margin-bottom: 2px;
+    }
+    .topbar-group > *:last-child {
+      margin-right: 0;
+    }
+    .brand {
+      font-weight: 800;
+      font-size: 15px;
+      color: #34d399;
+      letter-spacing: 0.3px;
+    }
+    .select-box {
+      background: #1e293b;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-weight: 700;
+      color: #f8fafc;
+      min-height: 36px;
+      font-size: 13px;
+    }
+    .btn-sm {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 8px;
+      min-height: 36px;
+    }
+    .sync-pill {
+      display: inline-block;
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #cbd5e1;
+    }
+    .sync-ok { border-color: #059669; background: #064e3b; color: #a7f3d0; }
+    .sync-busy { border-color: #0284c7; background: #0c4a6e; color: #bae6fd; }
+    .sync-err { border-color: #e11d48; background: #4c0519; color: #fecdd3; }
+
+    .ctx-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #94a3b8;
+      font-weight: 700;
+      margin-right: 4px;
+    }
+    .rot-btn {
+      min-width: 38px;
+      min-height: 36px;
+      padding: 5px 8px;
+      margin-right: 3px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .rot-btn.active {
+      background: #0ea5e9;
+      border-color: #7dd3fc;
+      color: #020617;
+    }
+    .setter-btn {
+      min-height: 36px;
+      padding: 5px 9px;
+      margin-right: 3px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .setter-btn.active {
+      background: #10b981;
+      border-color: #6ee7b7;
+      color: #020617;
+    }
+
+    /* Stepper */
+    .stepper {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-wrap: wrap;
+      flex-wrap: wrap;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: space-between;
+      justify-content: space-between;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 6px 8px;
+      margin-bottom: 8px;
+    }
+    .stepper-tabs {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-wrap: wrap;
+      flex-wrap: wrap;
+      -webkit-flex: 1 1 auto;
+      flex: 1 1 auto;
+    }
+    .step-tab {
+      margin-right: 5px;
+      margin-bottom: 2px;
+      padding: 6px 10px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #cbd5e1;
+      min-height: 34px;
+      display: -webkit-inline-flex;
+      display: inline-flex;
+      -webkit-align-items: center;
+      align-items: center;
+    }
+    .step-tab.active {
+      background: #10b981;
+      border-color: #6ee7b7;
+      color: #020617;
+    }
+    .step-tab.filled {
+      border-color: #059669;
+      background: #064e3b;
+      color: #a7f3d0;
+    }
+    .step-tab.disabled {
+      background: #0f172a;
+      border-color: #1e293b;
+      color: #475569;
+    }
+    .step-badge {
+      margin-left: 5px;
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: rgba(0, 0, 0, 0.28);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    /* Main saisie panel (~70% screen) */
+    .panel {
+      -webkit-flex: 1 1 auto;
+      flex: 1 1 auto;
+      min-height: 68vh;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+      -webkit-justify-content: space-between;
+      justify-content: space-between;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 18px;
+      padding: 14px;
+      margin-bottom: 8px;
+    }
+    .step-header {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-wrap: wrap;
+      flex-wrap: wrap;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: space-between;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .step-header-left {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-flex-wrap: wrap;
+      flex-wrap: wrap;
+    }
+    .step-header-left > * {
+      margin-right: 10px;
+      margin-bottom: 4px;
+    }
+    .panel-title {
+      font-size: 19px;
+      font-weight: 800;
+      margin: 0;
+      color: #f8fafc;
+    }
+    .panel-sub {
+      font-size: 12px;
+      color: #94a3b8;
+      margin: 3px 0 0 0;
+    }
+    .pill-tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Flexbox grid helpers */
+    .row-flex {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-wrap: wrap;
+      flex-wrap: wrap;
+      margin: -5px;
+    }
+    .cell-2 { width: 50%; padding: 5px; }
+    .cell-3 { width: 33.3333%; padding: 5px; }
+    .cell-4 { width: 25%; padding: 5px; }
+    .cell-7 { width: 14.2857%; padding: 4px; }
+
+    @media (max-width: 700px) {
+      .cell-7 { width: 25%; }
+    }
+
+    .big-btn {
+      width: 100%;
+      min-height: 175px;
+      padding: 16px 12px;
+      font-size: 44px;
+      font-weight: 900;
+      border-radius: 18px;
+      border-width: 2px;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: center;
+      justify-content: center;
+    }
+    .big-btn small {
+      display: block;
+      font-size: 15px;
+      font-weight: 700;
+      opacity: 0.88;
+      margin-top: 8px;
+    }
+
+    /* Tones */
+    .tone-emerald { border-color: #059669; background: #064e3b; color: #d1fae5; }
+    .tone-teal    { border-color: #0d9488; background: #134e4a; color: #ccfbf1; }
+    .tone-amber   { border-color: #d97706; background: #451a03; color: #fef3c7; }
+    .tone-orange  { border-color: #ea580c; background: #431407; color: #ffedd5; }
+    .tone-rose    { border-color: #e11d48; background: #4c0519; color: #ffe4e6; }
+    .tone-red     { border-color: #dc2626; background: #450a0a; color: #fee2e2; }
+    .tone-yellow  { border-color: #ca8a04; background: #422006; color: #fef9c3; }
+    .tone-sky     { border-color: #0284c7; background: #0c4a6e; color: #e0f2fe; }
+    .tone-indigo  { border-color: #4f46e5; background: #1e1b4b; color: #e0e7ff; }
+    .tone-purple  { border-color: #9333ea; background: #3b0764; color: #f3e8ff; }
+    .tone-slate   { border-color: #475569; background: #1e293b; color: #e2e8f0; }
+
+    .selected-btn {
+      background: #10b981 !important;
+      border-color: #a7f3d0 !important;
+      color: #020617 !important;
+      box-shadow: 0 0 0 2px #34d399;
+    }
+
+    /* Step 2: 2D court + side panel */
+    .step2-layout {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-wrap: wrap;
+      flex-wrap: wrap;
+      -webkit-align-items: flex-start;
+      align-items: flex-start;
+      margin: -6px;
+      -webkit-flex: 1 1 auto;
+      flex: 1 1 auto;
+    }
+    .step2-court-col {
+      width: 63%;
+      padding: 6px;
+    }
+    .step2-side-col {
+      width: 37%;
+      padding: 6px;
+    }
+    @media (max-width: 720px) {
+      .step2-court-col, .step2-side-col { width: 100%; }
+    }
+
+    .court-frame {
+      width: 100%;
+      max-width: 560px;
+      margin: 0 auto;
+      background: #f8fafc;
+      border: 2px solid #64748b;
+      border-radius: 14px;
+      padding: 10px;
+      color: #0f172a;
+    }
+    .court-opp-label {
+      text-align: center;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .court-opp-bar {
+      display: -webkit-flex;
+      display: flex;
+      height: 30px;
+      border: 2px solid #000;
+      border-bottom: none;
+      background: #f1f5f9;
+      font-size: 12px;
+      font-weight: 800;
+      color: #94a3b8;
+    }
+    .court-opp-cell {
+      width: 33.3333%;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: center;
+      justify-content: center;
+      border-right: 1px solid #cbd5e1;
+    }
+    .court-opp-cell:last-child { border-right: none; }
+
+    .court-net-bar {
+      position: relative;
+      height: 14px;
+      background: #000;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: center;
+      justify-content: center;
+    }
+    .court-net-bar span {
+      background: #000;
+      color: #fff;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      padding: 0 6px;
+    }
+
+    /* Square aspect ratio compatible iOS 12 */
+    .court-aspect {
+      position: relative;
+      width: 100%;
+      padding-bottom: 92%;
+      height: 0;
+      border: 2px solid #000;
+      border-top: none;
+      background: #ecfdf5;
+      overflow: hidden;
+    }
+    .court-aspect-inner {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+    }
+    .court-line-h3 {
+      position: absolute;
+      left: 0; right: 0;
+      top: 33.3333%;
+      border-top: 2px solid #000;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .court-line-hb {
+      position: absolute;
+      left: 0; right: 0;
+      top: 66.6666%;
+      border-top: 1px solid #94a3b8;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .court-line-v1 {
+      position: absolute;
+      top: 0; bottom: 0;
+      left: 33.3333%;
+      border-left: 1px solid #94a3b8;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .court-line-v2 {
+      position: absolute;
+      top: 0; bottom: 0;
+      left: 66.6666%;
+      border-left: 1px solid #94a3b8;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .court-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    /* Phase 2A: 3x3 reception zones */
+    .recep-grid {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      height: 100%;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+    }
+    .recep-row {
+      display: -webkit-flex;
+      display: flex;
+      height: 33.3333%;
+      width: 100%;
+    }
+    .recep-cell-btn {
+      width: 33.3333%;
+      height: 100%;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      color: #475569;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: center;
+      justify-content: center;
+      padding: 4px;
+    }
+    .recep-cell-btn.active {
+      background: rgba(14, 165, 233, 0.25);
+      box-shadow: inset 0 0 0 3px #0284c7;
+    }
+    .recep-num {
+      font-size: 34px;
+      font-weight: 900;
+      line-height: 1;
+      color: #334155;
+    }
+    .recep-cell-btn.active .recep-num {
+      color: #0369a1;
+    }
+    .recep-hint {
+      font-size: 10px;
+      font-weight: 700;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .recep-badge {
+      margin-top: 4px;
+      background: #0284c7;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 999px;
+    }
+
+    /* Phase 2B: Zone P bands on court */
+    .zonep-grid {
+      position: relative;
+      z-index: 25;
+      width: 100%;
+      height: 100%;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+    }
+    .zonep-band {
+      position: relative;
+      height: 33.3333%;
+      display: -webkit-flex;
+      display: flex;
+      padding: 4px;
+    }
+    .zonep-band-good { background: rgba(167, 243, 208, 0.35); }
+    .zonep-band-mid  { background: rgba(254, 243, 199, 0.45); }
+    .zonep-band-mini { background: rgba(255, 228, 230, 0.45); }
+    .zonep-btn-wrap-5 { width: 20%; padding: 2px; height: 100%; }
+    .zonep-btn-wrap-3 { width: 33.3333%; padding: 3px; height: 100%; }
+    .zonep-btn {
+      width: 100%;
+      height: 100%;
+      border-radius: 10px;
+      border: 2px solid #059669;
+      background: rgba(255, 255, 255, 0.9);
+      color: #0f172a;
+      font-size: 22px;
+      font-weight: 900;
+      padding: 2px;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: center;
+      justify-content: center;
+    }
+    .zonep-btn small {
+      font-size: 10px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .zonep-btn-good { border-color: rgba(5, 150, 105, 0.45); color: #064e3b; }
+    .zonep-btn-mid  { border-color: rgba(217, 119, 6, 0.45); color: #78350f; }
+    .zonep-btn-mini { border-color: rgba(225, 29, 72, 0.45); color: #881337; font-size: 26px; }
+    .zonep-btn-active-good { background: #10b981 !important; color: #fff !important; border-color: #047857 !important; }
+    .zonep-btn-active-mid  { background: #f59e0b !important; color: #fff !important; border-color: #b45309 !important; }
+    .zonep-btn-active-mini { background: #f43f5e !important; color: #fff !important; border-color: #be123c !important; }
+
+    .zonep-extra-wrap {
+      position: absolute;
+      bottom: 4px;
+      left: 6px;
+      z-index: 30;
+    }
+    .zonep-extra-btn {
+      background: #fde68a;
+      border: 1px solid #b45309;
+      color: #78350f;
+      font-size: 10px;
+      font-weight: 900;
+      padding: 2px 6px;
+      border-radius: 5px;
+      margin-right: 3px;
+    }
+
+    .point-marker {
+      position: absolute;
+      z-index: 30;
+      -webkit-transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%);
+      background: #0284c7;
+      color: #fff;
+      border: 2px solid #fff;
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: 10px;
+      font-weight: 900;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    /* Side box in Step 2 */
+    .side-box {
+      border: 1px solid #334155;
+      background: #020617;
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .side-box-ready {
+      border-color: rgba(52, 211, 153, 0.7);
+      background: rgba(6, 78, 59, 0.28);
+    }
+    .qual-btn {
+      width: 100%;
+      min-height: 120px;
+      border-radius: 16px;
+      border-width: 2px;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: center;
+      justify-content: center;
+    }
+    .qual-btn span { font-size: 36px; font-weight: 900; line-height: 1; }
+    .qual-btn small { font-size: 13px; font-weight: 700; margin-top: 6px; }
+
+    /* Step 4: Distrib 2D spatial court */
+    .distrib-frame {
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      background: #f8fafc;
+      border: 2px solid #64748b;
+      border-radius: 16px;
+      padding: 10px;
+      color: #0f172a;
+    }
+    .distrib-net-header {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-justify-content: space-between;
+      justify-content: space-between;
+      -webkit-align-items: center;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      color: #334155;
+      margin-bottom: 5px;
+    }
+    .distrib-net-pill {
+      background: #000;
+      color: #fff;
+      padding: 2px 10px;
+      border-radius: 4px;
+    }
+    .distrib-court {
+      position: relative;
+      border: 2px solid #000;
+      background: #ecfdf5;
+      min-height: 465px;
+      padding: 10px;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+      -webkit-justify-content: space-between;
+      justify-content: space-between;
+    }
+    .distrib-3m-line {
+      position: absolute;
+      left: 0; right: 0;
+      top: 54%;
+      border-top: 2px dashed rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+    }
+    .distrib-front-row {
+      position: relative;
+      z-index: 20;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-align-items: flex-start;
+      align-items: flex-start;
+      margin: 0 -4px;
+    }
+    .distrib-col-left, .distrib-col-right {
+      width: 25%;
+      padding: 0 4px;
+    }
+    .distrib-col-center {
+      width: 50%;
+      padding: 0 4px;
+    }
+    .distrib-back-row {
+      position: relative;
+      z-index: 20;
+      display: -webkit-flex;
+      display: flex;
+      padding-top: 14px;
+      margin: 0 -4px;
+    }
+    .dist-btn {
+      width: 100%;
+      background: #fff;
+      color: #0f172a;
+      border: 2px solid #059669;
+      border-radius: 14px;
+      padding: 8px 6px;
+      margin-bottom: 6px;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: center;
+      justify-content: center;
+    }
+    .dist-btn.active {
+      background: #fbbf24 !important;
+      border-color: #b45309 !important;
+      color: #000 !important;
+    }
+    .dist-btn-num { font-size: 28px; font-weight: 900; line-height: 1; }
+    .dist-btn-sub { font-size: 12px; font-weight: 800; color: #334155; text-transform: uppercase; margin-top: 3px; }
+    .dist-tag {
+      margin-top: 5px;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 900;
+      color: #fff;
+      background: #0284c7;
+    }
+    .dist-tag-purple { background: #9333ea; }
+    .dist-tag-amber  { background: #d97706; }
+    .dist-tag-emerald { background: #059669; }
+
+    .dist-btn-compact {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.95);
+      color: #0f172a;
+      border: 1px solid #94a3b8;
+      border-radius: 12px;
+      padding: 11px 10px;
+      margin-bottom: 6px;
+      font-size: 14px;
+      min-height: 52px;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: space-between;
+      justify-content: space-between;
+    }
+    .dist-btn-compact.active {
+      background: #fbbf24 !important;
+      border-color: #b45309 !important;
+      color: #000 !important;
+    }
+    .dist-center-row {
+      display: -webkit-flex;
+      display: flex;
+      margin: 0 -3px 5px -3px;
+    }
+    .dist-center-cell {
+      width: 33.3333%;
+      padding: 0 3px;
+    }
+
+    /* Step 5 player bar */
+    .player-override-bar {
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-wrap: wrap;
+      flex-wrap: wrap;
+      -webkit-align-items: center;
+      align-items: center;
+      border: 1px solid rgba(192, 132, 252, 0.5);
+      background: rgba(59, 7, 100, 0.35);
+      border-radius: 14px;
+      padding: 6px 10px;
+    }
+    .player-override-bar > * { margin: 2px 3px; }
+    .player-chip {
+      min-width: 32px;
+      min-height: 30px;
+      padding: 4px 7px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 800;
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #e2e8f0;
+    }
+    .player-chip.active {
+      background: #34d399;
+      border-color: #a7f3d0;
+      color: #020617;
+    }
+
+    /* Recent actions */
+    .recent-wrap {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 8px 10px;
+    }
+    .recent-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .recent-table th, .recent-table td {
+      padding: 5px 4px;
+      border-bottom: 1px solid #1e293b;
+      text-align: center;
+    }
+    .recent-table th {
+      color: #94a3b8;
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+    .btn-danger { background: #7f1d1d; border-color: #ef4444; color: #fecaca; }
+    .btn-edit   { background: #0c4a6e; border-color: #38bdf8; color: #bae6fd; }
+
+    /* Modal 6 de départ */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 900;
+      display: none;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: center;
+      justify-content: center;
+      padding: 12px;
+    }
+    .modal-backdrop.open {
+      display: -webkit-flex;
+      display: flex;
+    }
+    .modal-card {
+      width: 100%;
+      max-width: 720px;
+      max-height: 92vh;
+      overflow-y: auto;
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 18px;
+      padding: 16px;
+    }
+    .lineup-slot-btn {
+      width: 100%;
+      min-height: 82px;
+      border-radius: 12px;
+      border: 2px solid #334155;
+      background: #1e293b;
+      display: -webkit-flex;
+      display: flex;
+      -webkit-flex-direction: column;
+      flex-direction: column;
+      -webkit-align-items: center;
+      align-items: center;
+      -webkit-justify-content: center;
+      justify-content: center;
+    }
+    .lineup-slot-btn.active {
+      border-color: #34d399;
+      background: #064e3b;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 14px;
+      right: 14px;
+      background: #065f46;
+      border: 1px solid #34d399;
+      color: #ecfdf5;
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 13px;
+      z-index: 999;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="topbar-group">
+        <span class="brand">PANCAKE iPad</span>
+        <select id="matchSelect" class="select-box"></select>
+        <button id="addMatchBtn" class="btn-sm tone-emerald" type="button">+ Match</button>
+        <span id="matchCountBadge" class="sync-pill">0 act.</span>
+      </div>
+      <div class="topbar-group">
+        <span id="syncPill" class="sync-pill">Chargement...</span>
+        <button id="syncNowBtn" class="btn-sm" type="button">Sync</button>
+        <button id="undoBtn" class="btn-sm tone-amber" type="button">Annuler</button>
+        <a href="/" class="btn-sm" style="text-decoration:none; border:1px solid #334155; background:#1e293b; border-radius:8px; padding:7px 10px; font-weight:700; display:inline-block;">App PC</a>
+      </div>
+    </div>
+
+    <!-- Context bar -->
+    <div class="ctx-bar">
+      <div class="topbar-group">
+        <span class="ctx-label">Passeur</span>
+        <span id="setterButtons"></span>
+        <button id="lineupBtn" class="btn-sm tone-purple" type="button">6 de départ</button>
+      </div>
+      <div class="topbar-group">
+        <span class="ctx-label">Rotation</span>
+        <span id="rotationButtons"></span>
+        <button id="nextRotBtn" class="btn-sm tone-sky" type="button">Tourner</button>
+      </div>
+    </div>
+
+    <!-- Stepper -->
+    <div class="stepper">
+      <div class="stepper-tabs" id="stepper"></div>
+      <button id="restartActionBtn" class="btn-sm" type="button" style="display:none;">Recommencer</button>
+    </div>
+
+    <!-- Main Step Panel (~70% screen) -->
+    <div class="panel" id="stepPanel"></div>
+
+    <!-- Recent actions (1 row by default + Voir plus) -->
+    <div class="recent-wrap">
+      <div style="display:-webkit-flex; display:flex; -webkit-justify-content:space-between; justify-content:space-between; -webkit-align-items:center; align-items:center; margin-bottom:4px;">
+        <div>
+          <strong id="recentTitle" style="font-size:12px; color:#cbd5e1; text-transform:uppercase;">Dernière action</strong>
+          <span id="totalCount" style="font-size:11px; color:#94a3b8; margin-left:8px;"></span>
+        </div>
+        <button id="toggleRecentBtn" class="btn-sm" type="button" style="min-height:30px; padding:4px 10px; font-size:11px;">Voir plus</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="recent-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Match</th>
+              <th>Rot</th>
+              <th>P</th>
+              <th>Serv</th>
+              <th>ZR</th>
+              <th>QR</th>
+              <th>ZP</th>
+              <th>Base</th>
+              <th>Dist</th>
+              <th>J</th>
+              <th>Res</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="recentBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 6 de départ -->
+  <div id="lineupModal" class="modal-backdrop">
+    <div class="modal-card" id="lineupModalContent"></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var STORAGE_STATE_KEY = 'pancake_ipad_state_v1';
+      var STORAGE_PENDING_KEY = 'pancake_ipad_pending_v1';
+      var DEVICE_ID_KEY = 'pancake_dist_device_id_v1';
+      var DEVICE_NAME_KEY = 'pancake_dist_device_name_v1';
+
+      var ROTATIONS = ['1', '6', '5', '4', '3', '2'];
+
+      var SERVICE_OPTIONS = [
+        { code: 'F', label: 'Flottant', tone: 'indigo' },
+        { code: 'S', label: 'Smashé', tone: 'indigo' },
+        { code: 'C', label: 'Relance / Freeball', tone: 'indigo' },
+        { code: 'T', label: 'Tennis', tone: 'indigo' }
+      ];
+
+      var ZONE_R_ROWS = [
+        [
+          { code: '4', hint: 'Av. Gauche (P4)' },
+          { code: '3', hint: 'Av. Centre (P3)' },
+          { code: '2', hint: 'Av. Droite (P2)' }
+        ],
+        [
+          { code: '7', hint: '3m Gauche' },
+          { code: '8', hint: '3m Centre' },
+          { code: '9', hint: '3m Droite' }
+        ],
+        [
+          { code: '5', hint: 'Fond Gauche (P5)' },
+          { code: '6', hint: 'Fond Centre (P6)' },
+          { code: '1', hint: 'Fond Droite (P1)' }
+        ]
+      ];
+
+      var QUALITE_R_OPTIONS = [
+        { code: '#', label: 'Parfaite', tone: 'emerald' },
+        { code: '+', label: 'Positive', tone: 'teal' },
+        { code: '0', label: 'Moyenne', tone: 'amber' },
+        { code: '!', label: '3 mètres', tone: 'orange' },
+        { code: '-', label: 'Négative', tone: 'rose' },
+        { code: 'Err', label: 'Erreur', tone: 'red' }
+      ];
+
+      var ZONE_P_NET = ['4', '3C', '3', '3A', '2'];
+      var ZONE_P_MID = ['7', '8C', '8', '8A', '9'];
+      var ZONE_P_EXTRA = ['7C', '7A'];
+      var ZONE_P_BACK = ['5', '6', '1'];
+
+      var ZONE_2D_COORDS = {
+        '4':  { x: 16.6, y: 16.6 },
+        '3C': { x: 35,   y: 16.6 },
+        '3':  { x: 50,   y: 16.6 },
+        '3A': { x: 65,   y: 16.6 },
+        '2':  { x: 83.3, y: 16.6 },
+        '7':  { x: 16.6, y: 50 },
+        '7C': { x: 24,   y: 50 },
+        '7A': { x: 12,   y: 50 },
+        '8C': { x: 35,   y: 50 },
+        '8':  { x: 50,   y: 50 },
+        '8A': { x: 65,   y: 50 },
+        '9':  { x: 83.3, y: 50 },
+        '5':  { x: 16.6, y: 83.3 },
+        '6':  { x: 50,   y: 83.3 },
+        '1':  { x: 83.3, y: 83.3 }
+      };
+
+      var DISTRIB_2D_COORDS = {
+        '5':  { x: 10, y: 14 },
+        '9':  { x: 16, y: 34 },
+        '4':  { x: 24, y: 20 },
+        '7':  { x: 36, y: 15 },
+        '1':  { x: 50, y: 12 },
+        '1C': { x: 43, y: 22 },
+        '3':  { x: 58, y: 22 },
+        'PM': { x: 62, y: 10 },
+        '2':  { x: 70, y: 15 },
+        '6':  { x: 88, y: 14 },
+        '10': { x: 50, y: 56 },
+        '8':  { x: 85, y: 56 }
+      };
+
+      var BASE_OFF_OPTIONS = [
+        { code: '1', label: 'BASE 1', sub: 'Fix Avant' },
+        { code: '2', label: 'BASE 2', sub: 'Fix Arrière' },
+        { code: '7', label: 'BASE 7', sub: 'Décalée' },
+        { code: '0', label: 'BASE 0', sub: 'Pas de fix' },
+        { code: '3', label: 'BASE 3', sub: 'Fix 3' }
+      ];
+
+      var RES_ATT_OPTIONS = [
+        { code: '#',  label: '#',   sub: 'Point !',          tone: 'emerald' },
+        { code: '+',  label: '+',   sub: 'Positif',          tone: 'teal' },
+        { code: '0',  label: '0',   sub: 'Rejoué',           tone: 'slate' },
+        { code: '/',  label: '/',   sub: 'Block-out / Couv.',tone: 'amber' },
+        { code: '-',  label: '-',   sub: 'Négatif',          tone: 'orange' },
+        { code: '!',  label: '!',   sub: 'Relance',          tone: 'yellow' },
+        { code: 'Err',label: 'Err', sub: 'Faute / Contré',   tone: 'rose' }
+      ];
+
+      var TEAM_ROLES = [
+        { id: 'Passeur', label: 'Passeur' },
+        { id: 'Pointu',  label: 'Pointu' },
+        { id: 'R4',      label: 'R4 (Récep-Att)' },
+        { id: 'Central', label: 'Central' }
+      ];
+
+      var DEFAULT_TEAM_LINEUP = {
+        1: { num: '6',  role: 'Passeur' },
+        2: { num: '33', role: 'R4' },
+        3: { num: '16', role: 'Central' },
+        4: { num: '1',  role: 'Pointu' },
+        5: { num: '69', role: 'R4' },
+        6: { num: '4',  role: 'Central' }
+      };
+
+      var DEFAULT_PLAYERS = ['1', '2', '3', '4', '6', '7', '8', '10', '11', '16', '21', '29', '33', '69'];
+
+      var appState = {
+        revision: 0,
+        rows: [],
+        matchList: ['SUC', 'AUC', 'GVUC', 'SENNECEY', 'CALUIRE 1', 'CROIX ROUSSE 1', 'MANDELIEU 1', 'ST EGREVE 1', 'LE PONTET 1', 'LE PRADET 1'],
+        setterList: [
+          { code: '6', name: 'PAUL' },
+          { code: '3', name: 'MARCUS' },
+          { code: '8', name: '' }
+        ],
+        sheetConfigs: [],
+        teamLineup: {
+          1: { num: '6',  role: 'Passeur' },
+          2: { num: '33', role: 'R4' },
+          3: { num: '16', role: 'Central' },
+          4: { num: '1',  role: 'Pointu' },
+          5: { num: '69', role: 'R4' },
+          6: { num: '4',  role: 'Central' }
+        }
+      };
+
+      var pendingDelta = null;
+      var isSyncing = false;
+      var syncStatus = 'init';
+      var syncErrorText = '';
+
+      // UI state
+      var selectedMatch = '';
+      var selectedRotation = '1';
+      var selectedSetterOverride = '';
+      var currentStep = 1;
+      var editingRowId = null;
+      var showAllRecent = false;
+      var showLineupModal = false;
+      var activeLineupSlot = 1;
+
+      var draft = {
+        service: '',
+        zoneR: '',
+        qualiteR: '',
+        zoneP: '',
+        baseOff: '',
+        distribP: '',
+        joueur: '',
+        resAtt: ''
+      };
+
+      function byId(id) {
+        return document.getElementById(id);
+      }
+
+      function closestAttr(el, attrName) {
+        while (el && el !== document) {
+          if (el.getAttribute && el.getAttribute(attrName) !== null) return el;
+          el = el.parentNode;
+        }
+        return null;
+      }
+
+      function closestTag(el, tagUpper) {
+        while (el && el !== document) {
+          if (el.tagName && el.tagName.toUpperCase() === tagUpper) return el;
+          el = el.parentNode;
+        }
+        return null;
+      }
+
+      function escapeHtml(str) {
+        return String(str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function showToast(msg) {
+        var el = byId('toast');
+        el.textContent = msg;
+        el.style.display = 'block';
+        clearTimeout(window.__pancakeIpadToast);
+        window.__pancakeIpadToast = setTimeout(function () {
+          el.style.display = 'none';
+        }, 2200);
+      }
+
+      function getDeviceIdentity() {
+        var id = '';
+        var name = '';
+        try {
+          id = localStorage.getItem(DEVICE_ID_KEY) || '';
+          if (!id) {
+            id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+            localStorage.setItem(DEVICE_ID_KEY, id);
+          }
+          name = localStorage.getItem(DEVICE_NAME_KEY) || '';
+          if (!name) {
+            name = 'iPad (' + id.slice(-4).toUpperCase() + ')';
+            localStorage.setItem(DEVICE_NAME_KEY, name);
+          }
+        } catch (e) {
+          id = id || 'ipad_legacy';
+          name = name || 'iPad';
+        }
+        return { deviceId: id, deviceName: name };
+      }
+
+      function saveLocalCache() {
+        try {
+          localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(appState));
+          if (pendingDelta) {
+            localStorage.setItem(STORAGE_PENDING_KEY, JSON.stringify(pendingDelta));
+          } else {
+            localStorage.removeItem(STORAGE_PENDING_KEY);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      function loadLocalCache() {
+        try {
+          var rawState = localStorage.getItem(STORAGE_STATE_KEY);
+          if (rawState) {
+            var parsed = JSON.parse(rawState);
+            if (parsed && parsed.rows) {
+              appState = parsed;
+            }
+          }
+          var rawPending = localStorage.getItem(STORAGE_PENDING_KEY);
+          if (rawPending) {
+            pendingDelta = JSON.parse(rawPending);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      function createEmptyDelta(baseRev) {
+        return {
+          baseRevision: baseRev || 0,
+          addedRowUids: [],
+          updatedRowUids: [],
+          deletedRowUids: [],
+          addedMatches: [],
+          deletedMatches: [],
+          renamedMatches: [],
+          addedSetters: [],
+          deletedSetters: [],
+          updatedSheetIds: [],
+          deletedSheetIds: [],
+          lineupChanged: false
+        };
+      }
+
+      function pushUnique(arr, val) {
+        if (!val) return;
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i] === val) return;
+        }
+        arr.push(val);
+      }
+
+      function computeLineupAtRotation(baseLineup, targetRot) {
+        var targetZone = Number(targetRot) || 1;
+        var zonesClock = [1, 6, 5, 4, 3, 2];
+        var frontZones = [4, 3, 2];
+        var lineup = baseLineup || DEFAULT_TEAM_LINEUP;
+
+        var setterStartZone = 1;
+        var i;
+        for (i = 0; i < zonesClock.length; i++) {
+          var z0 = zonesClock[i];
+          if (lineup[z0] && lineup[z0].role === 'Passeur') {
+            setterStartZone = z0;
+            break;
+          }
+        }
+
+        var startIdx = zonesClock.indexOf(setterStartZone);
+        var targetIdx = zonesClock.indexOf(targetZone);
+        var steps = targetIdx >= 0 ? (targetIdx - startIdx + 6) % 6 : 0;
+
+        var byZone = {};
+        var all = [];
+        for (i = 0; i < zonesClock.length; i++) {
+          var origZ = zonesClock[i];
+          var curZ = zonesClock[(i + steps) % 6];
+          var slot = lineup[origZ] || DEFAULT_TEAM_LINEUP[origZ];
+          var item = {
+            zone: curZ,
+            origZone: origZ,
+            num: slot && slot.num ? String(slot.num).trim() : '',
+            role: slot && slot.role ? slot.role : 'R4',
+            isFront: frontZones.indexOf(curZ) >= 0
+          };
+          byZone[curZ] = item;
+          all.push(item);
+        }
+
+        function findRole(list, role) {
+          for (var j = 0; j < list.length; j++) {
+            if (list[j] && list[j].role === role) return list[j];
+          }
+          return null;
+        }
+
+        var front = [byZone[4], byZone[3], byZone[2]];
+        var back = [byZone[5], byZone[6], byZone[1]];
+
+        var r4Front = findRole(front, 'R4') || findRole(all, 'R4');
+        var r4Back = findRole(back, 'R4') || r4Front;
+        var centralFront = findRole(front, 'Central') || findRole(all, 'Central');
+        var pointu = findRole(all, 'Pointu');
+        var passeur = findRole(all, 'Passeur');
+
+        return {
+          byZone: byZone,
+          all: all,
+          r4Front: r4Front,
+          r4Back: r4Back,
+          centralFront: centralFront,
+          pointu: pointu,
+          passeur: passeur
+        };
+      }
+
+      function resolveAttackerForDistrib(distribP, lineupInfo) {
+        if (!lineupInfo) return '';
+        var d = String(distribP || '').trim().toUpperCase();
+        if (d === '6' || d === '8') return lineupInfo.pointu ? lineupInfo.pointu.num : '';
+        if (d === '5' || d === '9' || d === '4') return lineupInfo.r4Front ? lineupInfo.r4Front.num : '';
+        if (d === '10') return lineupInfo.r4Back ? lineupInfo.r4Back.num : '';
+        if (d === '1' || d === '1C' || d === '2' || d === '3' || d === '7') {
+          return lineupInfo.centralFront ? lineupInfo.centralFront.num : '';
+        }
+        if (d === 'PM') return lineupInfo.passeur ? lineupInfo.passeur.num : '';
+        return '';
+      }
+
+      function getAutoTag(distribCode) {
+        var lineupInfo = computeLineupAtRotation(appState.teamLineup, selectedRotation);
+        var num = resolveAttackerForDistrib(distribCode, lineupInfo);
+        if (distribCode === '6' || distribCode === '8') return 'Pt #' + (num || '?');
+        if (distribCode === '5' || distribCode === '9' || distribCode === '4') return 'R4 Av #' + (num || '?');
+        if (distribCode === '10') return 'R4 Arr #' + (num || '?');
+        if (distribCode === '1' || distribCode === '1C' || distribCode === '2' || distribCode === '3' || distribCode === '7') {
+          return 'C Av #' + (num || '?');
+        }
+        if (distribCode === 'PM') return 'P #' + (num || '?');
+        return '';
+      }
+
+      function getActiveSetterCode() {
+        if (selectedSetterOverride) return selectedSetterOverride;
+        var info = computeLineupAtRotation(appState.teamLineup, selectedRotation);
+        if (info.passeur && info.passeur.num) {
+          return String(info.passeur.num).trim().toUpperCase();
+        }
+        if (appState.setterList && appState.setterList.length > 0) {
+          return String(appState.setterList[0].code || '6').toUpperCase();
+        }
+        return '6';
+      }
+
+      function getAllPlayerNumbers() {
+        var seen = {};
+        var list = [];
+        var i, n;
+        for (i = 0; i < DEFAULT_PLAYERS.length; i++) {
+          n = DEFAULT_PLAYERS[i];
+          if (!seen[n]) { seen[n] = true; list.push(n); }
+        }
+        var z;
+        for (z = 1; z <= 6; z++) {
+          if (appState.teamLineup && appState.teamLineup[z] && appState.teamLineup[z].num) {
+            n = String(appState.teamLineup[z].num).trim();
+            if (n && !seen[n]) { seen[n] = true; list.push(n); }
+          }
+        }
+        for (i = 0; i < appState.rows.length; i++) {
+          if (appState.rows[i].joueur) {
+            n = String(appState.rows[i].joueur).trim();
+            if (n && !seen[n]) { seen[n] = true; list.push(n); }
+          }
+        }
+        list.sort(function (a, b) { return Number(a) - Number(b); });
+        return list;
+      }
+
+      function xhrJson(method, url, bodyObj, cb) {
+        var xhr = new XMLHttpRequest();
+        xhr.open(method, url, true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        if (method === 'POST') {
+          xhr.setRequestHeader('Content-Type', 'application/json');
+        }
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState !== 4) return;
+          var data = null;
+          try {
+            data = JSON.parse(xhr.responseText || '{}');
+          } catch (e) {
+            cb(new Error('Réponse serveur invalide (' + xhr.status + ')'));
+            return;
+          }
+          if (xhr.status < 200 || xhr.status >= 300 || !data || !data.ok) {
+            cb(new Error((data && data.error) || ('Erreur HTTP ' + xhr.status)));
+            return;
+          }
+          cb(null, data);
+        };
+        xhr.onerror = function () {
+          cb(new Error('Hors-ligne ou réseau inaccessible'));
+        };
+        xhr.send(bodyObj ? JSON.stringify(bodyObj) : null);
+      }
+
+      function mergeRemoteState(remoteState) {
+        if (!remoteState) return;
+        appState.revision = Number(remoteState.revision) || 1;
+        appState.rows = Array.isArray(remoteState.rows) ? remoteState.rows : [];
+        if (Array.isArray(remoteState.matchList) && remoteState.matchList.length > 0) {
+          appState.matchList = remoteState.matchList;
+        }
+        if (Array.isArray(remoteState.setterList) && remoteState.setterList.length > 0) {
+          appState.setterList = remoteState.setterList;
+        }
+        if (Array.isArray(remoteState.sheetConfigs)) {
+          appState.sheetConfigs = remoteState.sheetConfigs;
+        }
+        if (remoteState.teamLineup && typeof remoteState.teamLineup === 'object') {
+          appState.teamLineup = remoteState.teamLineup;
+        }
+        if (!selectedMatch || appState.matchList.indexOf(selectedMatch) < 0) {
+          if (appState.matchList.length > 0) {
+            selectedMatch = appState.matchList[appState.matchList.length - 1];
+          }
+        }
+        saveLocalCache();
+      }
+
+      function syncNow(label) {
+        if (isSyncing) return;
+        isSyncing = true;
+        syncStatus = 'busy';
+        renderTopbar();
+
+        if (pendingDelta) {
+          var dev = getDeviceIdentity();
+          var snapshotDelta = pendingDelta;
+          xhrJson('POST', '/api/state', {
+            action: 'sync',
+            deviceId: dev.deviceId,
+            deviceName: dev.deviceName,
+            lastActionLabel: label || 'Saisie iPad',
+            isDestructive: snapshotDelta.deletedRowUids && snapshotDelta.deletedRowUids.length > 0,
+            forceReplace: false,
+            baseRevision: snapshotDelta.baseRevision || appState.revision || 0,
+            delta: snapshotDelta,
+            state: appState
+          }, function (err, data) {
+            isSyncing = false;
+            if (err) {
+              syncStatus = 'err';
+              syncErrorText = err.message;
+              renderAll();
+              return;
+            }
+            pendingDelta = null;
+            if (data.state) {
+              mergeRemoteState(data.state);
+            }
+            syncStatus = 'ok';
+            syncErrorText = '';
+            renderAll();
+          });
+        } else {
+          xhrJson('GET', '/api/state?_t=' + Date.now(), null, function (err, data) {
+            isSyncing = false;
+            if (err) {
+              syncStatus = 'err';
+              syncErrorText = err.message;
+              renderTopbar();
+              return;
+            }
+            if (data.state) {
+              mergeRemoteState(data.state);
+            }
+            syncStatus = 'ok';
+            syncErrorText = '';
+            renderAll();
+          });
+        }
+      }
+
+      function queueDeltaAndSync(deltaUpdater, label) {
+        if (!pendingDelta) {
+          pendingDelta = createEmptyDelta(appState.revision || 0);
+        }
+        deltaUpdater(pendingDelta);
+        saveLocalCache();
+        renderAll();
+        syncNow(label);
+      }
+
+      function resetDraft() {
+        draft = {
+          service: '',
+          zoneR: '',
+          qualiteR: '',
+          zoneP: '',
+          baseOff: '',
+          distribP: '',
+          joueur: '',
+          resAtt: ''
+        };
+        editingRowId = null;
+        currentStep = 1;
+      }
+
+      function canGoToStep(targetStep) {
+        if (targetStep === 1) return true;
+        if (targetStep === 2) return Boolean(draft.service);
+        if (targetStep === 3) return Boolean(draft.service && draft.zoneR && draft.qualiteR && draft.zoneP);
+        if (targetStep === 4) return Boolean(draft.service && draft.zoneR && draft.qualiteR && draft.zoneP && draft.baseOff);
+        if (targetStep === 5) return Boolean(draft.service && draft.zoneR && draft.qualiteR && draft.zoneP && draft.baseOff && draft.distribP);
+        return false;
+      }
+
+      function saveCurrentAction(resCode) {
+        var effectiveRes = resCode || draft.resAtt || '';
+        var effectiveMatch = String(selectedMatch || 'MATCH 1').trim().toUpperCase();
+        var sCode = getActiveSetterCode();
+        var lineupInfo = computeLineupAtRotation(appState.teamLineup, selectedRotation);
+        var finalJoueur = draft.joueur || resolveAttackerForDistrib(draft.distribP, lineupInfo) || '1';
+
+        if (editingRowId !== null) {
+          var targetUid = '';
+          for (var i = 0; i < appState.rows.length; i++) {
+            if (appState.rows[i].id === editingRowId) {
+              var existing = appState.rows[i];
+              targetUid = existing.uid || ('legacy_' + editingRowId);
+              appState.rows[i] = {
+                id: existing.id,
+                uid: targetUid,
+                match: effectiveMatch,
+                rotation: String(selectedRotation || '1'),
+                setter: sCode,
+                service: draft.service || 'F',
+                zoneR: draft.zoneR || '6',
+                qualiteR: draft.qualiteR || '#',
+                zoneP: draft.zoneP || '3',
+                baseOff: draft.baseOff || '1',
+                distribP: draft.distribP || '5',
+                joueur: finalJoueur,
+                resAtt: effectiveRes
+              };
+              break;
+            }
+          }
+          var updatedId = editingRowId;
+          resetDraft();
+          showToast('Ligne #' + updatedId + ' mise à jour');
+          queueDeltaAndSync(function (d) {
+            if (targetUid && d.addedRowUids.indexOf(targetUid) < 0) {
+              pushUnique(d.updatedRowUids, targetUid);
+            }
+          }, 'Modification ligne #' + updatedId);
+          return;
+        }
+
+        var uid = 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        var maxId = 0;
+        for (var j = 0; j < appState.rows.length; j++) {
+          var rid = Number(appState.rows[j].id) || 0;
+          if (rid > maxId) maxId = rid;
+        }
+
+        var newRow = {
+          id: maxId + 1,
+          uid: uid,
+          match: effectiveMatch,
+          rotation: String(selectedRotation || '1'),
+          setter: sCode,
+          service: draft.service || 'F',
+          zoneR: draft.zoneR || '6',
+          qualiteR: draft.qualiteR || '#',
+          zoneP: draft.zoneP || '3',
+          baseOff: draft.baseOff || '1',
+          distribP: draft.distribP || '5',
+          joueur: finalJoueur,
+          resAtt: effectiveRes
+        };
+
+        appState.rows.push(newRow);
+        if (effectiveMatch && appState.matchList.indexOf(effectiveMatch) < 0) {
+          appState.matchList.push(effectiveMatch);
+        }
+        selectedMatch = effectiveMatch;
+
+        resetDraft();
+        showToast(effectiveMatch + ' • P' + newRow.rotation + ' • ' + newRow.distribP + ' → #' + newRow.joueur + ' (' + effectiveRes + ')');
+
+        queueDeltaAndSync(function (d) {
+          pushUnique(d.addedRowUids, uid);
+          if (effectiveMatch) pushUnique(d.addedMatches, effectiveMatch);
+        }, 'Saisie ' + effectiveMatch + ' (#' + sCode + ')');
+      }
+
+      function deleteRowByUidOrId(uid, id) {
+        var targetUid = uid || ('legacy_' + id);
+        var nextRows = [];
+        for (var i = 0; i < appState.rows.length; i++) {
+          var r = appState.rows[i];
+          if ((uid && r.uid === uid) || (!uid && r.id === id)) continue;
+          nextRows.push(r);
+        }
+        appState.rows = nextRows;
+        showToast('Ligne #' + id + ' supprimée');
+        queueDeltaAndSync(function (d) {
+          var idxAdded = d.addedRowUids.indexOf(targetUid);
+          if (idxAdded >= 0) {
+            d.addedRowUids.splice(idxAdded, 1);
+          } else {
+            pushUnique(d.deletedRowUids, targetUid);
+          }
+        }, 'Suppression ligne #' + id);
+      }
+
+      function loadRowForEdit(id) {
+        for (var i = 0; i < appState.rows.length; i++) {
+          var r = appState.rows[i];
+          if (r.id === id) {
+            editingRowId = r.id;
+            if (r.match) selectedMatch = r.match;
+            if (r.rotation) selectedRotation = r.rotation;
+            draft = {
+              service: r.service || 'F',
+              zoneR: r.zoneR || '',
+              qualiteR: r.qualiteR || '',
+              zoneP: r.zoneP || '',
+              baseOff: r.baseOff || '',
+              distribP: r.distribP || '',
+              joueur: r.joueur || '',
+              resAtt: r.resAtt || ''
+            };
+            currentStep = 1;
+            showToast('Modification ligne #' + r.id);
+            renderAll();
+            return;
+          }
+        }
+      }
+
+      function renderTopbar() {
+        var sel = byId('matchSelect');
+        var html = '';
+        var i;
+        var mCount = 0;
+        var mUpper = String(selectedMatch || '').trim().toUpperCase();
+
+        for (i = 0; i < appState.matchList.length; i++) {
+          var m = appState.matchList[i];
+          var isSel = m === selectedMatch ? ' selected' : '';
+          html += '<option value="' + escapeHtml(m) + '"' + isSel + '>' + escapeHtml(m) + '</option>';
+        }
+        sel.innerHTML = html;
+
+        for (i = 0; i < appState.rows.length; i++) {
+          if (mUpper && String(appState.rows[i].match || '').trim().toUpperCase() === mUpper) {
+            mCount++;
+          }
+        }
+        byId('matchCountBadge').textContent = mCount + ' act.';
+
+        var pill = byId('syncPill');
+        if (syncStatus === 'busy') {
+          pill.className = 'sync-pill sync-busy';
+          pill.textContent = 'Synchro...';
+        } else if (syncStatus === 'err') {
+          pill.className = 'sync-pill sync-err';
+          pill.textContent = pendingDelta ? 'Hors-ligne' : 'Erreur';
+          pill.title = syncErrorText || '';
+        } else if (syncStatus === 'ok') {
+          pill.className = 'sync-pill sync-ok';
+          pill.textContent = 'Cloud r' + (appState.revision || 0);
+        } else {
+          pill.className = 'sync-pill';
+          pill.textContent = 'Connexion...';
+        }
+      }
+
+      function renderContextBar() {
+        var rotHtml = '';
+        var i;
+        for (i = 0; i < ROTATIONS.length; i++) {
+          var r = ROTATIONS[i];
+          var cls = 'rot-btn' + (selectedRotation === r ? ' active' : '');
+          rotHtml += '<button type="button" class="' + cls + '" data-rot="' + r + '">P' + r + '</button>';
+        }
+        byId('rotationButtons').innerHTML = rotHtml;
+
+        var activeSetter = getActiveSetterCode();
+        var setters = [];
+        if (appState.setterList && appState.setterList.length > 0) {
+          for (i = 0; i < appState.setterList.length; i++) {
+            setters.push(String(appState.setterList[i].code || '').toUpperCase());
+          }
+        } else {
+          setters = ['6', '3', '8'];
+        }
+        if (setters.indexOf('NP') < 0) setters.push('NP');
+
+        var setHtml = '';
+        for (i = 0; i < setters.length; i++) {
+          var sc = setters[i];
+          var sCls = 'setter-btn' + (activeSetter === sc ? ' active' : '');
+          var label = sc === 'NP' ? 'NP' : 'N°' + sc;
+          setHtml += '<button type="button" class="' + sCls + '" data-setter="' + sc + '">' + label + '</button>';
+        }
+        byId('setterButtons').innerHTML = setHtml;
+      }
+
+      function renderStepper() {
+        var steps = [
+          { num: 1, title: 'Service', val: draft.service || '' },
+          {
+            num: 2,
+            title: 'Récep & Passe (2D)',
+            val: (draft.zoneR && draft.qualiteR && draft.zoneP)
+              ? (draft.zoneR + draft.qualiteR + '→' + draft.zoneP)
+              : (draft.zoneR ? (draft.zoneR + (draft.qualiteR || '?')) : '')
+          },
+          { num: 3, title: 'Annonce Central', val: draft.baseOff ? ('B' + draft.baseOff) : '' },
+          { num: 4, title: 'Distribution (2D)', val: draft.distribP ? (draft.distribP + ' (#' + draft.joueur + ')') : '' },
+          { num: 5, title: 'Résultat', val: draft.resAtt || '' }
+        ];
+
+        var html = '';
+        for (var i = 0; i < steps.length; i++) {
+          var st = steps[i];
+          var enabled = canGoToStep(st.num);
+          var cls = 'step-tab';
+          if (currentStep === st.num) cls += ' active';
+          else if (st.val) cls += ' filled';
+          else if (!enabled) cls += ' disabled';
+
+          html += '<button type="button" class="' + cls + '" data-step="' + st.num + '"' + (enabled ? '' : ' disabled') + '>';
+          html += '<span>' + st.num + '. ' + st.title + '</span>';
+          if (st.val) {
+            html += '<span class="step-badge">' + escapeHtml(st.val) + '</span>';
+          }
+          html += '</button>';
+        }
+        byId('stepper').innerHTML = html;
+
+        var restartBtn = byId('restartActionBtn');
+        restartBtn.style.display = (draft.service || editingRowId !== null) ? 'inline-block' : 'none';
+      }
+
+      function renderStepPanel() {
+        var panel = byId('stepPanel');
+        var html = '';
+        var i, j;
+        var lineupInfo = computeLineupAtRotation(appState.teamLineup, selectedRotation);
+        var rCoord = draft.zoneR ? ZONE_2D_COORDS[draft.zoneR] : null;
+        var pCoord = draft.zoneP ? ZONE_2D_COORDS[draft.zoneP] : null;
+        var dCoord = draft.distribP ? DISTRIB_2D_COORDS[draft.distribP] : null;
+
+        if (currentStep === 1) {
+          html += '<div style="text-align:center; margin-top:8px;">';
+          html += '<span class="pill-tag tone-indigo">Étape 1 / 5 • ' + (editingRowId !== null ? ('Modification ligne #' + editingRowId) : (escapeHtml(selectedMatch || 'MATCH 1') + ' • P' + selectedRotation)) + '</span>';
+          html += '<h2 class="panel-title" style="font-size:24px; margin-top:8px;">Quel type de SERVICE / BALLE ?</h2>';
+          html += '<p class="panel-sub">Touchez un bouton pour passer directement au terrain 2D (Réception & Passe)</p>';
+          html += '</div>';
+
+          html += '<div class="row-flex" style="margin:12px auto; max-width:100%; width:100%;">';
+          for (i = 0; i < SERVICE_OPTIONS.length; i++) {
+            var s = SERVICE_OPTIONS[i];
+            var sel = draft.service === s.code ? ' selected-btn' : '';
+            html += '<div class="cell-2"><button type="button" class="big-btn tone-slate' + sel + '" style="min-height:195px; font-size:48px;" data-service="' + s.code + '">' + s.code + '<small>' + s.label + '</small></button></div>';
+          }
+          html += '</div><div></div>';
+        } else if (currentStep === 2) {
+          var step2Phase = (!draft.zoneR || !draft.qualiteR) ? 'recep' : 'passe';
+          var headerTitle = step2Phase === 'recep'
+            ? (!draft.zoneR
+                ? 'Étape 2A — Point ① : Touchez la ZONE DE RÉCEPTION sur le terrain'
+                : 'Étape 2A — Réception en Zone ' + draft.zoneR + ' : Qualifiez la réception')
+            : 'Étape 2B — Point ② : Touchez la ZONE DE PASSE sur le terrain';
+
+          html += '<div class="step-header">';
+          html += '<div class="step-header-left">';
+          html += '<button type="button" class="btn-sm" data-goto-step="1">← Service (' + escapeHtml(draft.service) + ')</button>';
+          html += '<h2 class="panel-title" style="font-size:17px;">' + escapeHtml(headerTitle) + '</h2>';
+          html += '</div>';
+          if (step2Phase === 'passe') {
+            html += '<button type="button" class="btn-sm tone-amber" id="editPoint1Btn">Modifier Point ① (' + escapeHtml(draft.zoneR + ' ' + draft.qualiteR) + ')</button>';
+          }
+          html += '</div>';
+
+          html += '<div class="step2-layout">';
+          // Left: 2D Court
+          html += '<div class="step2-court-col">';
+          html += '<div class="court-frame">';
+          html += '<div class="court-opp-label">Camp Adverse (Repère : 2 • 3 • 4 au filet)</div>';
+          html += '<div class="court-opp-bar"><div class="court-opp-cell">2</div><div class="court-opp-cell">3</div><div class="court-opp-cell">4</div></div>';
+          html += '<div class="court-net-bar"><span>FILET</span></div>';
+          html += '<div class="court-aspect"><div class="court-aspect-inner">';
+          html += '<div class="court-line-h3"></div><div class="court-line-hb"></div><div class="court-line-v1"></div><div class="court-line-v2"></div>';
+
+          // SVG arrow ① -> ②
+          html += '<svg viewBox="0 0 100 100" preserveAspectRatio="none" class="court-svg">';
+          html += '<defs><marker id="blueArrow" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#0284c7" /></marker></defs>';
+          if (rCoord && pCoord) {
+            html += '<line x1="' + rCoord.x + '" y1="' + rCoord.y + '" x2="' + pCoord.x + '" y2="' + pCoord.y + '" stroke="#0284c7" stroke-width="1.6" marker-end="url(#blueArrow)" />';
+          }
+          html += '</svg>';
+
+          if (step2Phase === 'recep') {
+            html += '<div class="recep-grid">';
+            for (i = 0; i < ZONE_R_ROWS.length; i++) {
+              html += '<div class="recep-row">';
+              for (j = 0; j < ZONE_R_ROWS[i].length; j++) {
+                var cell = ZONE_R_ROWS[i][j];
+                var isAct = draft.zoneR === cell.code;
+                html += '<button type="button" class="recep-cell-btn' + (isAct ? ' active' : '') + '" data-zoner="' + cell.code + '">';
+                html += '<span class="recep-num">' + cell.code + '</span>';
+                html += '<span class="recep-hint">' + cell.hint + '</span>';
+                if (isAct) {
+                  html += '<span class="recep-badge">① Récep ' + escapeHtml(draft.qualiteR) + '</span>';
+                }
+                html += '</button>';
+              }
+              html += '</div>';
+            }
+            html += '</div>';
+          } else {
+            // Phase 2B: Zone P bands
+            if (rCoord) {
+              html += '<div class="point-marker" style="left:' + rCoord.x + '%; top:' + rCoord.y + '%;">① ' + escapeHtml(draft.zoneR + ' (' + draft.qualiteR + ')') + '</div>';
+            }
+            html += '<div class="zonep-grid">';
+            // Net band
+            html += '<div class="zonep-band zonep-band-good">';
+            for (i = 0; i < ZONE_P_NET.length; i++) {
+              var z1 = ZONE_P_NET[i];
+              var a1 = draft.zoneP === z1 ? ' zonep-btn-active-good' : '';
+              html += '<div class="zonep-btn-wrap-5"><button type="button" class="zonep-btn zonep-btn-good' + a1 + '" data-zonep="' + z1 + '"><span>' + z1 + '</span><small>Bonne</small></button></div>';
+            }
+            html += '</div>';
+            // 3m band
+            html += '<div class="zonep-band zonep-band-mid">';
+            for (i = 0; i < ZONE_P_MID.length; i++) {
+              var z2 = ZONE_P_MID[i];
+              var a2 = draft.zoneP === z2 ? ' zonep-btn-active-mid' : '';
+              html += '<div class="zonep-btn-wrap-5"><button type="button" class="zonep-btn zonep-btn-mid' + a2 + '" data-zonep="' + z2 + '"><span>' + z2 + '</span><small>Moy.</small></button></div>';
+            }
+            html += '<div class="zonep-extra-wrap">';
+            for (i = 0; i < ZONE_P_EXTRA.length; i++) {
+              html += '<button type="button" class="zonep-extra-btn" data-zonep="' + ZONE_P_EXTRA[i] + '">' + ZONE_P_EXTRA[i] + '</button>';
+            }
+            html += '</div>';
+            html += '</div>';
+            // Back band
+            html += '<div class="zonep-band zonep-band-mini">';
+            for (i = 0; i < ZONE_P_BACK.length; i++) {
+              var z3 = ZONE_P_BACK[i];
+              var a3 = draft.zoneP === z3 ? ' zonep-btn-active-mini' : '';
+              html += '<div class="zonep-btn-wrap-3"><button type="button" class="zonep-btn zonep-btn-mini' + a3 + '" data-zonep="' + z3 + '"><span>' + z3 + '</span><small>Mini</small></button></div>';
+            }
+            html += '</div>';
+            html += '</div>';
+          }
+
+          html += '</div></div></div></div>'; // close court-aspect-inner, court-aspect, court-frame, step2-court-col
+
+          // Right: Qualité R or Point 1 guide
+          html += '<div class="step2-side-col">';
+          if (step2Phase === 'recep') {
+            html += '<div class="side-box' + (draft.zoneR ? ' side-box-ready' : '') + '">';
+            html += '<div style="font-size:12px; font-weight:800; text-transform:uppercase; color:#6ee7b7;">Qualité Réception ' + (draft.zoneR ? '(Zone ' + draft.zoneR + ')' : '') + '</div>';
+            html += '<p style="font-size:12px; color:#94a3b8; margin:4px 0 10px 0;">' + (draft.zoneR ? 'Touchez la qualité pour passer au choix de Zone de Passe ②' : 'Touchez d’abord la zone d’arrivée sur le terrain à gauche') + '</p>';
+            html += '<div class="row-flex">';
+            for (i = 0; i < QUALITE_R_OPTIONS.length; i++) {
+              var q = QUALITE_R_OPTIONS[i];
+              var qSel = draft.qualiteR === q.code ? ' selected-btn' : '';
+              html += '<div class="cell-2"><button type="button" class="qual-btn tone-' + q.tone + qSel + '" data-qualiter="' + q.code + '"' + (draft.zoneR ? '' : ' disabled') + '><span>' + q.code + '</span><small>' + q.label + '</small></button></div>';
+            }
+            html += '</div></div>';
+          } else {
+            html += '<div class="side-box" style="border-color:rgba(56,189,248,0.5); background:rgba(12,74,110,0.3);">';
+            html += '<div style="font-size:11px; font-weight:800; text-transform:uppercase; color:#7dd3fc;">Point ① enregistré</div>';
+            html += '<div style="margin-top:8px;"><span style="display:inline-block; background:#0ea5e9; color:#020617; font-weight:900; font-size:16px; padding:6px 12px; border-radius:10px;">Zone ' + escapeHtml(draft.zoneR) + ' • ' + escapeHtml(draft.qualiteR) + '</span></div>';
+            html += '<p style="font-size:13px; font-weight:700; color:#e2e8f0; margin:10px 0;">Maintenant touchez sur le terrain l’endroit ② où le passeur touche la balle.</p>';
+            html += '<div style="font-size:12px; color:#cbd5e1; line-height:1.7;">';
+            html += '<div><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#34d399; margin-right:6px;"></span>Filet (4, 3C, 3, 3A, 2) = Bonne</div>';
+            html += '<div><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#fbbf24; margin-right:6px;"></span>Ligne 3m (7, 8C, 8, 8A, 9) = Moyenne</div>';
+            html += '<div><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#fb7185; margin-right:6px;"></span>Fond (5, 6, 1) = Mini</div>';
+            html += '</div></div>';
+          }
+          html += '</div></div>'; // close step2-side-col & step2-layout
+        } else if (currentStep === 3) {
+          var centralNum = lineupInfo.centralFront ? lineupInfo.centralFront.num : '?';
+          html += '<div class="step-header">';
+          html += '<button type="button" class="btn-sm" data-goto-step="2">← Retour Terrain 2D</button>';
+          html += '<span class="sync-pill">Récep ' + escapeHtml(draft.zoneR) + ' (' + escapeHtml(draft.qualiteR) + ') → Passe ' + escapeHtml(draft.zoneP) + '</span>';
+          html += '</div>';
+
+          html += '<div style="text-align:center;">';
+          html += '<span class="pill-tag tone-sky">Étape 3 / 5</span>';
+          html += '<h2 class="panel-title" style="font-size:24px; margin-top:8px;">Annonce du Central (BASE OFF)</h2>';
+          html += '<p class="panel-sub">Quelle fixation annonce le central ? (Central avant actuel : <strong style="color:#d8b4fe;">#' + escapeHtml(centralNum) + '</strong>)</p>';
+          html += '</div>';
+
+          html += '<div class="row-flex" style="margin:12px auto; max-width:100%; width:100%;">';
+          for (i = 0; i < BASE_OFF_OPTIONS.length; i++) {
+            var b = BASE_OFF_OPTIONS[i];
+            var isBAct = draft.baseOff === b.code;
+            var recZero = b.code === '0' && (draft.qualiteR === '-' || draft.zoneP === '1' || draft.zoneP === '6' || draft.zoneP === '5');
+            var bTone = isBAct ? ' selected-btn' : (recZero ? ' tone-amber' : ' tone-slate');
+            html += '<div class="cell-3"><button type="button" class="big-btn' + bTone + '" style="min-height:175px; font-size:44px;" data-base="' + b.code + '">' + b.code + '<small>' + b.label + ' — ' + b.sub + '</small></button></div>';
+          }
+          html += '</div><div></div>';
+        } else if (currentStep === 4) {
+          var backLabel = (draft.qualiteR === '+' || draft.qualiteR === '#') ? ('Base ' + draft.baseOff) : 'Récep & Passe';
+          var backTarget = (draft.qualiteR === '+' || draft.qualiteR === '#') ? 3 : 2;
+          html += '<div class="step-header">';
+          html += '<div class="step-header-left">';
+          html += '<button type="button" class="btn-sm" data-goto-step="' + backTarget + '">← ' + escapeHtml(backLabel) + '</button>';
+          html += '<div><h2 class="panel-title" style="font-size:18px;">Étape 4 / 5 — Touchez où la passe est distribuée sur le terrain</h2>';
+          html += '<p class="panel-sub">Le numéro du joueur attaquant est déterminé automatiquement selon la rotation P' + selectedRotation + '</p></div>';
+          html += '</div></div>';
+
+          html += '<div class="distrib-frame">';
+          html += '<div class="distrib-net-header"><span>← Aile Gauche (Poste 4)</span><span class="distrib-net-pill">FILET</span><span>Aile Droite (Poste 2) →</span></div>';
+          html += '<div class="distrib-court">';
+          html += '<div class="distrib-3m-line"></div>';
+
+          // SVG arrows ① -> ② -> Attaque
+          html += '<svg viewBox="0 0 100 100" preserveAspectRatio="none" class="court-svg" style="z-index:10;">';
+          html += '<defs><marker id="passArrow" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#0284c7" /></marker></defs>';
+          if (rCoord && pCoord) {
+            html += '<line x1="' + rCoord.x + '" y1="' + rCoord.y + '" x2="' + pCoord.x + '" y2="' + pCoord.y + '" stroke="#94a3b8" stroke-width="1.1" stroke-dasharray="2 2" />';
+          }
+          if (pCoord && dCoord) {
+            html += '<line x1="' + pCoord.x + '" y1="' + pCoord.y + '" x2="' + dCoord.x + '" y2="' + dCoord.y + '" stroke="#0284c7" stroke-width="1.8" marker-end="url(#passArrow)" />';
+          }
+          html += '</svg>';
+
+          if (pCoord) {
+            var clampedY = Math.min(88, Math.max(12, pCoord.y));
+            html += '<div class="point-marker" style="z-index:12; left:' + pCoord.x + '%; top:' + clampedY + '%;">② Passe ' + escapeHtml(draft.zoneP) + '</div>';
+          }
+
+          // Front Row
+          html += '<div class="distrib-front-row">';
+          // Left: 5, 9, 4
+          html += '<div class="distrib-col-left">';
+          html += '<button type="button" class="dist-btn' + (draft.distribP === '5' ? ' active' : '') + '" style="min-height:126px;" data-distrib="5"><span class="dist-btn-num">5</span><span class="dist-btn-sub">EN 4</span><span class="dist-tag">' + escapeHtml(getAutoTag('5')) + '</span></button>';
+          html += '<button type="button" class="dist-btn-compact' + (draft.distribP === '9' ? ' active' : '') + '" data-distrib="9"><span><strong>9</strong> (4 Hte)</span><span style="color:#0369a1; font-weight:900;">' + escapeHtml(getAutoTag('9')) + '</span></button>';
+          html += '<button type="button" class="dist-btn-compact' + (draft.distribP === '4' ? ' active' : '') + '" data-distrib="4"><span><strong>4</strong> (Croix)</span><span style="color:#0369a1; font-weight:900;">' + escapeHtml(getAutoTag('4')) + '</span></button>';
+          html += '</div>';
+
+          // Center: 7, 1, 2 + 1C, 3, PM
+          html += '<div class="distrib-col-center">';
+          html += '<div class="dist-center-row">';
+          html += '<div class="dist-center-cell"><button type="button" class="dist-btn' + (draft.distribP === '7' ? ' active' : '') + '" style="border-color:#9333ea; min-height:112px;" data-distrib="7"><span class="dist-btn-num">7</span><span class="dist-btn-sub">DECA</span><span class="dist-tag dist-tag-purple">' + escapeHtml(getAutoTag('7')) + '</span></button></div>';
+          html += '<div class="dist-center-cell"><button type="button" class="dist-btn' + (draft.distribP === '1' ? ' active' : '') + '" style="border-color:#9333ea; min-height:112px;" data-distrib="1"><span class="dist-btn-num">1</span><span class="dist-btn-sub">FIX AV</span><span class="dist-tag dist-tag-purple">' + escapeHtml(getAutoTag('1')) + '</span></button></div>';
+          html += '<div class="dist-center-cell"><button type="button" class="dist-btn' + (draft.distribP === '2' ? ' active' : '') + '" style="border-color:#9333ea; min-height:112px;" data-distrib="2"><span class="dist-btn-num">2</span><span class="dist-btn-sub">FIX ARR</span><span class="dist-tag dist-tag-purple">' + escapeHtml(getAutoTag('2')) + '</span></button></div>';
+          html += '</div>';
+          html += '<div class="dist-center-row">';
+          html += '<div class="dist-center-cell"><button type="button" class="dist-btn-compact' + (draft.distribP === '1C' ? ' active' : '') + '" style="-webkit-flex-direction:column; flex-direction:column; min-height:76px; border-color:#9333ea;" data-distrib="1C"><strong>1C</strong><span style="font-size:11px; color:#6b21a8;">' + escapeHtml(getAutoTag('1C')) + '</span></button></div>';
+          html += '<div class="dist-center-cell"><button type="button" class="dist-btn-compact' + (draft.distribP === '3' ? ' active' : '') + '" style="-webkit-flex-direction:column; flex-direction:column; min-height:76px; border-color:#9333ea;" data-distrib="3"><strong>3 (Tendue)</strong><span style="font-size:11px; color:#6b21a8;">' + escapeHtml(getAutoTag('3')) + '</span></button></div>';
+          html += '<div class="dist-center-cell"><button type="button" class="dist-btn-compact' + (draft.distribP === 'PM' ? ' active' : '') + '" style="-webkit-flex-direction:column; flex-direction:column; min-height:76px; border-color:#059669; background:#d1fae5;" data-distrib="PM"><strong style="color:#064e3b;">PM (2e Main)</strong><span style="font-size:11px; color:#065f46;">' + escapeHtml(getAutoTag('PM')) + '</span></button></div>';
+          html += '</div>';
+          html += '</div>';
+
+          // Right: 6
+          html += '<div class="distrib-col-right">';
+          html += '<button type="button" class="dist-btn' + (draft.distribP === '6' ? ' active' : '') + '" style="border-color:#d97706; min-height:178px;" data-distrib="6"><span class="dist-btn-num">6</span><span class="dist-btn-sub">EN 2</span><span class="dist-tag dist-tag-amber">' + escapeHtml(getAutoTag('6')) + '</span></button>';
+          html += '</div>';
+          html += '</div>'; // close distrib-front-row
+
+          // Back Row: 10 (center) and 8 (right)
+          html += '<div class="distrib-back-row">';
+          html += '<div class="distrib-col-left"></div>';
+          html += '<div class="distrib-col-center"><button type="button" class="dist-btn' + (draft.distribP === '10' ? ' active' : '') + '" style="border-color:#0284c7; min-height:128px;" data-distrib="10"><span class="dist-btn-num">10</span><span class="dist-btn-sub">PIPE (Zone 6/8)</span><span class="dist-tag">' + escapeHtml(getAutoTag('10')) + '</span></button></div>';
+          html += '<div class="distrib-col-right"><button type="button" class="dist-btn' + (draft.distribP === '8' ? ' active' : '') + '" style="border-color:#d97706; min-height:128px;" data-distrib="8"><span class="dist-btn-num">8</span><span class="dist-btn-sub">EN 1 (Arr. D)</span><span class="dist-tag dist-tag-amber">' + escapeHtml(getAutoTag('8')) + '</span></button></div>';
+          html += '</div>';
+
+          html += '</div></div>'; // close distrib-court & distrib-frame
+        } else if (currentStep === 5) {
+          var players = getAllPlayerNumbers();
+          html += '<div class="step-header">';
+          html += '<button type="button" class="btn-sm" data-goto-step="4">← Changer Passe (' + escapeHtml(draft.distribP) + ')</button>';
+          html += '<div class="player-override-bar">';
+          html += '<span style="font-size:12px; font-weight:700; color:#e9d5ff;">Attaquant auto :</span>';
+          html += '<span style="background:#9333ea; color:#fff; padding:2px 8px; border-radius:7px; font-weight:900;">#' + escapeHtml(draft.joueur || '?') + '</span>';
+          html += '<span style="font-size:11px; color:#94a3b8;">Changer :</span>';
+          for (i = 0; i < players.length; i++) {
+            var pNum = players[i];
+            html += '<button type="button" class="player-chip' + (draft.joueur === pNum ? ' active' : '') + '" data-player="' + escapeHtml(pNum) + '">' + escapeHtml(pNum) + '</button>';
+          }
+          html += '</div></div>';
+
+          html += '<div style="text-align:center;">';
+          html += '<span class="pill-tag tone-emerald">Étape 5 / 5 • Validation finale</span>';
+          html += '<h2 class="panel-title" style="font-size:24px; margin-top:8px;">Résultat de l\'attaque (#' + escapeHtml(draft.joueur || '?') + ' sur passe ' + escapeHtml(draft.distribP) + ')</h2>';
+          html += '<p class="panel-sub">Touchez le résultat : l\'action s\'enregistre et revient automatiquement à l\'Étape 1</p>';
+          html += '</div>';
+
+          html += '<div class="row-flex" style="margin:10px auto; max-width:100%; width:100%;">';
+          for (i = 0; i < RES_ATT_OPTIONS.length; i++) {
+            var ro = RES_ATT_OPTIONS[i];
+            var rSel = draft.resAtt === ro.code ? ' selected-btn' : '';
+            html += '<div class="cell-7"><button type="button" class="big-btn tone-' + ro.tone + rSel + '" style="min-height:220px; font-size:40px;" data-res="' + ro.code + '">' + ro.label + '<small>' + ro.sub + '</small></button></div>';
+          }
+          html += '</div><div></div>';
+        }
+
+        panel.innerHTML = html;
+      }
+
+      function renderRecent() {
+        var mUpper = String(selectedMatch || '').trim().toUpperCase();
+        var filtered = [];
+        var i;
+        for (i = 0; i < appState.rows.length; i++) {
+          var row = appState.rows[i];
+          if (!mUpper || String(row.match || '').trim().toUpperCase() === mUpper) {
+            filtered.push(row);
+          }
+        }
+        byId('recentTitle').textContent = showAllRecent ? 'Dernières actions enregistrées' : 'Dernière action enregistrée';
+        byId('totalCount').textContent = filtered.length + ' sur ce match (' + appState.rows.length + ' total)';
+
+        var toggleBtn = byId('toggleRecentBtn');
+        if (filtered.length <= 1) {
+          toggleBtn.style.display = 'none';
+        } else {
+          toggleBtn.style.display = 'inline-block';
+          toggleBtn.textContent = showAllRecent ? 'Réduire' : ('Voir plus (' + Math.min(filtered.length, 12) + ')');
+        }
+
+        var limit = showAllRecent ? 12 : 1;
+        var recent = filtered.slice(-limit).reverse();
+        var html = '';
+        for (i = 0; i < recent.length; i++) {
+          var r = recent[i];
+          html += '<tr>';
+          html += '<td>' + (r.id || '') + '</td>';
+          html += '<td><strong>' + escapeHtml(r.match || '') + '</strong></td>';
+          html += '<td style="color:#7dd3fc; font-weight:700;">P' + escapeHtml(r.rotation || '') + '</td>';
+          html += '<td style="color:#6ee7b7; font-weight:700;">' + escapeHtml(r.setter || '') + '</td>';
+          html += '<td>' + escapeHtml(r.service || '') + '</td>';
+          html += '<td>' + escapeHtml(r.zoneR || '') + '</td>';
+          html += '<td><strong>' + escapeHtml(r.qualiteR || '') + '</strong></td>';
+          html += '<td style="color:#fcd34d; font-weight:700;">' + escapeHtml(r.zoneP || '') + '</td>';
+          html += '<td>' + escapeHtml(r.baseOff || '') + '</td>';
+          html += '<td><strong>' + escapeHtml(r.distribP || '') + '</strong></td>';
+          html += '<td style="color:#d8b4fe; font-weight:700;">#' + escapeHtml(r.joueur || '') + '</td>';
+          html += '<td><strong>' + escapeHtml(r.resAtt || '') + '</strong></td>';
+          html += '<td>';
+          html += '<button type="button" class="btn-sm btn-edit" style="padding:3px 7px; min-height:26px; margin-right:4px;" data-edit-id="' + (r.id || '') + '">✎</button>';
+          html += '<button type="button" class="btn-sm btn-danger" style="padding:3px 8px; min-height:26px;" data-del-uid="' + escapeHtml(r.uid || '') + '" data-del-id="' + (r.id || '') + '">×</button>';
+          html += '</td>';
+          html += '</tr>';
+        }
+        if (recent.length === 0) {
+          html = '<tr><td colspan="13" style="color:#64748b; padding:10px;">Aucune action enregistrée pour ce match.</td></tr>';
+        }
+        byId('recentBody').innerHTML = html;
+      }
+
+      function renderLineupModal() {
+        var modal = byId('lineupModal');
+        if (!showLineupModal) {
+          modal.className = 'modal-backdrop';
+          return;
+        }
+        modal.className = 'modal-backdrop open';
+
+        var html = '';
+        html += '<div style="display:-webkit-flex; display:flex; -webkit-justify-content:space-between; justify-content:space-between; -webkit-align-items:center; align-items:center; border-bottom:1px solid #1e293b; padding-bottom:10px; margin-bottom:12px;">';
+        html += '<div><h3 style="margin:0; font-size:17px;">Positions de départ & Postes (6 de départ)</h3><div style="font-size:12px; color:#94a3b8;">Touchez une zone du terrain (4, 3, 2, 5, 6, 1) pour changer le N° ou le poste.</div></div>';
+        html += '<button type="button" id="closeLineupBtn" class="btn-sm">Fermer</button>';
+        html += '</div>';
+
+        html += '<div style="background:#000; color:#fff; text-align:center; font-size:10px; font-weight:900; padding:4px; border-radius:6px; margin-bottom:8px;">FILET (AVANT : 4 • 3 • 2)</div>';
+        var rowsZones = [[4, 3, 2], [5, 6, 1]];
+        var rIdx, cIdx;
+        for (rIdx = 0; rIdx < rowsZones.length; rIdx++) {
+          html += '<div class="row-flex" style="margin-bottom:6px;">';
+          for (cIdx = 0; cIdx < rowsZones[rIdx].length; cIdx++) {
+            var z = rowsZones[rIdx][cIdx];
+            var slot = (appState.teamLineup && appState.teamLineup[z]) || DEFAULT_TEAM_LINEUP[z];
+            var isSel = activeLineupSlot === z;
+            html += '<div class="cell-3"><button type="button" class="lineup-slot-btn' + (isSel ? ' active' : '') + '" data-lineup-zone="' + z + '">';
+            html += '<span style="font-size:10px; color:#94a3b8;">Zone ' + z + (rIdx === 0 ? ' (Av)' : ' (Arr)') + '</span>';
+            html += '<span style="font-size:20px; font-weight:900;">#' + escapeHtml(slot.num || '?') + '</span>';
+            html += '<span style="font-size:11px; color:#7dd3fc;">' + escapeHtml(slot.role || 'R4') + '</span>';
+            html += '</button></div>';
+          }
+          html += '</div>';
+        }
+
+        var curSlot = (appState.teamLineup && appState.teamLineup[activeLineupSlot]) || DEFAULT_TEAM_LINEUP[activeLineupSlot];
+        html += '<div style="border-top:1px solid #1e293b; padding-top:10px; margin-top:8px;">';
+        html += '<div style="font-size:12px; font-weight:800; color:#6ee7b7; margin-bottom:6px;">Modifier Zone ' + activeLineupSlot + '</div>';
+        html += '<div class="row-flex" style="margin-bottom:8px;">';
+        for (rIdx = 0; rIdx < TEAM_ROLES.length; rIdx++) {
+          var tr = TEAM_ROLES[rIdx];
+          var rAct = curSlot.role === tr.id ? ' selected-btn' : '';
+          html += '<div class="cell-2"><button type="button" class="btn-sm' + rAct + '" style="width:100%;" data-lineup-role="' + tr.id + '">' + tr.label + '</button></div>';
+        }
+        html += '</div>';
+
+        var players = getAllPlayerNumbers();
+        html += '<div style="margin-bottom:8px;">';
+        for (rIdx = 0; rIdx < players.length; rIdx++) {
+          var pn = players[rIdx];
+          var pAct = String(curSlot.num) === String(pn) ? ' active' : '';
+          html += '<button type="button" class="player-chip' + pAct + '" style="margin:2px;" data-lineup-num="' + escapeHtml(pn) + '">' + escapeHtml(pn) + '</button>';
+        }
+        html += '</div>';
+        html += '<div style="display:-webkit-flex; display:flex;">';
+        html += '<input id="customLineupNum" type="text" placeholder="Autre N°" style="flex:1; background:#1e293b; border:1px solid #475569; border-radius:8px; padding:7px 10px; margin-right:6px;" />';
+        html += '<button type="button" id="applyCustomLineupNum" class="btn-sm tone-emerald">OK</button>';
+        html += '</div>';
+        html += '</div>';
+
+        byId('lineupModalContent').innerHTML = html;
+      }
+
+      function renderAll() {
+        renderTopbar();
+        renderContextBar();
+        renderStepper();
+        renderStepPanel();
+        renderRecent();
+        renderLineupModal();
+      }
+
+      // Event listeners
+      byId('matchSelect').addEventListener('change', function (e) {
+        selectedMatch = e.target.value;
+        renderTopbar();
+        renderRecent();
+      });
+
+      byId('addMatchBtn').addEventListener('click', function () {
+        var name = window.prompt('Nom du nouveau match (ex: LYON 2) :');
+        if (!name) return;
+        var clean = String(name).trim().toUpperCase();
+        if (!clean) return;
+        if (appState.matchList.indexOf(clean) < 0) {
+          appState.matchList.push(clean);
+        }
+        selectedMatch = clean;
+        queueDeltaAndSync(function (d) {
+          pushUnique(d.addedMatches, clean);
+        }, 'Ajout match ' + clean);
+      });
+
+      byId('syncNowBtn').addEventListener('click', function () {
+        syncNow('Synchro manuelle iPad');
+      });
+
+      byId('undoBtn').addEventListener('click', function () {
+        if (!appState.rows.length) return;
+        var last = appState.rows[appState.rows.length - 1];
+        if (!window.confirm('Supprimer la dernière action (#' + last.id + ') ?')) return;
+        deleteRowByUidOrId(last.uid, last.id);
+      });
+
+      byId('lineupBtn').addEventListener('click', function () {
+        showLineupModal = true;
+        renderLineupModal();
+      });
+
+      byId('nextRotBtn').addEventListener('click', function () {
+        var idx = ROTATIONS.indexOf(selectedRotation);
+        selectedRotation = ROTATIONS[(idx + 1) % ROTATIONS.length];
+        selectedSetterOverride = '';
+        renderContextBar();
+        if (currentStep >= 3) renderStepPanel();
+      });
+
+      byId('rotationButtons').addEventListener('click', function (e) {
+        var btn = closestAttr(e.target, 'data-rot');
+        if (!btn) return;
+        selectedRotation = btn.getAttribute('data-rot');
+        selectedSetterOverride = '';
+        renderContextBar();
+        if (currentStep >= 3) renderStepPanel();
+      });
+
+      byId('setterButtons').addEventListener('click', function (e) {
+        var btn = closestAttr(e.target, 'data-setter');
+        if (!btn) return;
+        selectedSetterOverride = btn.getAttribute('data-setter');
+        renderContextBar();
+      });
+
+      byId('stepper').addEventListener('click', function (e) {
+        var tab = closestAttr(e.target, 'data-step');
+        if (!tab) return;
+        var targetStep = Number(tab.getAttribute('data-step')) || 1;
+        if (!canGoToStep(targetStep)) return;
+        currentStep = targetStep;
+        renderStepper();
+        renderStepPanel();
+      });
+
+      byId('restartActionBtn').addEventListener('click', function () {
+        resetDraft();
+        renderStepper();
+        renderStepPanel();
+      });
+
+      byId('stepPanel').addEventListener('click', function (e) {
+        var target = closestTag(e.target, 'BUTTON');
+        if (!target) return;
+
+        if (target.id === 'editPoint1Btn') {
+          draft.zoneR = '';
+          draft.qualiteR = '';
+          draft.zoneP = '';
+          renderStepper();
+          renderStepPanel();
+          return;
+        }
+
+        var v;
+        if ((v = target.getAttribute('data-goto-step')) !== null) {
+          currentStep = Number(v) || 1;
+          renderStepper();
+          renderStepPanel();
+          return;
+        }
+        if ((v = target.getAttribute('data-service')) !== null) {
+          draft.service = v;
+          currentStep = 2;
+          renderStepper();
+          renderStepPanel();
+        } else if ((v = target.getAttribute('data-zoner')) !== null) {
+          draft.zoneR = v;
+          renderStepper();
+          renderStepPanel();
+        } else if ((v = target.getAttribute('data-qualiter')) !== null) {
+          draft.qualiteR = v;
+          if (v !== '+' && v !== '#') {
+            draft.baseOff = '0';
+          }
+          renderStepper();
+          renderStepPanel();
+        } else if ((v = target.getAttribute('data-zonep')) !== null) {
+          draft.zoneP = v;
+          if (draft.qualiteR !== '+' && draft.qualiteR !== '#') {
+            draft.baseOff = '0';
+            currentStep = 4;
+          } else {
+            currentStep = 3;
+          }
+          renderStepper();
+          renderStepPanel();
+        } else if ((v = target.getAttribute('data-base')) !== null) {
+          draft.baseOff = v;
+          currentStep = 4;
+          renderStepper();
+          renderStepPanel();
+        } else if ((v = target.getAttribute('data-distrib')) !== null) {
+          draft.distribP = v;
+          var lineupInfo = computeLineupAtRotation(appState.teamLineup, selectedRotation);
+          var autoPlayer = resolveAttackerForDistrib(v, lineupInfo);
+          if (autoPlayer) draft.joueur = autoPlayer;
+          currentStep = 5;
+          renderStepper();
+          renderStepPanel();
+        } else if ((v = target.getAttribute('data-player')) !== null) {
+          draft.joueur = v;
+          renderStepper();
+          renderStepPanel();
+        } else if ((v = target.getAttribute('data-res')) !== null) {
+          draft.resAtt = v;
+          saveCurrentAction(v);
+        }
+      });
+
+      byId('toggleRecentBtn').addEventListener('click', function () {
+        showAllRecent = !showAllRecent;
+        renderRecent();
+      });
+
+      byId('recentBody').addEventListener('click', function (e) {
+        var editBtn = closestAttr(e.target, 'data-edit-id');
+        if (editBtn) {
+          loadRowForEdit(Number(editBtn.getAttribute('data-edit-id')));
+          return;
+        }
+        var delBtn = closestAttr(e.target, 'data-del-id');
+        if (delBtn) {
+          var uid = delBtn.getAttribute('data-del-uid');
+          var id = Number(delBtn.getAttribute('data-del-id'));
+          if (!window.confirm('Supprimer cette action (#' + id + ') ?')) return;
+          deleteRowByUidOrId(uid, id);
+        }
+      });
+
+      byId('lineupModal').addEventListener('click', function (e) {
+        if (e.target === byId('lineupModal')) {
+          showLineupModal = false;
+          renderLineupModal();
+          return;
+        }
+        var btn = closestTag(e.target, 'BUTTON');
+        if (!btn) return;
+        if (btn.id === 'closeLineupBtn') {
+          showLineupModal = false;
+          renderLineupModal();
+          return;
+        }
+        var zAttr = btn.getAttribute('data-lineup-zone');
+        if (zAttr !== null) {
+          activeLineupSlot = Number(zAttr) || 1;
+          renderLineupModal();
+          return;
+        }
+        var rAttr = btn.getAttribute('data-lineup-role');
+        if (rAttr !== null) {
+          if (!appState.teamLineup) appState.teamLineup = {};
+          if (!appState.teamLineup[activeLineupSlot]) appState.teamLineup[activeLineupSlot] = { num: '', role: 'R4' };
+          appState.teamLineup[activeLineupSlot].role = rAttr;
+          queueDeltaAndSync(function (d) { d.lineupChanged = true; }, 'Modification poste');
+          return;
+        }
+        var nAttr = btn.getAttribute('data-lineup-num');
+        if (nAttr !== null) {
+          if (!appState.teamLineup) appState.teamLineup = {};
+          if (!appState.teamLineup[activeLineupSlot]) appState.teamLineup[activeLineupSlot] = { num: '', role: 'R4' };
+          appState.teamLineup[activeLineupSlot].num = nAttr;
+          queueDeltaAndSync(function (d) { d.lineupChanged = true; }, 'Modification joueur #' + nAttr);
+          return;
+        }
+        if (btn.id === 'applyCustomLineupNum') {
+          var inp = byId('customLineupNum');
+          var val = inp ? String(inp.value || '').trim() : '';
+          if (!val) return;
+          if (!appState.teamLineup) appState.teamLineup = {};
+          if (!appState.teamLineup[activeLineupSlot]) appState.teamLineup[activeLineupSlot] = { num: '', role: 'R4' };
+          appState.teamLineup[activeLineupSlot].num = val;
+          queueDeltaAndSync(function (d) { d.lineupChanged = true; }, 'Modification joueur #' + val);
+        }
+      });
+
+      // Init
+      loadLocalCache();
+      if (appState.matchList.length > 0) {
+        selectedMatch = appState.matchList[appState.matchList.length - 1];
+      }
+      renderAll();
+      syncNow('Connexion iPad');
+
+      setInterval(function () {
+        if (!isSyncing) {
+          syncNow();
+        }
+      }, 15000);
+    })();
+  </script>
+</body>
+</html>

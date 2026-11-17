@@ -27,6 +27,8 @@ const VideoCenterPage = lazy(() => import('./pages/VideoCenterPage'));
 const VideoMultiMatchPage = lazy(() => import('./pages/VideoMultiMatchPage'));
 const SharedClipPage = lazy(() => import('./pages/SharedClipPage'));
 const LiveDashboard = lazy(() => import('./pages/LiveDashboard'));
+const FastDirectHomePage = lazy(() => import('./pages/FastDirectHomePage'));
+const FastDirectPage = lazy(() => import('./pages/FastDirectPage'));
 const TeamsPage = lazy(() => import('./pages/TeamsPage'));
 const TrainingPage = lazy(() => import('./pages/TrainingPage'));
 
@@ -276,6 +278,22 @@ function App() {
                 element={
                   <AnimatedPage>
                     <SharedClipPage />
+                  </AnimatedPage>
+                }
+              />
+              <Route
+                path="/fast-direct"
+                element={
+                  <AnimatedPage>
+                    {user ? <FastDirectHomePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
+                  </AnimatedPage>
+                }
+              />
+              <Route
+                path="/fast-direct/:sessionId"
+                element={
+                  <AnimatedPage>
+                    {user ? <FastDirectPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
                   </AnimatedPage>
                 }
               />

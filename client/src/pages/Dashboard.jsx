@@ -68,6 +68,15 @@ const MODES = [
   },
   {
     num: '07',
+    key: 'fast-direct',
+    title: 'Fast Direct',
+    desc: 'Prise de distribution au bord du terrain, banc en lecture seule et caméra, sans codage DataVolley.',
+    cta: 'Ouvrir Fast Direct',
+    accent: '#f43f5e',
+    path: '/fast-direct',
+  },
+  {
+    num: '08',
     key: 'practice',
     title: 'Entraînement',
     desc: 'Scouting de séances et ateliers d’entraînement pour travailler la lecture du jeu en équipe.',
@@ -76,7 +85,7 @@ const MODES = [
     path: '/practice',
   },
   {
-    num: '08',
+    num: '09',
     key: 'training',
     title: 'Académie',
     desc: 'Maîtrisez la syntaxe DataVolley grâce aux 11 leçons progressives, QCM, jeux de paires et traductions.',
@@ -227,7 +236,8 @@ export default function Dashboard({ user, onLogout }) {
       const r = await liveAPI.join({ join_code: code });
       const sessionId = r.data?.sessionId || r.data?.session?.id;
       if (!sessionId) throw new Error('session id manquant');
-      navigate(`/live/${sessionId}`);
+      const target = r.data?.session_kind === 'fast_direct' ? '/fast-direct/' : '/live/';
+      navigate(`${target}${sessionId}`);
     }, 'Code de session introuvable');
 
   const handleModeClick = (m) => {
@@ -448,7 +458,13 @@ export default function Dashboard({ user, onLogout }) {
                   {liveSessions.map((s) => (
                     <div
                       key={s.id}
-                      onClick={() => navigate(`/live/${s.id}`)}
+                      onClick={() =>
+                        navigate(
+                          s.session_kind === 'fast_direct'
+                            ? `/fast-direct/${s.id}`
+                            : `/live/${s.id}`
+                        )
+                      }
                       style={{
                         display: 'flex',
                         alignItems: 'center',

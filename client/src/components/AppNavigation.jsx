@@ -67,6 +67,13 @@ const TABS = [
     isActive: (p) => p === '/trajectories' || p.startsWith('/trajectories/'),
   },
   {
+    key: 'fast-direct',
+    path: '/fast-direct',
+    label: 'Fast Direct',
+    hint: 'Distribution en direct, banc en lecture seule et caméra',
+    isActive: (p) => p === '/fast-direct' || p.startsWith('/fast-direct/'),
+  },
+  {
     key: 'video-center',
     path: '/video-center',
     label: 'Vidéo',

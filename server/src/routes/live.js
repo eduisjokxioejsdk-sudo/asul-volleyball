@@ -56,8 +56,79 @@ function safeParsePayload(raw) {
   }
 }
 
+/** Seuls les statisticiens codent les actions du direct DataVolley. */
+function canCodeLive(member) {
+  return member?.role === 'statistician';
+}
+
+function denyUnlessSessionAdmin(isOwner, res) {
+  if (isOwner) return false;
+  res.status(403).json({ error: 'Action réservée à l’organisateur ou à l’hôte.' });
+  return true;
+}
+
 function withPayload(row) {
   return row ? { ...row, payload: safeParsePayload(row.payload) } : row;
+}
+
+// --- Fast Direct : état de distribution versionné ---------------------------
+// Il est stocké avec la session live afin de réutiliser le code de jonction,
+// les droits des membres, Socket.IO et la synchronisation Cloud existante.
+const FAST_DIRECT_MAX_STATE_BYTES = 15 * 1024 * 1024;
+
+function normalizeFastDirectState(raw) {
+  const state = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const serialized = JSON.stringify(state);
+  if (Buffer.byteLength(serialized, 'utf8') > FAST_DIRECT_MAX_STATE_BYTES) {
+    const error = new Error('État Fast Direct trop volumineux.');
+    error.statusCode = 413;
+    throw error;
+  }
+  const array = (value) => (Array.isArray(value) ? value : []);
+  return {
+    rows: array(state.rows).map((row, index) => ({
+      ...(row && typeof row === 'object' ? row : {}),
+      uid: String(row?.uid || row?.id || `row_${index + 1}`),
+    })),
+    matchList: array(state.matchList).map((m) => String(m || '').trim()).filter(Boolean),
+    setterList: array(state.setterList)
+      .map((s) => ({
+        code: String(s?.code || '').trim().toUpperCase(),
+        name: String(s?.name || '').trim().toUpperCase(),
+      }))
+      .filter((s) => s.code),
+    sheetConfigs: array(state.sheetConfigs)
+      .filter((cfg) => cfg && typeof cfg === 'object')
+      .map((cfg) => ({
+        ...cfg,
+        id: String(cfg.id || ''),
+        title: String(cfg.title || '').trim() || 'Feuille',
+        matches: array(cfg.matches).map((m) => String(m || '').trim()).filter(Boolean),
+      }))
+      .filter((cfg) => cfg.id),
+    teamLineup:
+      state.teamLineup && typeof state.teamLineup === 'object' && !Array.isArray(state.teamLineup)
+        ? state.teamLineup
+        : {},
+  };
+}
+
+function fastDirectStateForResponse(session) {
+  const raw = safeParse(session.fast_direct_state);
+  if (!raw) return null;
+  return {
+    ...raw,
+    revision: Number(session.fast_direct_revision) || 0,
+    updatedAt: session.local_updated_at || null,
+    updatedByName: raw.updatedByName || '',
+  };
+}
+
+/** Le gros état de distribution n'est envoyé que par la route dédiée. */
+function withoutFastDirectState(session) {
+  if (!session) return session;
+  const { fast_direct_state, ...rest } = session;
+  return { ...rest, session_kind: session.session_kind || 'datavolley' };
 }
 
 /**
@@ -118,11 +189,15 @@ function verifyAccess(session, req, res, callback) {
 
       const now = new Date().toISOString();
       const memberUuid = uuidv4();
-      const nickname = (req.user.name || req.user.email || 'Statisticien').trim();
+      const memberRole = session.session_kind === 'fast_direct'
+        ? 'viewer'
+        : 'statistician';
+      const memberAssignment = '["S","R","A","B","D"]';
+      const nickname = (req.user.name || req.user.email || 'Membre').trim();
       db.run(
         `INSERT INTO live_members (session_id, sync_uuid, user_id, nickname, role, assignment, updated_at)
-         VALUES (?, ?, ?, ?, 'statistician', '["S","R","A","B","D"]', ?)`,
-        [session.id, memberUuid, req.user.id, nickname, now],
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [session.id, memberUuid, req.user.id, nickname, memberRole, memberAssignment, now],
         function (insErr) {
           if (insErr) return res.status(500).json({ error: 'Database error' });
           const newMember = {
@@ -131,13 +206,13 @@ function verifyAccess(session, req, res, callback) {
             sync_uuid: memberUuid,
             user_id: req.user.id,
             nickname,
-            role: 'statistician',
-            assignment: '["S","R","A","B","D"]',
+            role: memberRole,
+            assignment: memberAssignment,
             updated_at: now,
           };
           emitToSession(session.id, 'member:update', {});
           touchLiveSession(session.id);
-          callback(session, true, newMember);
+          callback(session, memberRole === 'statistician', newMember);
         }
       );
     }
@@ -197,8 +272,10 @@ mountSyncRoutes(router, syncHub.live);
 
 // Créer une session live (le créateur en est propriétaire + membre).
 router.post('/', authenticateToken, (req, res) => {
-  const { name, team1_name, team2_name, home_team_id, away_team_id } = req.body || {};
-  const title = (name || 'Match en direct').trim() || 'Match en direct';
+  const { name, team1_name, team2_name, home_team_id, away_team_id, mode } = req.body || {};
+  const sessionKind = mode === 'fast_direct' ? 'fast_direct' : 'datavolley';
+  const title = (name || (sessionKind === 'fast_direct' ? 'Fast Direct' : 'Match en direct')).trim() ||
+    (sessionKind === 'fast_direct' ? 'Fast Direct' : 'Match en direct');
   const id = uuidv4();
   const joinCode = generateJoinCode();
   const now = new Date().toISOString();
@@ -214,8 +291,9 @@ router.post('/', authenticateToken, (req, res) => {
       db.run(
         `INSERT INTO live_sessions
           (id, sync_uuid, name, team1_name, team2_name, home_team_id, away_team_id,
-           home_team_uuid, away_team_uuid, owner_user_id, join_code, dirty, deleted, local_updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
+           home_team_uuid, away_team_uuid, owner_user_id, join_code, session_kind,
+           dirty, deleted, local_updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
         [
           id,
           id,
@@ -228,6 +306,7 @@ router.post('/', authenticateToken, (req, res) => {
           awayTeamUuid,
           req.user.id,
           joinCode,
+          sessionKind,
           now,
         ],
         function (err) {
@@ -240,7 +319,7 @@ router.post('/', authenticateToken, (req, res) => {
             (err2) => {
               if (err2) return res.status(500).json({ error: 'Failed to add owner as member' });
               touchLiveSession(id);
-              res.status(201).json({ id, join_code: joinCode, name: title });
+              res.status(201).json({ id, join_code: joinCode, name: title, session_kind: sessionKind });
             }
           );
         }
@@ -261,7 +340,7 @@ router.get('/mine', authenticateToken, (req, res) => {
     [],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
-      res.json({ sessions: rows || [] });
+      res.json({ sessions: (rows || []).map(withoutFastDirectState) });
     }
   );
 });
@@ -275,9 +354,106 @@ router.get('/trash', authenticateToken, (req, res) => {
     [],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
-      res.json({ sessions: rows || [] });
+      res.json({ sessions: (rows || []).map(withoutFastDirectState) });
     }
   );
+});
+
+// État de distribution Fast Direct (lecture pour tous les rôles de la session).
+router.get('/:sessionId/fast-direct', authenticateToken, (req, res) => {
+  loadSession(req.params.sessionId, res, (session) => {
+    if (session.session_kind !== 'fast_direct') {
+      return res.status(409).json({ error: 'Cette session n’utilise pas le mode Fast Direct.' });
+    }
+    verifyAccess(session, req, res, () => {
+      res.json({
+        state: fastDirectStateForResponse(session),
+        revision: Number(session.fast_direct_revision) || 0,
+      });
+    });
+  });
+});
+
+// Enregistrement atomique : seul l'hôte ou l'appareil de distribution peut écrire.
+router.put('/:sessionId/fast-direct', authenticateToken, (req, res) => {
+  loadSession(req.params.sessionId, res, (session) => {
+    if (session.session_kind !== 'fast_direct') {
+      return res.status(409).json({ error: 'Cette session n’utilise pas le mode Fast Direct.' });
+    }
+    verifyAccess(session, req, res, (current, isOwner, member) => {
+      const canEdit = Boolean(
+        isOwner || member?.role === 'distribution' || member?.role === 'statistician'
+      );
+      if (!canEdit) {
+        return res.status(403).json({ error: 'Consultation seule : modification non autorisée.' });
+      }
+
+      let state;
+      try {
+        state = normalizeFastDirectState(req.body?.state);
+      } catch (err) {
+        return res.status(err.statusCode || 400).json({ error: err.message || 'État invalide.' });
+      }
+
+      const baseRevision = Math.max(
+        0,
+        Number(req.body?.baseRevision ?? req.body?.state?.revision) || 0
+      );
+      const currentRevision = Number(current.fast_direct_revision) || 0;
+      if (baseRevision !== currentRevision) {
+        return res.status(409).json({
+          error: 'Une version plus récente est déjà enregistrée sur l’hôte.',
+          state: fastDirectStateForResponse(current),
+          revision: currentRevision,
+        });
+      }
+
+      const nextRevision = currentRevision + 1;
+      const now = new Date().toISOString();
+      const stored = {
+        ...state,
+        revision: nextRevision,
+        updatedAt: now,
+        updatedByName: (member?.nickname || req.user.name || 'Distribution').trim(),
+        lastActionLabel: String(req.body?.lastActionLabel || 'Mise à jour').slice(0, 200),
+      };
+
+      db.run(
+        `UPDATE live_sessions
+            SET fast_direct_state = ?, fast_direct_revision = ?, dirty = 1, local_updated_at = ?
+          WHERE id = ? AND COALESCE(fast_direct_revision, 0) = ?`,
+        [JSON.stringify(stored), nextRevision, now, current.id, currentRevision],
+        function (err) {
+          if (err) return res.status(500).json({ error: 'Database error' });
+          if (this.changes !== 1) {
+            db.get('SELECT * FROM live_sessions WHERE id = ?', [current.id], (readErr, latest) => {
+              if (readErr || !latest) {
+                return res.status(409).json({ error: 'Conflit de version Fast Direct.' });
+              }
+              return res.status(409).json({
+                error: 'Une version plus récente est déjà enregistrée sur l’hôte.',
+                state: fastDirectStateForResponse(latest),
+                revision: Number(latest.fast_direct_revision) || 0,
+              });
+            });
+            return;
+          }
+          emitToSession(current.id, 'fast-direct:update', {
+            revision: nextRevision,
+            updatedAt: now,
+            updatedByName: stored.updatedByName,
+          });
+          touchLiveSession(current.id);
+          res.json({
+            state: stored,
+            revision: nextRevision,
+            updatedAt: now,
+            updatedByName: stored.updatedByName,
+          });
+        }
+      );
+    });
+  });
 });
 
 // État complet d'une session (session + membres + actions + événements).
@@ -287,7 +463,7 @@ router.get('/:sessionId', authenticateToken, (req, res) => {
       loadSessionState(s.id, res, ({ session: full, members, actions, events }) => {
         const me = members.find((m) => m.user_id === req.user.id) || null;
         res.json({
-          session: full,
+          session: withoutFastDirectState(full),
           members,
           actions,
           events,
@@ -308,8 +484,10 @@ router.post('/join', authenticateToken, (req, res) => {
   if (!code) return res.status(400).json({ error: 'Code requis' });
 
   const proceedWithSession = (session) => {
-    const memberRole =
-      role === 'viewer' ? 'viewer' : role === 'camera' ? 'camera' : 'statistician';
+    const isFastDirect = session.session_kind === 'fast_direct';
+    const memberRole = isFastDirect
+      ? (['viewer', 'distribution', 'camera'].includes(role) ? role : 'viewer')
+      : (role === 'viewer' ? 'viewer' : role === 'camera' ? 'camera' : 'statistician');
     const memberNickname = (nickname || req.user.name || 'Membre').trim();
     const memberAssignment = memberRole === 'camera'
       ? '[]'
@@ -332,7 +510,7 @@ router.post('/join', authenticateToken, (req, res) => {
               if (err2) return res.status(500).json({ error: 'Database error' });
               emitToSession(session.id, 'member:update', {});
               touchLiveSession(session.id);
-              res.json({ sessionId: session.id, memberId: existing.id });
+              res.json({ sessionId: session.id, memberId: existing.id, session_kind: session.session_kind });
             }
           );
           return;
@@ -346,7 +524,7 @@ router.post('/join', authenticateToken, (req, res) => {
             if (err2) return res.status(500).json({ error: 'Database error' });
             emitToSession(session.id, 'member:update', {});
             touchLiveSession(session.id);
-            res.json({ sessionId: session.id, memberId: this.lastID });
+            res.json({ sessionId: session.id, memberId: this.lastID, session_kind: session.session_kind });
           }
         );
       }
@@ -386,7 +564,8 @@ router.post('/join', authenticateToken, (req, res) => {
 router.patch('/:sessionId', authenticateToken, (req, res) => {
   const { name, team1_name, team2_name } = req.body || {};
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner) => {
+      if (denyUnlessSessionAdmin(isOwner, res)) return;
       db.run(
         'UPDATE live_sessions SET name = ?, team1_name = ?, team2_name = ? WHERE id = ?',
         [
@@ -409,7 +588,8 @@ router.patch('/:sessionId', authenticateToken, (req, res) => {
 // Terminer un match.
 router.post('/:sessionId/finish', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner) => {
+      if (denyUnlessSessionAdmin(isOwner, res)) return;
       db.run("UPDATE live_sessions SET status = 'finished' WHERE id = ?", [session.id], (err) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         emitToSession(session.id, 'session:update', {});
@@ -423,7 +603,8 @@ router.post('/:sessionId/finish', authenticateToken, (req, res) => {
 // Rouvrir un match terminé.
 router.post('/:sessionId/reopen', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner) => {
+      if (denyUnlessSessionAdmin(isOwner, res)) return;
       db.run("UPDATE live_sessions SET status = 'active' WHERE id = ?", [session.id], (err) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         emitToSession(session.id, 'session:update', {});
@@ -437,53 +618,62 @@ router.post('/:sessionId/reopen', authenticateToken, (req, res) => {
 // Mettre un match à la corbeille (soft delete).
 router.post('/:sessionId/trash', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    db.run(
-      'UPDATE live_sessions SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [session.id],
-      (err) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        emitToSession(session.id, 'session:update', {});
-        touchLiveSession(session.id);
-        res.json({ message: 'Match mis à la corbeille' });
-      }
-    );
+    verifyAccess(session, req, res, (s, isOwner) => {
+      if (denyUnlessSessionAdmin(isOwner, res)) return;
+      db.run(
+        'UPDATE live_sessions SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [session.id],
+        (err) => {
+          if (err) return res.status(500).json({ error: 'Database error' });
+          emitToSession(session.id, 'session:update', {});
+          touchLiveSession(session.id);
+          res.json({ message: 'Match mis à la corbeille' });
+        }
+      );
+    });
   });
 });
 
 // Restaurer un match depuis la corbeille.
 router.post('/:sessionId/restore', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    db.run(
-      'UPDATE live_sessions SET deleted_at = NULL WHERE id = ?',
-      [session.id],
-      (err) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        emitToSession(session.id, 'session:update', {});
-        touchLiveSession(session.id);
-        res.json({ message: 'Match restauré' });
-      }
-    );
+    verifyAccess(session, req, res, (s, isOwner) => {
+      if (denyUnlessSessionAdmin(isOwner, res)) return;
+      db.run(
+        'UPDATE live_sessions SET deleted_at = NULL WHERE id = ?',
+        [session.id],
+        (err) => {
+          if (err) return res.status(500).json({ error: 'Database error' });
+          emitToSession(session.id, 'session:update', {});
+          touchLiveSession(session.id);
+          res.json({ message: 'Match restauré' });
+        }
+      );
+    });
   });
 });
 
 // Supprimer définitivement un match et toutes ses données.
 router.delete('/:sessionId', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    const now = new Date().toISOString();
-    db.serialize(() => {
-      db.run('DELETE FROM live_actions WHERE session_id = ?', [session.id]);
-      db.run('DELETE FROM live_events WHERE session_id = ?', [session.id]);
-      db.run('DELETE FROM live_members WHERE session_id = ?', [session.id]);
-      db.run('DELETE FROM set_setups WHERE match_key = ?', ['session:' + session.id]);
-      db.run(
-        'UPDATE live_sessions SET deleted = 1, dirty = 1, deleted_at = COALESCE(deleted_at, ?), local_updated_at = ? WHERE id = ?',
-        [now, now, session.id],
-        (err) => {
-          if (err) return res.status(500).json({ error: 'Database error' });
-          syncHub.live.syncNow({ reason: 'live-delete' }).catch(() => {});
-          res.json({ message: 'Match supprimé définitivement' });
-        }
-      );
+    verifyAccess(session, req, res, (s, isOwner) => {
+      if (denyUnlessSessionAdmin(isOwner, res)) return;
+      const now = new Date().toISOString();
+      db.serialize(() => {
+        db.run('DELETE FROM live_actions WHERE session_id = ?', [session.id]);
+        db.run('DELETE FROM live_events WHERE session_id = ?', [session.id]);
+        db.run('DELETE FROM live_members WHERE session_id = ?', [session.id]);
+        db.run('DELETE FROM set_setups WHERE match_key = ?', ['session:' + session.id]);
+        db.run(
+          'UPDATE live_sessions SET deleted = 1, dirty = 1, deleted_at = COALESCE(deleted_at, ?), local_updated_at = ? WHERE id = ?',
+          [now, now, session.id],
+          (err) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            syncHub.live.syncNow({ reason: 'live-delete' }).catch(() => {});
+            res.json({ message: 'Match supprimé définitivement' });
+          }
+        );
+      });
     });
   });
 });
@@ -496,7 +686,8 @@ router.post('/:sessionId/invite', authenticateToken, (req, res) => {
   }
 
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner) => {
+      if (denyUnlessSessionAdmin(isOwner, res)) return;
       const normalized = [
         ...new Set(emails.map((e) => String(e).trim().toLowerCase()).filter(Boolean)),
       ];
@@ -504,6 +695,7 @@ router.post('/:sessionId/invite', authenticateToken, (req, res) => {
         return res.status(400).json({ error: 'Aucun email valide' });
       }
 
+      const invitedRole = session.session_kind === 'fast_direct' ? 'viewer' : 'statistician';
       let added = 0;
       let pending = normalized.length;
       const now = new Date().toISOString();
@@ -526,8 +718,8 @@ router.post('/:sessionId/invite', authenticateToken, (req, res) => {
               }
               db.run(
                 `INSERT INTO live_members (session_id, sync_uuid, user_id, nickname, role, assignment, updated_at)
-                 VALUES (?, ?, ?, ?, 'statistician', '["S","R","A","B","D"]', ?)`,
-                [session.id, uuidv4(), user.id, user.name || email, now],
+                 VALUES (?, ?, ?, ?, ?, '["S","R","A","B","D"]', ?)`,
+                [session.id, uuidv4(), user.id, user.name || email, invitedRole, now],
                 function (err3) {
                   if (!err3) added += 1;
                   pending -= 1;
@@ -566,8 +758,14 @@ router.put('/:sessionId/members/:memberId', authenticateToken, (req, res) => {
           if (!canManage) {
             return res.status(403).json({ error: 'Réservé aux statisticiens' });
           }
+          if (role && role !== member.role && !isOwner) {
+            return res.status(403).json({ error: 'Seul l’hôte peut changer les rôles.' });
+          }
 
-          const newRole = ['viewer', 'statistician', 'camera'].includes(role) ? role : member.role;
+          const allowedRoles = session.session_kind === 'fast_direct'
+            ? ['viewer', 'distribution', 'camera', 'statistician']
+            : ['viewer', 'statistician', 'camera'];
+          const newRole = allowedRoles.includes(role) ? role : member.role;
           const newNickname = nickname ? nickname : member.nickname;
           const newAssignment =
             Array.isArray(assignment) && assignment.length
@@ -617,6 +815,9 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
 
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
+      if (!canCodeLive(member)) {
+        return res.status(403).json({ error: 'Codage réservé aux statisticiens.' });
+      }
       const nowSec = Date.now() / 1000;
       const eff =
         typeof effective_time === 'number' && !Number.isNaN(effective_time)
@@ -744,7 +945,10 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
   const actionId = Number(req.params.actionId);
 
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner, member) => {
+      if (!canCodeLive(member)) {
+        return res.status(403).json({ error: 'Codage réservé aux statisticiens.' });
+      }
       db.get(
         'SELECT * FROM live_actions WHERE id = ? AND session_id = ?',
         [actionId, session.id],
@@ -843,7 +1047,10 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
 router.delete('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
   const actionId = Number(req.params.actionId);
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner, member) => {
+      if (!canCodeLive(member)) {
+        return res.status(403).json({ error: 'Codage réservé aux statisticiens.' });
+      }
       db.get(
         'SELECT sync_uuid FROM live_actions WHERE id = ? AND session_id = ?',
         [actionId, session.id],
@@ -953,7 +1160,11 @@ router.post('/:sessionId/events', authenticateToken, (req, res) => {
   const pointNumber = Number.isFinite(Number(point_number)) ? Number(point_number) : 0;
 
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner, member) => {
+      const canSendMessage = kind === 'message' && member?.role === 'viewer';
+      if (!canCodeLive(member) && !canSendMessage) {
+        return res.status(403).json({ error: 'Action réservée aux statisticiens.' });
+      }
       const nowIso = new Date().toISOString();
       db.run(
         `INSERT INTO live_events (session_id, sync_uuid, kind, set_number, point_number, team, payload, updated_at)
@@ -977,7 +1188,10 @@ router.post('/:sessionId/events', authenticateToken, (req, res) => {
 router.delete('/:sessionId/events/:eventId', authenticateToken, (req, res) => {
   const eventId = Number(req.params.eventId);
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner, member) => {
+      if (!canCodeLive(member)) {
+        return res.status(403).json({ error: 'Action réservée aux statisticiens.' });
+      }
       db.get(
         'SELECT sync_uuid FROM live_events WHERE id = ? AND session_id = ?',
         [eventId, session.id],
@@ -1004,7 +1218,7 @@ router.delete('/:sessionId/events/:eventId', authenticateToken, (req, res) => {
 router.post('/:sessionId/point/complete', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
-      if (!member || member.role === 'viewer' || member.role === 'camera') {
+      if (!canCodeLive(member)) {
         return res.status(403).json({ error: 'Réservé aux statisticiens' });
       }
 
@@ -1093,7 +1307,8 @@ router.get('/:sessionId/teams', authenticateToken, (req, res) => {
 
 router.put('/:sessionId/teams', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner) => {
+      if (denyUnlessSessionAdmin(isOwner, res)) return;
       const { home_team_id, away_team_id } = req.body || {};
       db.all(
         'SELECT id, sync_uuid FROM teams WHERE id IN (?, ?)',
@@ -1136,7 +1351,8 @@ router.get('/:sessionId/setups', authenticateToken, (req, res) => {
 
 router.put('/:sessionId/setups', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
-    verifyAccess(session, req, res, () => {
+    verifyAccess(session, req, res, (s, isOwner) => {
+      if (denyUnlessSessionAdmin(isOwner, res)) return;
       const { setups } = req.body || {};
       saveSetups(`session:${session.id}`, setups, (err) => {
         if (err) return res.status(500).json({ error: 'Failed to save setups' });

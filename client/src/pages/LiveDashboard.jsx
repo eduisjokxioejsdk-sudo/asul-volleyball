@@ -1907,6 +1907,17 @@ function LiveDashboard({ user, onLogout }) {
     );
   }
 
+  if (session && session.session_kind === 'fast_direct') {
+    return (
+      <div className="app-loading">
+        <p>Cette session utilise Fast Direct. Redirection…</p>
+        <button className="btn btn-primary" onClick={() => navigate(`/fast-direct/${session.id}`, { replace: true })}>
+          Ouvrir Fast Direct
+        </button>
+      </div>
+    );
+  }
+
   const team1 = session.team1_name || 'Domicile';
   const team2 = session.team2_name || 'Extérieur';
 

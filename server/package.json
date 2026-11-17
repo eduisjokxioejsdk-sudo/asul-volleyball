@@ -1,9 +1,10 @@
 {
   "name": "asul-server",
-  "version": "3.23.1",
+  "version": "3.24.0",
   "scripts": {
     "dev": "node src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test:fast-direct": "node scripts/fast-direct-api.spec.mjs"
   },
   "engines": {
     "node": ">=18"

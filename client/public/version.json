@@ -1,8 +1,23 @@
 {
-  "version": "3.23.1",
-  "releasedAt": "2026-11-14",
+  "version": "3.24.0",
+  "releasedAt": "2026-11-17",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.24.0",
+      "date": "2026-11-17",
+      "title": "Fast Direct : distribution en direct, banc en lecture seule et caméra",
+      "items": [
+        "Nouveau mode Fast Direct, intégré au Hub et à la navigation, avec une prise de distribution séparée du codage DataVolley",
+        "Le PC hôte crée la session et partage un code ; chaque appareil rejoint avec son rôle : prise de distribution, Banc / Coach ou Caméra",
+        "La tablette du banc consulte la caméra, la synthèse, les données et toutes les feuilles d'analyse sans pouvoir modifier quoi que ce soit, avec contrôle des droits côté serveur",
+        "Le téléphone Caméra diffuse le terrain vers l'hôte, l'appareil de distribution et le banc avec les contrôles DVR existants",
+        "Données enregistrées par session, reprise hors ligne et fusion sans perte en cas de conflit entre appareils",
+        "Aucune donnée de démonstration n'est importée ; les feuilles, passeurs, matchs, six et exports Excel/JSON restent disponibles",
+        "Sécurisation renforcée des routes de session : rôles, invitations, renommage, corbeille, actions et suppression contrôlés côté serveur",
+        "Validation : build de production, rendus Fast Direct, test de fusion, test API complet et suites de non-régression sans erreur"
+      ]
+    },
     {
       "version": "3.23.1",
       "date": "2026-11-14",
