@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { authAPI } from '../services/api';
 import PancakeLogo from '../components/PancakeLogo';
 
 function Login({ onLogin }) {
+  const location = useLocation();
+  const registerPath = `/register${location.search}`;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -105,7 +107,7 @@ function Login({ onLogin }) {
         </form>
 
         <div className="auth-link">
-          Pas encore de compte ? <Link to="/register">S'inscrire</Link>
+          Pas encore de compte ? <Link to={registerPath}>S'inscrire</Link>
         </div>
       </div>
     </div>

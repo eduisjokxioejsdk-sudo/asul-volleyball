@@ -258,11 +258,13 @@ Asulv2/
 Fast Direct reprend la saisie de distribution de `pancake-distribution` dans Pancake,
 avec les mêmes sessions multi-appareils que le direct :
 
-1. Sur le PC hôte, ouvrir **Fast Direct**, créer une session et communiquer son code.
-2. Sur l'appareil de saisie, rejoindre avec le rôle **Prise de distribution**.
-3. Sur la tablette du banc, rejoindre avec le rôle **Banc / Coach** : toutes les actions,
-   synthèses et feuilles sont consultables, sans aucune modification possible.
-4. Sur le téléphone, rejoindre avec le rôle **Caméra**.
+1. Sur le PC hôte, ouvrir **Fast Direct**, créer une session puis cliquer sur **Code**.
+2. Copier le lien du rôle voulu : **Prise de distribution**, **Banc / Coach** ou **Caméra**.
+3. Ouvrir ce lien sur l’appareil concerné : la session est rejointe automatiquement, sans code
+   à saisir. Si l’appareil n’est pas encore connecté, le lien est conservé après la connexion
+   ou l’inscription.
+4. Le lien utilise l’adresse réseau du PC hôte ; tous les appareils doivent être sur le même
+   réseau Wi‑Fi.
 
 L'hôte reste administrateur de la session. Le rôle de codage de statistiques basiques
 est prévu dans l'architecture mais n'est pas encore proposé.
@@ -274,7 +276,10 @@ est prévu dans l'architecture mais n'est pas encore proposé.
   disponibles.
 - Les écritures Fast Direct sont refusées côté serveur pour les rôles `viewer` et
   `camera`.
-- La caméra est visible sur l'hôte, la distribution et le banc avec les contrôles DVR.
+- La caméra est visible sur l'hôte, la distribution et le banc avec les contrôles DVR ; le
+  délai vidéo est réglable directement depuis le Banc / Coach.
+- Sur le téléphone caméra, un sélecteur permet de choisir la caméra avant, arrière, USB, HDMI
+  ou virtuelle ; le changement est appliqué à chaud pendant la diffusion.
 
 > Pour une synchronisation Supabase entre plusieurs postes, exécuter à nouveau
 > `server/scripts/supabase-shared.sql` : il ajoute les colonnes Fast Direct sans

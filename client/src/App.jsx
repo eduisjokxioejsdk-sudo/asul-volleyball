@@ -29,6 +29,7 @@ const SharedClipPage = lazy(() => import('./pages/SharedClipPage'));
 const LiveDashboard = lazy(() => import('./pages/LiveDashboard'));
 const FastDirectHomePage = lazy(() => import('./pages/FastDirectHomePage'));
 const FastDirectPage = lazy(() => import('./pages/FastDirectPage'));
+const FastDirectJoinPage = lazy(() => import('./pages/FastDirectJoinPage'));
 const TeamsPage = lazy(() => import('./pages/TeamsPage'));
 const TrainingPage = lazy(() => import('./pages/TrainingPage'));
 
@@ -130,6 +131,12 @@ function App() {
     );
   }
 
+  const requestedNext = new URLSearchParams(location.search).get('next');
+  const loginNext =
+    requestedNext && requestedNext.startsWith('/') && !requestedNext.startsWith('//')
+      ? requestedNext
+      : '/dashboard';
+
   return (
     <ThemeProvider>
       <BackgroundTasksProvider>
@@ -141,7 +148,7 @@ function App() {
                 path="/login"
                 element={
                   <AnimatedPage>
-                    {user ? <Navigate to="/dashboard" /> : <Login onLogin={handleLogin} />}
+                    {user ? <Navigate to={loginNext} /> : <Login onLogin={handleLogin} />}
                   </AnimatedPage>
                 }
               />
@@ -149,7 +156,7 @@ function App() {
                 path="/register"
                 element={
                   <AnimatedPage>
-                    {user ? <Navigate to="/dashboard" /> : <Register onLogin={handleLogin} />}
+                    {user ? <Navigate to={loginNext} /> : <Register onLogin={handleLogin} />}
                   </AnimatedPage>
                 }
               />
@@ -278,6 +285,14 @@ function App() {
                 element={
                   <AnimatedPage>
                     <SharedClipPage />
+                  </AnimatedPage>
+                }
+              />
+              <Route
+                path="/fast-direct/join/:joinCode"
+                element={
+                  <AnimatedPage>
+                    <FastDirectJoinPage user={user} />
                   </AnimatedPage>
                 }
               />

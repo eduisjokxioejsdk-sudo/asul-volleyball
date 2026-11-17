@@ -161,6 +161,7 @@ export const trajectoryAPI = {
 // État technique du serveur (base, stockage, ffmpeg disponible…)
 export const systemAPI = {
   getStatus: () => api.get('/system/status'),
+  getNetworkInfo: () => api.get('/system/network-info'),
 };
 
 // Live API (match en direct, multi-appareils)

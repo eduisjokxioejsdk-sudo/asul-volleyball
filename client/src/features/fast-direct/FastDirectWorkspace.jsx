@@ -44,6 +44,7 @@ import TabletSaisieView from './components/TabletSaisieView';
 import SaisieSheetView from './components/SaisieSheetView';
 import SetterAnalysisSheetView from './components/SetterAnalysisSheetView';
 import CloudBackupModal from './components/CloudBackupModal';
+import FastDirectJoinLinks from './components/FastDirectJoinLinks';
 
 const STORAGE_KEYS = {
   ROWS: 'pancake_dist_rows_v1',
@@ -1274,6 +1275,7 @@ export default function FastDirectWorkspace({ session, user, initialData = null 
 
           {/* Boutons Cloud / Import / Export / Reset */}
           <div className="flex flex-wrap items-center gap-2">
+            <FastDirectJoinLinks session={session} />
             {/* Pilule d'état Cloud & Sauvegardes */}
             <button
               type="button"

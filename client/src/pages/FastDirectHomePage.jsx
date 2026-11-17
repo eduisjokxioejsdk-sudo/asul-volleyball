@@ -2,9 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
-  Camera,
-  Database,
-  Eye,
   Plus,
   Radio,
   RefreshCw,
@@ -16,28 +13,7 @@ import { liveAPI, teamsAPI } from '../services/api';
 import useCollectionChanged from '../hooks/useCollectionChanged';
 import '../features/fast-direct/fast-direct.css';
 
-const JOIN_ROLES = [
-  {
-    id: 'distribution',
-    title: 'Prise de distribution',
-    text: 'Saisit et corrige les actions du match.',
-    icon: Database,
-  },
-  {
-    id: 'viewer',
-    title: 'Banc / Coach',
-    text: 'Consulte toute la distribution, sans modification.',
-    icon: Eye,
-  },
-  {
-    id: 'camera',
-    title: 'Caméra',
-    text: 'Filme le terrain et diffuse la vidéo aux autres appareils.',
-    icon: Camera,
-  },
-];
-
-/** Accueil du mode Fast Direct : création, reprise et jonction par code. */
+/** Accueil du mode Fast Direct : création, reprise et invitations par lien. */
 export default function FastDirectHomePage({ user, onLogout }) {
   const navigate = useNavigate();
   const [teams, setTeams] = useState([]);
@@ -45,13 +21,10 @@ export default function FastDirectHomePage({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
-  const [joining, setJoining] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
   const [team1, setTeam1] = useState('');
   const [team2, setTeam2] = useState('');
-  const [code, setCode] = useState('');
-  const [role, setRole] = useState('distribution');
 
   const load = useCallback(async () => {
     try {
@@ -108,28 +81,39 @@ export default function FastDirectHomePage({ user, onLogout }) {
     }
   };
 
-  const joinSession = async (event) => {
-    event.preventDefault();
-    if (!code.trim()) return;
-    setJoining(true);
-    setError('');
-    try {
-      const res = await liveAPI.join({
-        join_code: code.trim().toUpperCase(),
-        role,
-      });
-      const sessionId = res.data?.sessionId;
-      if (!sessionId) throw new Error('Session introuvable.');
-      if (res.data?.session_kind && res.data.session_kind !== 'fast_direct') {
-        throw new Error('Ce code correspond à un direct DataVolley, pas à Fast Direct.');
-      }
-      navigate(`/fast-direct/${sessionId}`);
-    } catch (err) {
-      setError(err?.response?.data?.error || err?.message || 'Code introuvable.');
-    } finally {
-      setJoining(false);
-    }
-  };
+  const joinInfo = (
+    <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+      <h2 className="text-sm font-black text-white">Rejoindre depuis un autre appareil</h2>
+      <p className="mt-1 text-[11px] font-semibold text-emerald-100/80">
+        Aucun code à saisir : le PC hôte envoie directement le lien correspondant au rôle.
+      </p>
+      <ol className="mt-3 space-y-2 text-[11px] text-slate-300">
+        <li className="flex gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-slate-950">
+            1
+          </span>
+          Sur le PC hôte, ouvrez la session puis cliquez sur <strong className="text-white">Code</strong>.
+        </li>
+        <li className="flex gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-slate-950">
+            2
+          </span>
+          Copiez le lien du rôle : distribution, Banc / Coach ou Caméra.
+        </li>
+        <li className="flex gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-slate-950">
+            3
+          </span>
+          Ouvrez ce lien sur le téléphone, la tablette ou l’autre poste. Il rejoint la session
+          automatiquement après la connexion au compte.
+        </li>
+      </ol>
+      <p className="mt-3 rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-[10px] font-semibold text-slate-400">
+        Le lien utilise l’adresse réseau du PC hôte. Tous les appareils doivent être connectés au
+        même réseau Wi‑Fi.
+      </p>
+    </section>
+  );
 
   return (
     <div className="fast-direct-root min-h-screen bg-slate-950 text-slate-100">
@@ -142,8 +126,8 @@ export default function FastDirectHomePage({ user, onLogout }) {
             </div>
             <h1 className="text-3xl font-black tracking-tight text-white">Fast Direct</h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Prise de distribution au bord du terrain, banc en lecture seule et caméra sur le même
-              code de session, indépendamment du codage DataVolley.
+              Prise de distribution au bord du terrain, banc en lecture seule et caméra sur la même
+              session, indépendamment du codage DataVolley.
             </p>
           </div>
           <button
@@ -228,59 +212,7 @@ export default function FastDirectHomePage({ user, onLogout }) {
           )}
 
 
-          <form
-            onSubmit={joinSession}
-            className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4"
-          >
-            <h2 className="text-sm font-black text-white">Rejoindre depuis cet appareil</h2>
-            <p className="mb-3 text-[11px] text-slate-500">
-              Choisissez le rôle exact de l’appareil avant de saisir le code.
-            </p>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {JOIN_ROLES.map((item) => {
-                const Icon = item.icon;
-                const selected = role === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setRole(item.id)}
-                    className={`rounded-xl border p-3 text-left ${
-                      selected
-                        ? 'border-amber-300 bg-amber-400 text-slate-950'
-                        : 'border-slate-700 bg-slate-800 text-slate-200 hover:border-slate-500'
-                    }`}
-                  >
-                    <Icon className="mb-2 h-5 w-5" />
-                    <div className="text-xs font-black">{item.title}</div>
-                    <div
-                      className={`mt-1 text-[10px] font-semibold ${
-                        selected ? 'text-slate-800' : 'text-slate-400'
-                      }`}
-                    >
-                      {item.text}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-3 flex gap-2">
-              <input
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                placeholder="CODE"
-                maxLength={8}
-                className="h-11 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 text-center font-mono text-lg font-black tracking-[0.2em] text-white outline-none focus:border-emerald-400"
-              />
-              <button
-                type="submit"
-                disabled={joining || !code.trim()}
-                className="h-11 rounded-xl bg-emerald-500 px-4 text-xs font-black text-slate-950 disabled:opacity-40"
-              >
-                {joining ? 'Connexion…' : 'Rejoindre'}
-              </button>
-            </div>
-          </form>
+          {joinInfo}
         </div>
 
         <section className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
@@ -299,7 +231,7 @@ export default function FastDirectHomePage({ user, onLogout }) {
             <p className="py-6 text-center text-xs text-slate-500">Chargement…</p>
           ) : activeSessions.length === 0 ? (
             <p className="py-6 text-center text-xs text-slate-500">
-              Aucune session Fast Direct. Créez la première ou rejoignez-la par son code.
+              Aucune session Fast Direct. Créez la première depuis le PC hôte.
             </p>
           ) : (
             <div className="grid gap-2 md:grid-cols-2">

@@ -113,11 +113,33 @@ export default function useLiveCameraStream(sessionId, { enabled = true } = {}) 
     [sessionId]
   );
 
+  const changeDelay = useCallback(
+    async (seconds) => {
+      const next = clampDelay(seconds);
+      setCamera((prev) => ({ ...prev, delay: next, savedDelay: next }));
+      try {
+        const res = await liveAPI.saveVideoDelay(sessionId, next);
+        const saved = clampDelay(Number(res.data?.delay ?? next));
+        setCamera((prev) => ({ ...prev, delay: saved, savedDelay: saved }));
+        setMessage({ text: `Délai vidéo réglé à ${saved} s.`, ok: true });
+        return saved;
+      } catch (err) {
+        setMessage({
+          text: err?.response?.data?.error || 'Délai vidéo non enregistré.',
+          ok: false,
+        });
+        return null;
+      }
+    },
+    [sessionId]
+  );
+
   return {
     camera,
     latency,
     message,
     bindVideo,
+    changeDelay,
     seekRelative: (delta) => playerRef.current?.seekRelative?.(delta),
     jumpToLive: () => playerRef.current?.jumpToLive?.(),
     togglePause: () => playerRef.current?.togglePause?.() ?? false,

@@ -113,6 +113,17 @@ const defaultJoin = await request('/live/join', {
 });
 check('rôle absent = viewer (aucun droit d’écriture)', defaultJoin.status === 200);
 
+const ownerRejoin = await request('/live/join', {
+  method: 'POST',
+  token: owner.token,
+  body: { join_code: joinCode, role: 'viewer' },
+});
+const ownerState = await request(`/live/${sessionId}`, { token: owner.token });
+check(
+  'le lien Banc ne rétrograde pas le PC hôte',
+  ownerRejoin.status === 200 && ownerState.data.me?.role === 'statistician'
+);
+
 console.log('\n== Écriture et versions ==');
 const firstSave = await request(`/live/${sessionId}/fast-direct`, {
   method: 'PUT',
@@ -164,6 +175,13 @@ const writeCamera = await request(`/live/${sessionId}/fast-direct`, {
   body: { state: state('interdit'), baseRevision: 2 },
 });
 check('la caméra ne peut pas écrire', writeCamera.status === 403);
+
+const benchDelay = await request(`/live/${sessionId}/video-delay`, {
+  method: 'PUT',
+  token: viewer.token,
+  body: { delay: 15 },
+});
+check('le banc Fast Direct peut régler le délai caméra', benchDelay.status === 200 && benchDelay.data.delay === 15);
 
 const mine = await request('/live/mine', { token: owner.token });
 const listed = (mine.data.sessions || []).find((s) => s.id === sessionId);

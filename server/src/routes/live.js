@@ -485,8 +485,11 @@ router.post('/join', authenticateToken, (req, res) => {
 
   const proceedWithSession = (session) => {
     const isFastDirect = session.session_kind === 'fast_direct';
+    const isSessionOwner = Number(session.owner_user_id) === Number(req.user.id);
     const memberRole = isFastDirect
-      ? (['viewer', 'distribution', 'camera'].includes(role) ? role : 'viewer')
+      ? (isSessionOwner
+        ? 'statistician'
+        : (['viewer', 'distribution', 'camera'].includes(role) ? role : 'viewer'))
       : (role === 'viewer' ? 'viewer' : role === 'camera' ? 'camera' : 'statistician');
     const memberNickname = (nickname || req.user.name || 'Membre').trim();
     const memberAssignment = memberRole === 'camera'
@@ -1262,8 +1265,15 @@ router.put('/:sessionId/video-delay', authenticateToken, (req, res) => {
   const { delay } = req.body || {};
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
-      if (!isOwner && member?.role !== 'camera' && member?.role !== 'statistician') {
-        return res.status(403).json({ error: 'Réglage réservé aux statisticiens ou à la caméra' });
+      const canAdjustBenchCamera =
+        s.session_kind === 'fast_direct' && member?.role === 'viewer';
+      if (
+        !isOwner &&
+        member?.role !== 'camera' &&
+        member?.role !== 'statistician' &&
+        !canAdjustBenchCamera
+      ) {
+        return res.status(403).json({ error: 'Réglage réservé aux statisticiens, à la caméra ou au banc Fast Direct' });
       }
       const seconds = liveStream.setDelay(s.id, delay, (event, payload) =>
         emitToSession(s.id, event, payload)

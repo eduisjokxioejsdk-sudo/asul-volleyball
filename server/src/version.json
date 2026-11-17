@@ -1,8 +1,22 @@
 {
-  "version": "3.24.0",
+  "version": "3.24.1",
   "releasedAt": "2026-11-17",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.24.1",
+      "date": "2026-11-17",
+      "title": "Fast Direct : code visible, invitations par lien, multi-caméras et délai depuis le Banc",
+      "items": [
+        "Le code de session Fast Direct est désormais affiché en permanence dans l'en-tête de la prise de distribution, avec un panneau dédié pour le copier",
+        "Les autres appareils rejoignent la session depuis un lien par rôle (distribution, Banc / Coach ou Caméra) : plus aucun code à saisir dans l'application",
+        "Le lien utilise l'adresse réseau du PC hôte et conserve l'invitation après la connexion ou l'inscription ; l'appareil rejoint ensuite la session automatiquement",
+        "Le compte propriétaire du PC hôte ne peut plus être rétrogradé par erreur en ouvrant un lien Banc ou Caméra",
+        "Le mode Caméra Fast Direct propose un sélecteur de périphérique lorsque plusieurs caméras sont disponibles, avec actualisation de la liste et changement de caméra à chaud",
+        "Le délai de la caméra est maintenant réglable directement depuis le Banc / Coach Fast Direct et reste synchronisé avec tous les appareils",
+        "Validation : build de production, rendus Fast Direct, contrôle de portée et tests API complets sans erreur"
+      ]
+    },
     {
       "version": "3.24.0",
       "date": "2026-11-17",

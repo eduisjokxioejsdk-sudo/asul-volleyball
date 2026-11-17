@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, CircleCheck, CircleX, StopCircle, Video } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Camera, CircleCheck, CircleX, RefreshCw, StopCircle, Video } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { liveAPI } from '../../../services/api';
 import { createSocket } from '../../../services/liveSocket';
@@ -8,6 +8,7 @@ import {
   clampDelay,
   DEFAULT_DELAY_S,
   DELAY_CHOICES,
+  listCameraDevices,
   startCameraCapture,
 } from '../../../services/liveCamera';
 
@@ -23,7 +24,23 @@ export default function FastDirectCameraPage({ session }) {
   const [delay, setDelay] = useState(DEFAULT_DELAY_S);
   const [stream, setStream] = useState(null);
   const [message, setMessage] = useState(null);
+  const [devices, setDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const supported = cameraSupported();
+
+  const refreshDevices = useCallback(async () => {
+    const list = await listCameraDevices();
+    setDevices(list);
+    setSelectedDeviceId((previous) => {
+      if (previous && list.some((device) => device.deviceId === previous)) return previous;
+      return list[0]?.deviceId || '';
+    });
+    return list;
+  }, []);
+
+  useEffect(() => {
+    refreshDevices();
+  }, [refreshDevices]);
 
   useEffect(() => {
     const socket = createSocket();
@@ -65,22 +82,58 @@ export default function FastDirectCameraPage({ session }) {
     el.play?.().catch?.(() => {});
   }, [stream]);
 
+  const runCapture = async (deviceId) => {
+    const capture = await startCameraCapture({
+      socket: socketRef.current,
+      sessionId: session.id,
+      delay,
+      deviceId: typeof deviceId === 'string' ? deviceId : '',
+      onStream: setStream,
+      onStatus: (text, ok) => setMessage({ text, ok }),
+    });
+    captureRef.current = capture;
+    setActive(true);
+
+    const actualDeviceId = capture.stream
+      ?.getVideoTracks?.()[0]
+      ?.getSettings?.().deviceId;
+    if (actualDeviceId) setSelectedDeviceId(actualDeviceId);
+    // Après autorisation, les noms « Caméra avant/arrière », USB ou HDMI
+    // deviennent disponibles : on recharge la liste sans interrompre le flux.
+    refreshDevices();
+    return capture;
+  };
+
   const start = async () => {
     if (!socketRef.current || busy) return;
     setBusy(true);
     setMessage(null);
     try {
-      const capture = await startCameraCapture({
-        socket: socketRef.current,
-        sessionId: session.id,
-        delay,
-        onStream: setStream,
-        onStatus: (text, ok) => setMessage({ text, ok }),
-      });
-      captureRef.current = capture;
-      setActive(true);
+      await runCapture(selectedDeviceId);
     } catch (err) {
       setMessage({ text: err?.message || 'Caméra indisponible.', ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectDevice = async (deviceId) => {
+    setSelectedDeviceId(deviceId);
+    if (!active || busy) return;
+
+    setBusy(true);
+    setMessage({ text: 'Changement de caméra…', ok: true });
+    captureRef.current?.stop?.();
+    captureRef.current = null;
+    setStream(null);
+    setActive(false);
+    try {
+      await runCapture(deviceId);
+    } catch (err) {
+      setMessage({
+        text: err?.message || 'La caméra sélectionnée est indisponible.',
+        ok: false,
+      });
     } finally {
       setBusy(false);
     }
@@ -143,6 +196,46 @@ export default function FastDirectCameraPage({ session }) {
               <p className="text-xs text-slate-500">Appuyez sur « Démarrer la caméra ».</p>
             </div>
           )}
+        </div>
+
+        <div className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5">
+          <label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-black text-slate-300">
+            <Camera className="h-4 w-4 shrink-0 text-sky-300" />
+            <span className="shrink-0">Caméra utilisée</span>
+            <select
+              value={selectedDeviceId}
+              onChange={(event) => selectDevice(event.target.value)}
+              disabled={busy || !devices.length}
+              className="h-9 min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-800 px-2 text-xs font-bold text-white disabled:opacity-50"
+              title="Choisir la caméra avant, arrière, USB, HDMI ou virtuelle"
+            >
+              {devices.length === 0 ? (
+                <option value="">Caméra par défaut</option>
+              ) : (
+                devices.map((device, index) => (
+                  <option key={device.deviceId || index} value={device.deviceId}>
+                    {device.label || `Caméra ${index + 1}`}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <div className="flex items-center gap-2">
+            {devices.length > 1 && (
+              <span className="rounded-lg bg-emerald-500/15 px-2 py-1 text-[10px] font-black text-emerald-200">
+                {devices.length} caméras
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={refreshDevices}
+              disabled={busy}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800 px-2.5 text-[10px] font-bold text-slate-200 disabled:opacity-40"
+              title="Actualiser la liste des caméras"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Actualiser
+            </button>
+          </div>
         </div>
 
         <div className="flex w-full flex-wrap items-center justify-center gap-2">

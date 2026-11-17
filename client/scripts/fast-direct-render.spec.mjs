@@ -97,8 +97,29 @@ try {
   );
   check(
     'espace distribution rendu',
-    workspaceHtml.includes('Fast Direct') && workspaceHtml.includes('Exporter Excel')
+    workspaceHtml.includes('Fast Direct') &&
+      workspaceHtml.includes('Exporter Excel') &&
+      workspaceHtml.includes('ABC234')
   );
+
+  const linksModule = await vite.ssrLoadModule(
+    '/src/features/fast-direct/components/FastDirectJoinLinks.jsx'
+  );
+  check(
+    'adresse LAN préférée à localhost',
+    linksModule.resolveInviteBase('http://localhost:3001', 'http://192.168.1.42:3001') ===
+      'http://192.168.1.42:3001'
+  );
+  check(
+    'lien de rôle généré',
+    linksModule.buildFastDirectInviteUrl('http://192.168.1.42:3001', 'ABC234', 'camera') ===
+      'http://192.168.1.42:3001/fast-direct/join/ABC234?role=camera'
+  );
+
+  const shareHtml = renderToString(
+    React.createElement(MemoryRouter, null, React.createElement(linksModule.default, { session }))
+  );
+  check('code visible dans l’en-tête de distribution', shareHtml.includes('ABC234'));
 
   const home = (await vite.ssrLoadModule('/src/pages/FastDirectHomePage.jsx')).default;
   const homeHtml = renderToString(
@@ -109,8 +130,21 @@ try {
   );
   check(
     'accueil Fast Direct rendu',
-    homeHtml.includes('Fast Direct') && homeHtml.includes('Prise de distribution'),
+    homeHtml.includes('Fast Direct') &&
+      homeHtml.includes('Aucun code à saisir') &&
+      !homeHtml.includes('placeholder="CODE"'),
     homeHtml.slice(0, 300)
+  );
+
+  const joinPage = (await vite.ssrLoadModule('/src/pages/FastDirectJoinPage.jsx')).default;
+  const joinHtml = renderToString(
+    React.createElement(MemoryRouter, { initialEntries: ['/fast-direct/join/ABC234?role=viewer'] },
+      React.createElement(joinPage, { user: { id: 1, name: 'Test' } })
+    )
+  );
+  check(
+    'page de lien rendue avec le rôle',
+    joinHtml.includes('Invitation Fast Direct') && joinHtml.includes('Banc / Coach')
   );
 
   const page = (await vite.ssrLoadModule('/src/pages/FastDirectPage.jsx')).default;
@@ -133,11 +167,30 @@ try {
   );
   check('banc Fast Direct rendu', benchHtml.includes('Banc · lecture seule'));
 
+  const cameraPanel = (await vite.ssrLoadModule('/src/components/LiveCameraPanel.jsx')).default;
+  const panelHtml = renderToString(
+    React.createElement(cameraPanel, {
+      sessionId: session.id,
+      active: false,
+      delay: 10,
+      canChangeDelay: true,
+      onDelayChange: noop,
+      canStartLocal: false,
+    })
+  );
+  check('sélecteur de délai disponible pour le banc', panelHtml.includes('Délai'));
+
   const cameraPage = (await vite.ssrLoadModule('/src/features/fast-direct/components/FastDirectCameraPage.jsx')).default;
   const cameraHtml = renderToString(
     React.createElement(MemoryRouter, null, React.createElement(cameraPage, { session }))
   );
-  check('écran caméra rendu', cameraHtml.includes('Caméra Fast Direct') && cameraHtml.includes('Démarrer la caméra'));
+  check(
+    'écran caméra rendu avec sélecteur de périphérique',
+    cameraHtml.includes('Caméra Fast Direct') &&
+      cameraHtml.includes('Démarrer la caméra') &&
+      cameraHtml.includes('Caméra utilisée') &&
+      cameraHtml.includes('Actualiser')
+  );
 } catch (err) {
   failures += 1;
   console.error(err);
