@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import {
   ROTATIONS_ORDER,
-  SERVICE_OPTIONS,
   ZONE_R_GRID,
   QUALITE_R_OPTIONS,
   ZONE_P_ROWS,
@@ -36,11 +35,10 @@ import {
 const LINEUP_STORAGE_KEY = 'pancake_dist_team_lineup_v1';
 
 const STEP_LABELS = [
-  { num: 1, title: 'Service' },
+  { num: 1, title: 'Position' },
   { num: 2, title: 'Récep & Passe (2D)' },
   { num: 3, title: 'Annonce Central' },
   { num: 4, title: 'Distribution (2D)' },
-  { num: 5, title: 'Résultat' },
 ];
 
 const BTN_TONES = {
@@ -150,11 +148,11 @@ export default function TabletSaisieView({
     }
   }, [externalTeamLineup, internalTeamLineup]);
 
-  // Étape active : 1 (Service) -> 2 (Terrain 2D Récep/Qualité puis Passe) -> 3 (Annonce Central) -> 4 (Terrain 2D Distrib) -> 5 (Résultat)
+  // Étape active : 1 (Terrain 2D Récep/Qualité puis Passe) -> 2 (Annonce Central) -> 3 (Terrain 2D Distrib) -> 4 (Résultat)
   const [step, setStep] = useState(1);
 
-  // Champs d'une action
-  const [service, setService] = useState('');
+  // Champs d'une action (service fixé automatiquement à 'F')
+  const [service, setService] = useState('F');
   const [zoneR, setZoneR] = useState('');
   const [qualiteR, setQualiteR] = useState('');
   const [zoneP, setZoneP] = useState('');
@@ -292,7 +290,7 @@ export default function TabletSaisieView({
   );
 
   const resetForNextAction = () => {
-    setService('');
+    setService('F');
     setZoneR('');
     setQualiteR('');
     setZoneP('');
@@ -313,8 +311,8 @@ export default function TabletSaisieView({
   };
 
   // --- SÉQUENCE AUTOMATIQUE DES ÉTAPES ---
-  const handleChooseService = (code) => {
-    setService(code);
+  const handleChooseRotation = (rot) => {
+    setSelectedRotation(rot);
     setStep(2);
   };
 
@@ -345,18 +343,9 @@ export default function TabletSaisieView({
   };
 
   const handleChooseDistribP = (code) => {
-    setDistribP(code);
     const autoJoueur = resolveAttackerForDistrib(code, lineupInfo);
-    if (autoJoueur) {
-      setJoueur(autoJoueur);
-    }
-    setStep(5);
-  };
-
-  const handleChooseResAtt = (code) => {
-    setResAtt(code);
+    const finalJoueur = autoJoueur || joueur || '1';
     const effectiveMatch = selectedMatch || 'MATCH 1';
-    const finalJoueur = joueur || resolveAttackerForDistrib(distribP, lineupInfo) || '1';
     const payload = {
       match: effectiveMatch,
       rotation: selectedRotation,
@@ -366,9 +355,9 @@ export default function TabletSaisieView({
       qualiteR: qualiteR || '#',
       zoneP: zoneP || '3',
       baseOff: baseOff || '1',
-      distribP: distribP || '5',
+      distribP: code || '5',
       joueur: finalJoueur,
-      resAtt: code,
+      resAtt: editingRowId !== null ? resAtt : '',
     };
 
     if (editingRowId !== null) {
@@ -380,7 +369,7 @@ export default function TabletSaisieView({
         setSelectedMatch(effectiveMatch);
       }
       triggerToast(
-        `${effectiveMatch} • P${selectedRotation} • ${payload.distribP} → #${payload.joueur} (${code})`,
+        `${effectiveMatch} • P${selectedRotation} • ${payload.distribP} → #${payload.joueur}`,
         'emerald'
       );
     }
@@ -654,10 +643,9 @@ export default function TabletSaisieView({
 
   const canGoToStep = (targetStep) => {
     if (targetStep === 1) return true;
-    if (targetStep === 2) return Boolean(service);
-    if (targetStep === 3) return Boolean(service && zoneR && qualiteR && zoneP);
-    if (targetStep === 4) return Boolean(service && zoneR && qualiteR && zoneP && baseOff);
-    if (targetStep === 5) return Boolean(service && zoneR && qualiteR && zoneP && baseOff && distribP);
+    if (targetStep === 2) return Boolean(selectedRotation);
+    if (targetStep === 3) return Boolean(selectedRotation && zoneR && qualiteR && zoneP);
+    if (targetStep === 4) return Boolean(selectedRotation && zoneR && qualiteR && zoneP && baseOff);
     return false;
   };
 
@@ -837,34 +825,8 @@ export default function TabletSaisieView({
             </button>
           </div>
 
-          {/* Rotation + Tourner + Annuler */}
+          {/* Annuler + Vider */}
           <div className="flex flex-wrap items-center gap-1">
-            {ROTATIONS_ORDER.map((rot) => {
-              const active = selectedRotation === rot;
-              return (
-                <button
-                  key={rot}
-                  type="button"
-                  onClick={() => setSelectedRotation(rot)}
-                  className={`h-10 w-10 rounded-xl border text-xs font-black transition active:scale-95 ${
-                    active
-                      ? 'border-sky-300 bg-sky-500 text-slate-950 shadow-md shadow-sky-500/25'
-                      : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'
-                  }`}
-                >
-                  P{rot}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={handleRotateNext}
-              className="flex h-10 items-center gap-1 rounded-xl border border-sky-500/40 bg-sky-500/15 px-2.5 text-xs font-bold text-sky-300 active:scale-95"
-              title="Rotation suivante"
-            >
-              <RotateCw className="h-3.5 w-3.5" />
-              Tourner
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -904,12 +866,11 @@ export default function TabletSaisieView({
             const isCurrent = step === s.num;
             const enabled = canGoToStep(s.num);
             let badgeVal = '';
-            if (s.num === 1 && service) badgeVal = service;
+            if (s.num === 1 && selectedRotation) badgeVal = `P${selectedRotation}`;
             if (s.num === 2 && zoneR && qualiteR && zoneP) badgeVal = `${zoneR}${qualiteR}→${zoneP}`;
             else if (s.num === 2 && zoneR) badgeVal = `${zoneR}${qualiteR || '?'}`;
             if (s.num === 3 && baseOff) badgeVal = `B${baseOff}`;
             if (s.num === 4 && distribP) badgeVal = `${distribP} (#${joueur})`;
-            if (s.num === 5 && resAtt) badgeVal = resAtt;
 
             return (
               <React.Fragment key={s.num}>
@@ -943,7 +904,7 @@ export default function TabletSaisieView({
           })}
         </div>
 
-        {(service || editingRowId !== null) && (
+        {(zoneR || editingRowId !== null) && (
           <button
             type="button"
             onClick={resetForNextAction}
@@ -958,41 +919,41 @@ export default function TabletSaisieView({
       {/* ZONE PRINCIPALE PLEIN ÉCRAN : 1 SEULE ÉTAPE AFFICHÉE EN GRAND          */}
       {/* ===================================================================== */}
       <div className="min-h-[68vh] rounded-3xl border border-slate-800 bg-slate-900/95 p-4 md:p-6 shadow-2xl flex flex-col justify-between">
-        {/* ÉTAPE 1 : SERVICE */}
+        {/* ÉTAPE 1 : POSITION / ROTATION */}
         {step === 1 && (
           <div className="flex flex-1 flex-col justify-center gap-6">
             <div className="text-center">
-              <span className="inline-block rounded-full border border-indigo-400/40 bg-indigo-500/15 px-3 py-1 text-xs font-black uppercase tracking-wider text-indigo-300">
-                Étape 1 / 5 •{' '}
+              <span className="inline-block rounded-full border border-sky-400/40 bg-sky-500/15 px-3 py-1 text-xs font-black uppercase tracking-wider text-sky-300">
+                Étape 1 / 4 •{' '}
                 {editingRowId
                   ? `Modification ligne #${editingRowId}`
-                  : `${selectedMatch || 'Aucun match'} • P${selectedRotation}`}
+                  : `${selectedMatch || 'Aucun match'} • Passeur #${activeSetterCode}`}
               </span>
               <h2 className="mt-2 text-2xl md:text-3xl font-black text-white">
-                Quel type de SERVICE / BALLE ?
+                Quelle POSITION (Rotation) ?
               </h2>
               <p className="mt-1 text-xs md:text-sm text-slate-400">
-                Touchez un bouton pour passer directement au terrain 2D (Réception & Passe)
+                Touchez la position du passeur pour démarrer la saisie
               </p>
             </div>
 
-            <div className="mx-auto grid w-full max-w-4xl grid-cols-2 gap-4">
-              {SERVICE_OPTIONS.map((opt) => {
-                const active = service === opt.code;
+            <div className="mx-auto grid w-full max-w-4xl grid-cols-2 sm:grid-cols-3 gap-4">
+              {ROTATIONS_ORDER.map((rot) => {
+                const active = selectedRotation === rot;
                 return (
                   <button
-                    key={opt.code}
+                    key={rot}
                     type="button"
-                    onClick={() => handleChooseService(opt.code)}
+                    onClick={() => handleChooseRotation(rot)}
                     className={`flex h-36 md:h-44 flex-col items-center justify-center rounded-3xl border-2 transition active:scale-[0.97] ${
                       active
-                        ? 'border-indigo-200 bg-indigo-500 text-white shadow-2xl shadow-indigo-500/30'
-                        : 'border-slate-700 bg-slate-800/90 text-white hover:border-indigo-400/60 hover:bg-slate-800'
+                        ? 'border-sky-300 bg-sky-500 text-slate-950 shadow-2xl shadow-sky-500/30'
+                        : 'border-slate-700 bg-slate-800/90 text-white hover:border-sky-400/60 hover:bg-slate-800'
                     }`}
                   >
-                    <span className="text-5xl md:text-6xl font-black leading-none">{opt.code}</span>
-                    <span className="mt-2 text-sm md:text-base font-bold text-slate-300">
-                      {opt.label}
+                    <span className="text-5xl md:text-6xl font-black leading-none">P{rot}</span>
+                    <span className={`mt-2 text-xs md:text-sm font-bold ${active ? 'text-slate-900' : 'text-slate-400'}`}>
+                      Passeur en zone {rot}
                     </span>
                   </button>
                 );
@@ -1013,7 +974,7 @@ export default function TabletSaisieView({
                   className="flex h-10 items-center gap-1 rounded-xl border border-slate-700 bg-slate-800 px-3 text-xs font-bold text-slate-200"
                 >
                   <ArrowLeft className="h-4 w-4" />
-                  Service ({service})
+                  Position (P{selectedRotation})
                 </button>
                 <div>
                   <h2 className="text-lg md:text-2xl font-black text-white">
@@ -1355,7 +1316,7 @@ export default function TabletSaisieView({
 
             <div className="text-center">
               <span className="inline-block rounded-full border border-sky-400/40 bg-sky-500/15 px-3 py-1 text-xs font-black uppercase tracking-wider text-sky-300">
-                Étape 3 / 5
+                Étape 3 / 4
               </span>
               <h2 className="mt-2 text-2xl md:text-3xl font-black text-white">
                 Annonce du Central (BASE OFF)
@@ -1409,11 +1370,11 @@ export default function TabletSaisieView({
                 </button>
                 <div>
                   <h2 className="text-lg md:text-2xl font-black text-white">
-                    Étape 4 / 5 — Touchez où la passe est distribuée sur le terrain
+                    Étape 4 / 4 — Touchez où la passe est distribuée sur le terrain
                   </h2>
                   <p className="text-xs text-slate-400">
-                    Le numéro du joueur attaquant est déterminé automatiquement selon la rotation P
-                    {selectedRotation} !
+                    Touchez la passe : l'action s'enregistre automatiquement (rotation P
+                    {selectedRotation}) !
                   </p>
                 </div>
               </div>
@@ -1713,77 +1674,6 @@ export default function TabletSaisieView({
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* ÉTAPE 5 : RÉSULTAT ATTAQUE + JOUEUR DÉTERMINÉ AUTO */}
-        {step === 5 && (
-          <div className="flex flex-1 flex-col justify-center gap-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setStep(4)}
-                className="flex h-10 items-center gap-1 rounded-xl border border-slate-700 bg-slate-800 px-3 text-xs font-bold text-slate-200"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Changer Passe ({distribP})
-              </button>
-
-              {/* Joueur auto-déterminé + correction rapide si besoin */}
-              <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-purple-400/50 bg-purple-950/40 px-3 py-1.5">
-                <Sparkles className="h-4 w-4 text-purple-300" />
-                <span className="text-xs font-bold text-purple-200">Attaquant auto :</span>
-                <span className="rounded-lg bg-purple-500 px-2.5 py-0.5 text-sm font-black text-white">
-                  #{joueur}
-                </span>
-                <span className="text-[11px] text-slate-400 ml-1">Changer :</span>
-                {allPlayerNumbers.map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => setJoueur(num)}
-                    className={`h-7 min-w-[30px] rounded-lg px-1.5 text-[11px] font-black transition ${
-                      joueur === num
-                        ? 'bg-emerald-400 text-slate-950'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    {num}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="text-center">
-              <span className="inline-block rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 py-1 text-xs font-black uppercase tracking-wider text-emerald-300">
-                Étape 5 / 5 • Validation finale
-              </span>
-              <h2 className="mt-2 text-2xl md:text-3xl font-black text-white">
-                Résultat de l'attaque (#{joueur} sur passe {distribP})
-              </h2>
-              <p className="mt-1 text-xs md:text-sm text-slate-400">
-                Touchez le résultat : l'action s'enregistre et revient automatiquement à l'Étape 1
-              </p>
-            </div>
-
-            <div className="mx-auto grid w-full max-w-5xl grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-              {RES_ATT_OPTIONS.map((r) => {
-                const active = resAtt === r.code;
-                return (
-                  <button
-                    key={r.code}
-                    type="button"
-                    onClick={() => handleChooseResAtt(r.code)}
-                    className={`flex h-32 md:h-40 flex-col items-center justify-center rounded-3xl border-2 transition active:scale-95 ${
-                      active ? BTN_TONES_ACTIVE[r.style] : BTN_TONES[r.style]
-                    }`}
-                  >
-                    <span className="text-4xl md:text-5xl font-black leading-none">{r.label}</span>
-                    <span className="mt-2 text-xs font-bold text-center px-1">{r.sub}</span>
-                  </button>
-                );
-              })}
             </div>
           </div>
         )}

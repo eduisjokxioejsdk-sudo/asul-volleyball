@@ -30,6 +30,7 @@ const LiveDashboard = lazy(() => import('./pages/LiveDashboard'));
 const FastDirectHomePage = lazy(() => import('./pages/FastDirectHomePage'));
 const FastDirectPage = lazy(() => import('./pages/FastDirectPage'));
 const FastDirectJoinPage = lazy(() => import('./pages/FastDirectJoinPage'));
+const StatsFastDirectPage = lazy(() => import('./pages/StatsFastDirectPage'));
 const TeamsPage = lazy(() => import('./pages/TeamsPage'));
 const TrainingPage = lazy(() => import('./pages/TrainingPage'));
 
@@ -317,6 +318,14 @@ function App() {
                 element={
                   <AnimatedPage>
                     {user ? <LiveDashboard user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
+                  </AnimatedPage>
+                }
+              />
+              <Route
+                path="/stats-fast-direct"
+                element={
+                  <AnimatedPage>
+                    {user ? <StatsFastDirectPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
                   </AnimatedPage>
                 }
               />

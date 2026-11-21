@@ -54,6 +54,12 @@ extraResources:
   - from: resources/sync.json
     to: sync.json
 
+# Contrôle du paquet après copie : échoue AVANT la fabrication de l'installeur
+# si le serveur embarqué (server/src), ses dépendances, l'interface buildée ou
+# ffmpeg manquent. Sans ce garde-fou, electron-builder ignore silencieusement
+# une source absente et publie un installeur dont le serveur ne démarre pas.
+afterPack: scripts/verify-package.cjs
+
 win:
   target:
     - target: nsis

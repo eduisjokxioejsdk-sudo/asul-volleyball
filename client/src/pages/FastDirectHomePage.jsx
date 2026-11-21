@@ -98,7 +98,7 @@ export default function FastDirectHomePage({ user, onLogout }) {
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-slate-950">
             2
           </span>
-          Copiez le lien du rôle : distribution, Banc / Coach ou Caméra.
+          Copiez le lien de l’appareil : Appareil Stats (tous onglets), Banc (Tablette) ou Caméra.
         </li>
         <li className="flex gap-2">
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-slate-950">
@@ -126,8 +126,8 @@ export default function FastDirectHomePage({ user, onLogout }) {
             </div>
             <h1 className="text-3xl font-black tracking-tight text-white">Fast Direct</h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Prise de distribution au bord du terrain, banc en lecture seule et caméra sur la même
-              session, indépendamment du codage DataVolley.
+              3 appareils reliés en direct : Stats (Distribution + Autres stats + Caméra), Banc
+              tablette (P1–P6 &amp; Stats) et Caméra terrain.
             </p>
           </div>
           <button

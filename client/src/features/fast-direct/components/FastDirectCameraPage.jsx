@@ -286,7 +286,7 @@ export default function FastDirectCameraPage({ session }) {
         )}
         <p className="max-w-lg text-center text-xs text-slate-500">
           Posez le téléphone sur un support stable, objectif vers le terrain. La vidéo est rediffusée
-          sur le PC hôte et la tablette du banc avec le délai choisi.
+          sur l’appareil Stats et la tablette Banc avec le délai choisi.
         </p>
       </main>
     </div>

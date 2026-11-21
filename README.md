@@ -238,7 +238,9 @@ Asulv2/
 │   │   ├── components/  # dont les modes de codage (DvModeBar, DvCodeList, DvRotationWindow…)
 │   │   ├── services/
 │   │   └── contexts/
+│   ├── public/stats-fast-direct/  # App « Stats Fast Direct » (HTML/PWA autonome, servie par Pancake)
 │   └── package.json
+├── fast-direct-analytics/  # Outil d'analyse des données Fast Direct (Vite + React + Tailwind)
 ├── server/          # Backend Node.js/Express
 │   ├── src/
 │   │   ├── config.js    # → DATA_DIR, JWT_SECRET, FFMPEG_PATH, réseau
@@ -266,8 +268,9 @@ avec les mêmes sessions multi-appareils que le direct :
 4. Le lien utilise l’adresse réseau du PC hôte ; tous les appareils doivent être sur le même
    réseau Wi‑Fi.
 
-L'hôte reste administrateur de la session. Le rôle de codage de statistiques basiques
-est prévu dans l'architecture mais n'est pas encore proposé.
+L'hôte reste administrateur de la session. Les statistiques de match (points, attaques,
+réception, distribution, bilans équipe et joueurs) sont couvertes par l'application
+**Stats Fast Direct** décrite ci-dessous.
 
 - Données enregistrées **par session**, avec révision et fusion des modifications en
   attente après une coupure réseau.
@@ -280,6 +283,42 @@ est prévu dans l'architecture mais n'est pas encore proposé.
   délai vidéo est réglable directement depuis le Banc / Coach.
 - Sur le téléphone caméra, un sélecteur permet de choisir la caméra avant, arrière, USB, HDMI
   ou virtuelle ; le changement est appliqué à chaud pendant la diffusion.
+- La prise de distribution enchaîne directement **Récep & Passe (2D) → Annonce Central →
+  Distribution (2D)** : le type de service est enregistré automatiquement à `F` et le résultat
+  d'attaque à `-`, ce qui supprime deux étapes de saisie et enregistre l'action dès le choix de
+  la zone de distribution.
+
+### 📊 Application « Stats Fast Direct » (intégrée)
+
+L'application de statistiques est servie par Pancake Stats depuis
+`client/public/stats-fast-direct/` :
+
+- accès par le **module 10 du Hub** ou l'onglet **Stats** de la barre de navigation ;
+- URL directe : `/stats-fast-direct/index.html` (fonctionne aussi hors ligne grâce au service
+  worker et au manifeste PWA) ;
+- onglets : Récap match, Match live, Match adverse, Match & joueurs adverses, Statistiques
+  équipe, Statistiques joueurs, Grille originale, Historique ;
+- exports **Excel**, **PDF** et **CSV**, sauvegarde / restauration JSON, remise à zéro ;
+- données enregistrées dans le navigateur sous la clé `volley_stats_v1` ; aucun envoi réseau.
+
+L'application est affichée dans un cadre plein écran (page `StatsFastDirectPage`) pour conserver
+la barre de navigation ; le bouton « Ouvrir en plein écran » l'ouvre dans un onglet séparé.
+
+### 🔎 Outil d'analyse Fast Direct (`fast-direct-analytics`)
+
+Le dossier `fast-direct-analytics/` contient un outil d'analyse des actions saisies en Fast
+Direct : vue d'ensemble, réception (zones et qualité), distribution (EN 4, EN 2, EN 1, FIX
+AV/ARR, DÉCALÉE, PIPE…), attaquants, matchs et combinaisons. Il lit la sauvegarde `.json`
+exportée par Fast Direct ou les sessions présentes dans le `localStorage`, calcule tout côté
+navigateur et exporte les actions filtrées en CSV.
+
+```bash
+cd fast-direct-analytics
+npm install
+npm run dev        # http://localhost:5174
+npm test           # moteur de statistiques + rendus des écrans
+npm run build      # site statique dans fast-direct-analytics/dist
+```
 
 > Pour une synchronisation Supabase entre plusieurs postes, exécuter à nouveau
 > `server/scripts/supabase-shared.sql` : il ajoute les colonnes Fast Direct sans

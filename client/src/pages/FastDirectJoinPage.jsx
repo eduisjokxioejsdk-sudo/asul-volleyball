@@ -1,25 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Camera, Database, Eye, Link2, LoaderCircle, TriangleAlert } from 'lucide-react';
+import { BarChart3, Camera, Link2, LoaderCircle, Tablet, TriangleAlert } from 'lucide-react';
 import { liveAPI } from '../services/api';
+import { normalizeFastDirectRole } from '../features/fast-direct/components/FastDirectJoinLinks';
 import '../features/fast-direct/fast-direct.css';
 
 const ROLES = {
-  distribution: {
-    label: 'Prise de distribution',
-    description: 'Vous allez saisir et corriger la distribution.',
-    icon: Database,
+  stats: {
+    label: 'Appareil Stats',
+    description: 'Vous aurez accès à tous les onglets : Distribution, Autres stats et Caméra.',
+    icon: BarChart3,
     tone: 'text-emerald-300',
   },
-  viewer: {
-    label: 'Banc / Coach',
-    description: 'Vous allez consulter la session en lecture seule.',
-    icon: Eye,
+  bench: {
+    label: 'Banc (Tablette)',
+    description: 'Consultation en direct de la distribution adverse P1–P6 et des Stats.',
+    icon: Tablet,
     tone: 'text-amber-300',
   },
   camera: {
     label: 'Caméra',
-    description: 'Cet appareil va filmer le terrain.',
+    description: 'Cet appareil va filmer le terrain en direct.',
     icon: Camera,
     tone: 'text-rose-300',
   },
@@ -33,7 +34,7 @@ export default function FastDirectJoinPage({ user }) {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState({ status: 'joining', error: '' });
 
-  const role = ROLES[searchParams.get('role')] ? searchParams.get('role') : 'viewer';
+  const role = normalizeFastDirectRole(searchParams.get('role'));
   const code = String(joinCode || '').trim().toUpperCase();
   const invitePath = `/fast-direct/join/${encodeURIComponent(code)}?role=${role}`;
   const roleInfo = ROLES[role];
@@ -52,7 +53,7 @@ export default function FastDirectJoinPage({ user }) {
         if (res.data?.session_kind && res.data.session_kind !== 'fast_direct') {
           throw new Error('Ce lien correspond à un direct DataVolley, pas à Fast Direct.');
         }
-        navigate(`/fast-direct/${sessionId}`, { replace: true });
+        navigate(`/fast-direct/${sessionId}?view=${role}`, { replace: true });
       })
       .catch((err) => {
         if (cancelled) return;

@@ -252,6 +252,8 @@ create table if not exists public.asul_live_sessions (
   session_kind    text default 'datavolley',
   fast_direct_state text,
   fast_direct_revision integer default 0,
+  fast_direct_stats_state text,
+  fast_direct_stats_revision integer default 0,
   deleted_at      timestamptz,
   created_at      timestamptz default now(),
   deleted_items   jsonb not null default '[]'::jsonb,
@@ -271,6 +273,8 @@ create trigger asul_live_sessions_touch before insert or update on public.asul_l
 alter table public.asul_live_sessions add column if not exists session_kind text default 'datavolley';
 alter table public.asul_live_sessions add column if not exists fast_direct_state text;
 alter table public.asul_live_sessions add column if not exists fast_direct_revision integer default 0;
+alter table public.asul_live_sessions add column if not exists fast_direct_stats_state text;
+alter table public.asul_live_sessions add column if not exists fast_direct_stats_revision integer default 0;
 
 -- ---------------------------------------------------------------------------
 -- Politiques d'accès Row Level Security (RLS) pour la clé anon partagée du club

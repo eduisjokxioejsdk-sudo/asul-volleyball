@@ -44,6 +44,8 @@ export default function FastDirectCameraDock({ sessionId }) {
           bindVideo={camera.bindVideo}
           active={camera.camera.active}
           delay={camera.camera.delay}
+          canChangeDelay
+          onDelayChange={camera.changeDelay}
           canStartLocal={false}
           onSeekRelative={camera.seekRelative}
           onJumpToLive={camera.jumpToLive}

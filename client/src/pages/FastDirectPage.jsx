@@ -1,18 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { liveAPI, teamsAPI } from '../services/api';
-import FastDirectWorkspace from '../features/fast-direct/FastDirectWorkspace';
+import FastDirectStatsShell from '../features/fast-direct/FastDirectStatsShell';
 import FastDirectBench from '../features/fast-direct/components/FastDirectBench';
 import FastDirectCameraPage from '../features/fast-direct/components/FastDirectCameraPage';
-import FastDirectCameraDock from '../features/fast-direct/components/FastDirectCameraDock';
+import { normalizeFastDirectRole } from '../features/fast-direct/components/FastDirectJoinLinks';
 import '../features/fast-direct/fast-direct.css';
 
-const ROLE_LABELS = {
-  distribution: 'Prise de distribution',
-  statistician: 'Hôte · administration',
-  viewer: 'Banc / Coach · lecture seule',
-  camera: 'Caméra',
-};
+export function resolveDeviceMode(memberRole, requestedView) {
+  const role = String(memberRole || '').trim().toLowerCase();
+  if (role === 'camera') return 'camera';
+  const isEditor = ['stats', 'statistician', 'distribution'].includes(role);
+  if (isEditor) {
+    if (requestedView) return normalizeFastDirectRole(requestedView);
+    return 'stats';
+  }
+  return 'bench';
+}
 
 function buildInitialData(session, team) {
   if (!session) return null;
@@ -48,7 +52,10 @@ function buildInitialData(session, team) {
   });
   const setters = roster
     .filter((player) => player.role === 'setter' || player.role === 'Passeur')
-    .map((player) => ({ code: String(player.number || ''), name: String(player.name || '').toUpperCase() }))
+    .map((player) => ({
+      code: String(player.number || ''),
+      name: String(player.name || '').toUpperCase(),
+    }))
     .filter((player) => player.code);
 
   return {
@@ -68,15 +75,19 @@ function buildInitialData(session, team) {
 
 export default function FastDirectPage({ user, onLogout }) {
   const { sessionId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
-  const [team, setTeam] = useState(null);
+  const [homeTeam, setHomeTeam] = useState(null);
+  const [awayTeam, setAwayTeam] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setHomeTeam(null);
+    setAwayTeam(null);
     liveAPI
       .get(sessionId)
       .then(async (res) => {
@@ -87,15 +98,21 @@ export default function FastDirectPage({ user, onLogout }) {
           throw new Error('Ce match est un direct DataVolley. Ouvrez-le depuis le Hub.');
         }
         setData(res.data);
-        if (session.home_team_id) {
+        if (session.home_team_id || session.away_team_id) {
           try {
             const teamsRes = await teamsAPI.getAll();
             if (!cancelled) {
-              setTeam(
-                (teamsRes.data?.teams || []).find(
-                  (item) => Number(item.id) === Number(session.home_team_id)
-                ) || null
-              );
+              const allTeams = teamsRes.data?.teams || [];
+              if (session.home_team_id) {
+                setHomeTeam(
+                  allTeams.find((item) => Number(item.id) === Number(session.home_team_id)) || null
+                );
+              }
+              if (session.away_team_id) {
+                setAwayTeam(
+                  allTeams.find((item) => Number(item.id) === Number(session.away_team_id)) || null
+                );
+              }
             }
           } catch {
             // Le préremplissage est facultatif : la saisie reste disponible.
@@ -116,8 +133,8 @@ export default function FastDirectPage({ user, onLogout }) {
   }, [sessionId]);
 
   const initialData = useMemo(
-    () => buildInitialData(data?.session, team),
-    [data?.session, team]
+    () => buildInitialData(data?.session, homeTeam),
+    [data?.session, homeTeam]
   );
 
   if (loading) {
@@ -146,53 +163,34 @@ export default function FastDirectPage({ user, onLogout }) {
   if (!user) return <Navigate to="/login" replace />;
 
   const { session, me } = data;
-  const role = me?.role || 'viewer';
+  const memberRole = me?.role || 'bench';
+  const isEditor = ['stats', 'statistician', 'distribution'].includes(memberRole);
+  const deviceMode = resolveDeviceMode(memberRole, searchParams.get('view'));
 
-  if (role === 'camera') {
+  if (deviceMode === 'camera') {
     return <FastDirectCameraPage session={session} />;
   }
 
-  if (role === 'viewer') {
+  if (deviceMode === 'bench') {
     return (
       <FastDirectBench
         session={session}
-        user={user}
-        role={role}
-        onLogout={() => navigate('/fast-direct')}
+        homeTeam={homeTeam}
+        awayTeam={awayTeam}
+        canSwitchToStats={isEditor}
+        onSwitchToStats={() => setSearchParams({ view: 'stats' })}
       />
     );
   }
 
   return (
-    <div className="fast-direct-root">
-      <FastDirectWorkspace
-        key={session.id}
-        session={session}
-        user={user}
-        initialData={initialData}
-      />
-      <FastDirectCameraDock sessionId={session.id} />
-      <div className="fixed bottom-2 right-2 z-[100] flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/95 px-2.5 py-1.5 text-[10px] font-bold text-slate-300 shadow-xl">
-        <span className="text-emerald-300">{ROLE_LABELS[role] || role}</span>
-        <span className="text-slate-600">·</span>
-        <span>code {session.join_code}</span>
-        <button
-          type="button"
-          onClick={() => navigate('/fast-direct')}
-          className="rounded bg-slate-800 px-2 py-1 font-black text-white"
-        >
-          Quitter
-        </button>
-        {onLogout && role === 'statistician' && (
-          <button
-            type="button"
-            onClick={onLogout}
-            className="rounded bg-slate-800 px-2 py-1 font-black text-slate-300"
-          >
-            Déconnexion
-          </button>
-        )}
-      </div>
-    </div>
+    <FastDirectStatsShell
+      session={session}
+      user={user}
+      initialData={initialData}
+      homeTeam={homeTeam}
+      awayTeam={awayTeam}
+      onLogout={onLogout}
+    />
   );
 }

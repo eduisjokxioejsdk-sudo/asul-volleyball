@@ -81,6 +81,34 @@ try {
   );
   check('tableau de consultation rendu', tableHtml.includes('ASUL') && tableHtml.includes('lecture seule'));
 
+  const tabletSaisie = (await vite.ssrLoadModule('/src/features/fast-direct/components/TabletSaisieView.jsx')).default;
+  const tabletHtml = renderToString(
+    React.createElement(tabletSaisie, {
+      rows: state.rows,
+      allMatches: state.matchList,
+      allSetters: state.setterList,
+      sheetConfigs: state.sheetConfigs,
+      onAddRow: noop,
+      onUpdateRow: noop,
+      onDeleteRow: noop,
+      onUndoLast: noop,
+      onAddMatch: noop,
+      onDeleteMatch: noop,
+      onRenameMatch: noop,
+      onAddSetter: noop,
+      onDeleteSetter: noop,
+      onCreateSheet: noop,
+      onRequestBlankReset: noop,
+    })
+  );
+  check(
+    'TabletSaisieView identique à pancake-distribution (4 étapes dont Position P1..P6)',
+    tabletHtml.includes('Position') &&
+      tabletHtml.includes('Étape 1 / 4') &&
+      tabletHtml.includes('Quelle POSITION (Rotation)') &&
+      tabletHtml.includes('Passeur en zone')
+  );
+
   const workspace = (await vite.ssrLoadModule('/src/features/fast-direct/FastDirectWorkspace.jsx')).default;
   const workspaceHtml = renderToString(
     React.createElement(MemoryRouter, null, React.createElement(workspace, {
@@ -102,6 +130,42 @@ try {
       workspaceHtml.includes('ABC234')
   );
 
+  const statsShell = (await vite.ssrLoadModule('/src/features/fast-direct/FastDirectStatsShell.jsx')).default;
+  const statsShellHtml = renderToString(
+    React.createElement(MemoryRouter, null, React.createElement(statsShell, {
+      session,
+      user: { id: 1, name: 'Test' },
+      initialData: {
+        rows: [],
+        matchList: ['ASUL'],
+        setterList: [{ code: '6', name: 'PAUL' }],
+        sheetConfigs: [],
+        teamLineup: {},
+      },
+    }))
+  );
+  check(
+    'coque Appareil Stats rendue avec les 3 onglets',
+    statsShellHtml.includes('Distribution') &&
+      statsShellHtml.includes('Autres stats') &&
+      statsShellHtml.includes('Caméra') &&
+      statsShellHtml.includes('ABC234')
+  );
+
+  const statsPane = (await vite.ssrLoadModule('/src/features/fast-direct/components/FastDirectStatsPane.jsx')).default;
+  const statsPaneLiveHtml = renderToString(
+    React.createElement(statsPane, { session, readOnly: false, active: true })
+  );
+  const statsPaneBenchHtml = renderToString(
+    React.createElement(statsPane, { session, readOnly: true, active: true })
+  );
+  check(
+    'panneau Stats Fast Direct rendu en mode live et banc',
+    statsPaneLiveHtml.includes('mode=live&amp;session=fd_render') &&
+      statsPaneBenchHtml.includes('mode=bench&amp;session=fd_render') &&
+      statsPaneBenchHtml.includes('Consultation seule')
+  );
+
   const linksModule = await vite.ssrLoadModule(
     '/src/features/fast-direct/components/FastDirectJoinLinks.jsx'
   );
@@ -111,9 +175,18 @@ try {
       'http://192.168.1.42:3001'
   );
   check(
-    'lien de rôle généré',
-    linksModule.buildFastDirectInviteUrl('http://192.168.1.42:3001', 'ABC234', 'camera') ===
-      'http://192.168.1.42:3001/fast-direct/join/ABC234?role=camera'
+    'liens des 3 appareils générés (stats, bench, camera)',
+    linksModule.buildFastDirectInviteUrl('http://192.168.1.42:3001', 'ABC234', 'stats') ===
+      'http://192.168.1.42:3001/fast-direct/join/ABC234?role=stats' &&
+      linksModule.buildFastDirectInviteUrl('http://192.168.1.42:3001', 'ABC234', 'bench') ===
+        'http://192.168.1.42:3001/fast-direct/join/ABC234?role=bench' &&
+      linksModule.buildFastDirectInviteUrl('http://192.168.1.42:3001', 'ABC234', 'camera') ===
+        'http://192.168.1.42:3001/fast-direct/join/ABC234?role=camera'
+  );
+  check(
+    'anciens alias distribution / viewer normalisés',
+    linksModule.normalizeFastDirectRole('distribution') === 'stats' &&
+      linksModule.normalizeFastDirectRole('viewer') === 'bench'
   );
 
   const shareHtml = renderToString(
@@ -137,35 +210,57 @@ try {
   );
 
   const joinPage = (await vite.ssrLoadModule('/src/pages/FastDirectJoinPage.jsx')).default;
-  const joinHtml = renderToString(
-    React.createElement(MemoryRouter, { initialEntries: ['/fast-direct/join/ABC234?role=viewer'] },
+  const joinBenchHtml = renderToString(
+    React.createElement(MemoryRouter, { initialEntries: ['/fast-direct/join/ABC234?role=bench'] },
+      React.createElement(joinPage, { user: { id: 1, name: 'Test' } })
+    )
+  );
+  const joinStatsHtml = renderToString(
+    React.createElement(MemoryRouter, { initialEntries: ['/fast-direct/join/ABC234?role=stats'] },
       React.createElement(joinPage, { user: { id: 1, name: 'Test' } })
     )
   );
   check(
-    'page de lien rendue avec le rôle',
-    joinHtml.includes('Invitation Fast Direct') && joinHtml.includes('Banc / Coach')
+    'page de lien rendue avec les rôles bench et stats',
+    joinBenchHtml.includes('Banc (Tablette)') &&
+      joinStatsHtml.includes('Appareil Stats')
   );
 
-  const page = (await vite.ssrLoadModule('/src/pages/FastDirectPage.jsx')).default;
+  const pageModule = await vite.ssrLoadModule('/src/pages/FastDirectPage.jsx');
   const pageHtml = renderToString(
-    React.createElement(MemoryRouter, null, React.createElement(page, {
+    React.createElement(MemoryRouter, null, React.createElement(pageModule.default, {
       user: { id: 1, name: 'Test' },
       onLogout: noop,
     }))
   );
   check('page de session rendue pendant le chargement', pageHtml.includes('Chargement de la session Fast Direct'));
+  check(
+    'résolution des rôles et vues d’appareils',
+    pageModule.resolveDeviceMode('statistician', 'bench') === 'bench' &&
+      pageModule.resolveDeviceMode('stats', '') === 'stats' &&
+      pageModule.resolveDeviceMode('bench', 'stats') === 'bench' &&
+      pageModule.resolveDeviceMode('viewer', 'stats') === 'bench' &&
+      pageModule.resolveDeviceMode('camera', 'stats') === 'camera'
+  );
 
   const bench = (await vite.ssrLoadModule('/src/features/fast-direct/components/FastDirectBench.jsx')).default;
   const benchHtml = renderToString(
     React.createElement(MemoryRouter, null, React.createElement(bench, {
       session,
       user: { id: 1, name: 'Test' },
-      role: 'viewer',
+      role: 'bench',
       onLogout: noop,
     }))
   );
-  check('banc Fast Direct rendu', benchHtml.includes('Banc · lecture seule'));
+  check(
+    'banc tablette Fast Direct rendu avec exactement 2 onglets et P1–P6',
+    benchHtml.includes('Banc · lecture seule') &&
+      benchHtml.includes('Distribution P1–P6') &&
+      benchHtml.includes('>Stats<') &&
+      benchHtml.includes('P1') &&
+      benchHtml.includes('P6') &&
+      benchHtml.includes('mode=bench&amp;session=fd_render')
+  );
 
   const cameraPanel = (await vite.ssrLoadModule('/src/components/LiveCameraPanel.jsx')).default;
   const panelHtml = renderToString(
@@ -190,6 +285,19 @@ try {
       cameraHtml.includes('Démarrer la caméra') &&
       cameraHtml.includes('Caméra utilisée') &&
       cameraHtml.includes('Actualiser')
+  );
+
+  const statsPage = (await vite.ssrLoadModule('/src/pages/StatsFastDirectPage.jsx')).default;
+  const statsHtml = renderToString(
+    React.createElement(
+      MemoryRouter,
+      null,
+      React.createElement(statsPage, { user: { id: 1, name: 'Test' }, onLogout: noop })
+    )
+  );
+  check(
+    'app Stats Fast Direct rendue dans Pancake',
+    statsHtml.includes('Stats Fast Direct') && statsHtml.includes('stats-fast-direct/index.html')
   );
 } catch (err) {
   failures += 1;

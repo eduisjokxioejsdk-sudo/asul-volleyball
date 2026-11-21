@@ -198,9 +198,11 @@ export const liveAPI = {
   finalizeRecording: (sessionId, body = {}) => api.post(`/live/${sessionId}/finalize-recording`, body, { timeout: 0 }),
   // Partage à distance (synchronisation cloud du match en direct).
   sync: () => api.post('/live/sync'),
-  // Fast Direct : état de distribution propre à la session.
+  // Fast Direct : état de distribution et état des autres stats propres à la session.
   getFastDirectState: (sessionId) => api.get(`/live/${sessionId}/fast-direct`),
   saveFastDirectState: (sessionId, payload) => api.put(`/live/${sessionId}/fast-direct`, payload),
+  getFastDirectStatsState: (sessionId) => api.get(`/live/${sessionId}/fast-direct-stats`),
+  saveFastDirectStatsState: (sessionId, payload) => api.put(`/live/${sessionId}/fast-direct-stats`, payload),
 };
 
 // Montages vidéo (Chantier 5 : export compilations d'actions / rallies)

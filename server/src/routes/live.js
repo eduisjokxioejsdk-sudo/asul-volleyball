@@ -124,10 +124,57 @@ function fastDirectStateForResponse(session) {
   };
 }
 
-/** Le gros état de distribution n'est envoyé que par la route dédiée. */
+function canEditFastDirect(isOwner, member) {
+  return Boolean(
+    isOwner || ['stats', 'statistician', 'distribution'].includes(member?.role)
+  );
+}
+
+function normalizeFastDirectStatsState(raw) {
+  const state = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const serialized = JSON.stringify(state);
+  if (Buffer.byteLength(serialized, 'utf8') > FAST_DIRECT_MAX_STATE_BYTES) {
+    const error = new Error('État Stats Fast Direct trop volumineux.');
+    error.statusCode = 413;
+    throw error;
+  }
+  const array = (value) => (Array.isArray(value) ? value : []);
+  const out = {
+    v: Number(state.v) || 2,
+    players: array(state.players),
+    match:
+      state.match && typeof state.match === 'object' && !Array.isArray(state.match)
+        ? state.match
+        : {},
+    actions: array(state.actions),
+    archive: array(state.archive),
+    opp: array(state.opp),
+    oact: array(state.oact),
+  };
+  if (state.logo && typeof state.logo === 'object') {
+    out.logo = state.logo;
+  }
+  if (state.rows !== undefined) {
+    out.rows = state.rows;
+  }
+  return out;
+}
+
+function fastDirectStatsStateForResponse(session) {
+  const raw = safeParse(session.fast_direct_stats_state);
+  if (!raw) return null;
+  return {
+    ...raw,
+    revision: Number(session.fast_direct_stats_revision) || 0,
+    updatedAt: session.local_updated_at || null,
+    updatedByName: raw.updatedByName || '',
+  };
+}
+
+/** Les gros états Fast Direct ne sont envoyés que par leurs routes dédiées. */
 function withoutFastDirectState(session) {
   if (!session) return session;
-  const { fast_direct_state, ...rest } = session;
+  const { fast_direct_state, fast_direct_stats_state, ...rest } = session;
   return { ...rest, session_kind: session.session_kind || 'datavolley' };
 }
 
@@ -374,17 +421,14 @@ router.get('/:sessionId/fast-direct', authenticateToken, (req, res) => {
   });
 });
 
-// Enregistrement atomique : seul l'hôte ou l'appareil de distribution peut écrire.
+// Enregistrement atomique : seul l'hôte ou un appareil Stats / distribution peut écrire.
 router.put('/:sessionId/fast-direct', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
     if (session.session_kind !== 'fast_direct') {
       return res.status(409).json({ error: 'Cette session n’utilise pas le mode Fast Direct.' });
     }
     verifyAccess(session, req, res, (current, isOwner, member) => {
-      const canEdit = Boolean(
-        isOwner || member?.role === 'distribution' || member?.role === 'statistician'
-      );
-      if (!canEdit) {
+      if (!canEditFastDirect(isOwner, member)) {
         return res.status(403).json({ error: 'Consultation seule : modification non autorisée.' });
       }
 
@@ -442,6 +486,101 @@ router.put('/:sessionId/fast-direct', authenticateToken, (req, res) => {
             revision: nextRevision,
             updatedAt: now,
             updatedByName: stored.updatedByName,
+            clientId: req.body?.clientId || null,
+          });
+          touchLiveSession(current.id);
+          res.json({
+            state: stored,
+            revision: nextRevision,
+            updatedAt: now,
+            updatedByName: stored.updatedByName,
+          });
+        }
+      );
+    });
+  });
+});
+
+// État des autres stats Fast Direct (Volley Stats) : lecture pour tous les rôles de la session.
+router.get('/:sessionId/fast-direct-stats', authenticateToken, (req, res) => {
+  loadSession(req.params.sessionId, res, (session) => {
+    if (session.session_kind !== 'fast_direct') {
+      return res.status(409).json({ error: 'Cette session n’utilise pas le mode Fast Direct.' });
+    }
+    verifyAccess(session, req, res, () => {
+      res.json({
+        state: fastDirectStatsStateForResponse(session),
+        revision: Number(session.fast_direct_stats_revision) || 0,
+      });
+    });
+  });
+});
+
+// Enregistrement atomique des autres stats Fast Direct : réservé aux appareils Stats / hôte.
+router.put('/:sessionId/fast-direct-stats', authenticateToken, (req, res) => {
+  loadSession(req.params.sessionId, res, (session) => {
+    if (session.session_kind !== 'fast_direct') {
+      return res.status(409).json({ error: 'Cette session n’utilise pas le mode Fast Direct.' });
+    }
+    verifyAccess(session, req, res, (current, isOwner, member) => {
+      if (!canEditFastDirect(isOwner, member)) {
+        return res.status(403).json({ error: 'Consultation seule : modification non autorisée.' });
+      }
+
+      let state;
+      try {
+        state = normalizeFastDirectStatsState(req.body?.state);
+      } catch (err) {
+        return res.status(err.statusCode || 400).json({ error: err.message || 'État stats invalide.' });
+      }
+
+      const baseRevision = Math.max(
+        0,
+        Number(req.body?.baseRevision ?? req.body?.state?.revision) || 0
+      );
+      const currentRevision = Number(current.fast_direct_stats_revision) || 0;
+      if (baseRevision !== currentRevision) {
+        return res.status(409).json({
+          error: 'Une version plus récente des stats est déjà enregistrée sur l’hôte.',
+          state: fastDirectStatsStateForResponse(current),
+          revision: currentRevision,
+        });
+      }
+
+      const nextRevision = currentRevision + 1;
+      const now = new Date().toISOString();
+      const stored = {
+        ...state,
+        revision: nextRevision,
+        updatedAt: now,
+        updatedByName: (member?.nickname || req.user.name || 'Stats').trim(),
+      };
+
+      db.run(
+        `UPDATE live_sessions
+            SET fast_direct_stats_state = ?, fast_direct_stats_revision = ?, dirty = 1, local_updated_at = ?
+          WHERE id = ? AND COALESCE(fast_direct_stats_revision, 0) = ?`,
+        [JSON.stringify(stored), nextRevision, now, current.id, currentRevision],
+        function (err) {
+          if (err) return res.status(500).json({ error: 'Database error' });
+          if (this.changes !== 1) {
+            db.get('SELECT * FROM live_sessions WHERE id = ?', [current.id], (readErr, latest) => {
+              if (readErr || !latest) {
+                return res.status(409).json({ error: 'Conflit de version Stats Fast Direct.' });
+              }
+              return res.status(409).json({
+                error: 'Une version plus récente des stats est déjà enregistrée sur l’hôte.',
+                state: fastDirectStatsStateForResponse(latest),
+                revision: Number(latest.fast_direct_stats_revision) || 0,
+              });
+            });
+            return;
+          }
+          emitToSession(current.id, 'fast-direct:stats-update', {
+            revision: nextRevision,
+            updatedAt: now,
+            updatedByName: stored.updatedByName,
+            clientId: req.body?.clientId || null,
           });
           touchLiveSession(current.id);
           res.json({
@@ -489,7 +628,7 @@ router.post('/join', authenticateToken, (req, res) => {
     const memberRole = isFastDirect
       ? (isSessionOwner
         ? 'statistician'
-        : (['viewer', 'distribution', 'camera'].includes(role) ? role : 'viewer'))
+        : (['stats', 'bench', 'camera', 'viewer', 'distribution'].includes(role) ? role : 'bench'))
       : (role === 'viewer' ? 'viewer' : role === 'camera' ? 'camera' : 'statistician');
     const memberNickname = (nickname || req.user.name || 'Membre').trim();
     const memberAssignment = memberRole === 'camera'
@@ -766,7 +905,7 @@ router.put('/:sessionId/members/:memberId', authenticateToken, (req, res) => {
           }
 
           const allowedRoles = session.session_kind === 'fast_direct'
-            ? ['viewer', 'distribution', 'camera', 'statistician']
+            ? ['stats', 'bench', 'camera', 'viewer', 'distribution', 'statistician']
             : ['viewer', 'statistician', 'camera'];
           const newRole = allowedRoles.includes(role) ? role : member.role;
           const newNickname = nickname ? nickname : member.nickname;
@@ -1266,7 +1405,8 @@ router.put('/:sessionId/video-delay', authenticateToken, (req, res) => {
   loadSession(req.params.sessionId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
       const canAdjustBenchCamera =
-        s.session_kind === 'fast_direct' && member?.role === 'viewer';
+        s.session_kind === 'fast_direct' &&
+        ['viewer', 'bench', 'stats', 'distribution', 'camera', 'statistician'].includes(member?.role);
       if (
         !isOwner &&
         member?.role !== 'camera' &&

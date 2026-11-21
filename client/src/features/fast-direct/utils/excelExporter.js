@@ -564,7 +564,7 @@ function updateSetterSheetXml(xmlString, filteredRows, sharedStringsCtx) {
 }
 
 export async function exportWorkbookIdenticalToOriginal(rows, sheetConfigs = []) {
-  const resp = await fetch('/fast-direct/template_original.xlsx');
+  const resp = await fetch(`${import.meta.env.BASE_URL}fast-direct/template_original.xlsx`);
   if (!resp.ok) {
     throw new Error('Impossible de charger le modèle Excel original.');
   }

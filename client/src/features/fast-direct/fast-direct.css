@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :where(.fast-direct-root :not(.app-global-nav):not(.app-global-nav *):not(.live-camera):not(.live-camera *)) {
+    border-style: solid;
+    border-width: 0;
+  }
+
+  :where(.fast-direct-root button:not(.app-global-nav *):not(.live-camera *)) {
+    cursor: pointer;
+    background-color: transparent;
+  }
+}
+
 .fast-direct-root {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;

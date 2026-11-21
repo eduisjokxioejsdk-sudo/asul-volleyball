@@ -74,6 +74,13 @@ const TABS = [
     isActive: (p) => p === '/fast-direct' || p.startsWith('/fast-direct/'),
   },
   {
+    key: 'stats-fast-direct',
+    path: '/stats-fast-direct',
+    label: 'Stats',
+    hint: 'Stats Fast Direct — match live, équipe, joueurs et exports',
+    isActive: (p) => p === '/stats-fast-direct' || p.startsWith('/stats-fast-direct/'),
+  },
+  {
     key: 'video-center',
     path: '/video-center',
     label: 'Vidéo',

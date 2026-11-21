@@ -1,8 +1,21 @@
 {
-  "version": "3.24.1",
-  "releasedAt": "2026-11-17",
+  "version": "3.24.2",
+  "releasedAt": "2026-11-21",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.24.2",
+      "date": "2026-11-21",
+      "title": "Fast Direct : saisie accélérée (F et - automatiques) et application Stats",
+      "items": [
+        "La prise de distribution Fast Direct enchaîne directement Récep & Passe → Annonce Central → Distribution : le type de service est enregistré automatiquement à F et le résultat d'attaque à -, ce qui supprime deux étapes de saisie",
+        "L'action est enregistrée dès le choix de la zone de distribution et l'écran revient directement à la réception suivante",
+        "Nouvelle application « Stats Fast Direct » accessible depuis le module 10 du Hub et l'onglet Stats : récap match, match live, statistiques équipe et joueurs, grille originale et historique",
+        "L'application Stats propose les exports Excel, PDF et CSV, la sauvegarde / restauration JSON et la remise à zéro, avec un fonctionnement hors ligne (PWA)",
+        "Ajout d'un outil d'analyse autonome Fast Direct (fast-direct-analytics) qui lit la sauvegarde JSON ou les sessions locales et calcule réception, distribution, attaquants, matchs et combinaisons",
+        "Validation : build client, rendus Fast Direct (dont la nouvelle page Stats), moteur et rendus de l'outil d'analyse, tests de synchronisation sans erreur"
+      ]
+    },
     {
       "version": "3.24.1",
       "date": "2026-11-17",

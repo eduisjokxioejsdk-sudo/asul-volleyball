@@ -383,6 +383,14 @@ function makeVideoRefCollection(spec) {
       const now = new Date().toISOString();
       const deleted = entry.deleted ? 1 : 0;
       const videoId = entry.video_uuid ? await ensureVideoByUuid(entry.video_uuid) : null;
+      // Une action ou un événement ne peut pas exister sans sa vidéo : la
+      // colonne `video_id` est NOT NULL en base locale. Quand la vidéo n'est pas
+      // (encore) connue sur ce poste — lien YouTube absent, vidéo pas encore
+      // synchronisée — l'entrée est ignorée au lieu de faire échouer toute la
+      // passe de synchronisation (« SQLITE_CONSTRAINT: NOT NULL constraint
+      // failed: volley_actions.video_id »). La ligne sera reprise à la passe
+      // suivante, une fois la vidéo arrivée.
+      if (!videoId) return null;
       const assignments = spec.fields.map((f) => `${f} = ?`).join(', ');
       const values = spec.fields.map((f) => entry[f]);
       if (entry.localId) {
@@ -922,6 +930,8 @@ const LIVE_COMPARE_FIELDS = [
   'session_kind',
   'fast_direct_state',
   'fast_direct_revision',
+  'fast_direct_stats_state',
+  'fast_direct_stats_revision',
   'deleted_at',
   'deleted_items',
   'members',
@@ -1029,6 +1039,24 @@ function mergeLiveSession(local, remote, localWins) {
     localWins
   ).sort((a, b) => (Number(a.set_number) || 1) - (Number(b.set_number) || 1));
 
+  const localFdRev = Number(local.fast_direct_revision) || 0;
+  const remoteFdRev = Number(remote.fast_direct_revision) || 0;
+  const pickedFdState =
+    localFdRev > remoteFdRev
+      ? (local.fast_direct_state ?? remote.fast_direct_state ?? null)
+      : remoteFdRev > localFdRev
+      ? (remote.fast_direct_state ?? local.fast_direct_state ?? null)
+      : (winner.fast_direct_state ?? loser.fast_direct_state ?? null);
+
+  const localStatsRev = Number(local.fast_direct_stats_revision) || 0;
+  const remoteStatsRev = Number(remote.fast_direct_stats_revision) || 0;
+  const pickedStatsState =
+    localStatsRev > remoteStatsRev
+      ? (local.fast_direct_stats_state ?? remote.fast_direct_stats_state ?? null)
+      : remoteStatsRev > localStatsRev
+      ? (remote.fast_direct_stats_state ?? local.fast_direct_stats_state ?? null)
+      : (winner.fast_direct_stats_state ?? loser.fast_direct_stats_state ?? null);
+
   return {
     id: local.id || remote.sync_uuid,
     sync_uuid: String(remote.sync_uuid || local.sync_uuid || local.id),
@@ -1051,11 +1079,10 @@ function mergeLiveSession(local, remote, localWins) {
         : JSON.stringify(parseJsonArray(winner.point_completed)),
     video_delay: Number.isFinite(Number(winner.video_delay)) ? Number(winner.video_delay) : 8,
     session_kind: winner.session_kind || loser.session_kind || 'datavolley',
-    fast_direct_state: winner.fast_direct_state ?? loser.fast_direct_state ?? null,
-    fast_direct_revision: Math.max(
-      Number(local.fast_direct_revision) || 0,
-      Number(remote.fast_direct_revision) || 0
-    ),
+    fast_direct_state: pickedFdState,
+    fast_direct_revision: Math.max(localFdRev, remoteFdRev),
+    fast_direct_stats_state: pickedStatsState,
+    fast_direct_stats_revision: Math.max(localStatsRev, remoteStatsRev),
     deleted_at: winner.deleted_at ?? null,
     created_at: local.created_at || remote.created_at || new Date().toISOString(),
     deleted_items: deletedItems,
@@ -1241,6 +1268,8 @@ const liveCollection = {
         session_kind: s.session_kind || 'datavolley',
         fast_direct_state: s.fast_direct_state || null,
         fast_direct_revision: Number(s.fast_direct_revision) || 0,
+        fast_direct_stats_state: s.fast_direct_stats_state || null,
+        fast_direct_stats_revision: Number(s.fast_direct_stats_revision) || 0,
         deleted_at: s.deleted_at || null,
         deleted_items: deletedItems,
         members: sessMembers,
@@ -1272,6 +1301,8 @@ const liveCollection = {
     session_kind: row.session_kind || 'datavolley',
     fast_direct_state: row.fast_direct_state || null,
     fast_direct_revision: Number(row.fast_direct_revision) || 0,
+    fast_direct_stats_state: row.fast_direct_stats_state || null,
+    fast_direct_stats_revision: Number(row.fast_direct_stats_revision) || 0,
     deleted_at: row.deleted_at || null,
     created_at: row.created_at || new Date().toISOString(),
     deleted_items: Array.isArray(row.deleted_items) ? row.deleted_items : parseJsonArray(row.deleted_items),
@@ -1404,6 +1435,12 @@ const liveCollection = {
         : typeof entry.fast_direct_state === 'string'
         ? entry.fast_direct_state
         : JSON.stringify(entry.fast_direct_state);
+    const fastDirectStatsStateStr =
+      entry.fast_direct_stats_state == null
+        ? null
+        : typeof entry.fast_direct_stats_state === 'string'
+        ? entry.fast_direct_stats_state
+        : JSON.stringify(entry.fast_direct_stats_state);
 
     if (existingSession) {
       await runAsync(
@@ -1476,12 +1513,15 @@ const liveCollection = {
 
     await runAsync(
       `UPDATE live_sessions
-          SET session_kind = ?, fast_direct_state = ?, fast_direct_revision = ?
+          SET session_kind = ?, fast_direct_state = ?, fast_direct_revision = ?,
+              fast_direct_stats_state = ?, fast_direct_stats_revision = ?
         WHERE id = ?`,
       [
         entry.session_kind === 'fast_direct' ? 'fast_direct' : 'datavolley',
         fastDirectStateStr,
         Number(entry.fast_direct_revision) || 0,
+        fastDirectStatsStateStr,
+        Number(entry.fast_direct_stats_revision) || 0,
         sessionId,
       ]
     );

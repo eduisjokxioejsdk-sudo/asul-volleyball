@@ -17,6 +17,7 @@ function MiniMetricBox({
   decimalMode,
   highlightRed = false,
   hidden = false,
+  fullWidth = false,
 }) {
   if (hidden) {
     return (
@@ -34,7 +35,7 @@ function MiniMetricBox({
 
   return (
     <div
-      className={`relative grid grid-cols-3 text-[10px] leading-tight text-black border border-black/80 ${
+      className={`relative grid grid-cols-3 ${fullWidth ? 'text-xs' : 'text-[10px]'} leading-tight text-black border border-black/80 ${
         highlightRed ? 'ring-2 ring-red-600 ring-offset-0 rounded-sm z-10' : ''
       }`}
     >
@@ -94,7 +95,7 @@ function MiniMetricBox({
   );
 }
 
-function DistributionCourtTable({
+export function DistributionCourtTable({
   headerTitle,
   centerBadge,
   gridData,
@@ -102,6 +103,7 @@ function DistributionCourtTable({
   showRedHighlights,
   visibleFrontKeys = ['EN2', 'FIX_ARR', 'FIX_AV', 'DECA', 'EN4'],
   setterMarkerPos = null, // e.g. '1','6','5','9','8A','8','8C','7','2','3A','3','3C','4'
+  fullWidth = false,
 }) {
   const z = gridData.zones;
   const maxDis = useMemo(() => {
@@ -119,19 +121,19 @@ function DistributionCourtTable({
 
   return (
     <div
-      className="flex flex-col border-2 border-black text-black shadow-md select-none shrink-0"
-      style={{ backgroundColor: EXCEL_GREEN, width: '360px' }}
+      className={`flex flex-col border-2 border-black text-black shadow-md select-none ${fullWidth ? 'w-full' : 'shrink-0'}`}
+      style={{ backgroundColor: EXCEL_GREEN, ...(fullWidth ? {} : { width: '360px' }) }}
     >
       {/* Top Header Row */}
       <div className="flex items-center justify-between border-b border-black/50">
         <div
-          className="px-2 py-0.5 text-[11px] font-bold"
+          className={`px-2 py-0.5 ${fullWidth ? 'text-xs' : 'text-[11px]'} font-bold`}
           style={{ backgroundColor: EXCEL_GRAY }}
         >
           {headerTitle}
         </div>
         {centerBadge && (
-          <div className="mr-3 rounded border border-black/40 bg-white/75 px-2 py-0.5 text-[11px] font-black text-black">
+          <div className={`mr-3 rounded border border-black/40 bg-white/75 px-2 py-0.5 ${fullWidth ? 'text-xs' : 'text-[11px]'} font-black text-black`}>
             {centerBadge}
           </div>
         )}
@@ -172,6 +174,7 @@ function DistributionCourtTable({
             zoneData={z.EN1}
             decimalMode={decimalMode}
             highlightRed={isTopZone('EN1')}
+            fullWidth={fullWidth}
           />
           <div />
           <MiniMetricBox
@@ -179,6 +182,7 @@ function DistributionCourtTable({
             zoneData={z.PIPE}
             decimalMode={decimalMode}
             highlightRed={isTopZone('PIPE')}
+            fullWidth={fullWidth}
           />
           <div />
           <MiniMetricBox
@@ -186,6 +190,7 @@ function DistributionCourtTable({
             zoneData={z.autres}
             decimalMode={decimalMode}
             highlightRed={isTopZone('autres')}
+            fullWidth={fullWidth}
           />
         </div>
 
@@ -225,6 +230,7 @@ function DistributionCourtTable({
             decimalMode={decimalMode}
             highlightRed={isTopZone('EN2')}
             hidden={!visibleFrontKeys.includes('EN2')}
+            fullWidth={fullWidth}
           />
           <MiniMetricBox
             title="FIX ARR"
@@ -232,6 +238,7 @@ function DistributionCourtTable({
             decimalMode={decimalMode}
             highlightRed={isTopZone('FIX_ARR')}
             hidden={!visibleFrontKeys.includes('FIX_ARR')}
+            fullWidth={fullWidth}
           />
           <MiniMetricBox
             title="FIX AV"
@@ -239,6 +246,7 @@ function DistributionCourtTable({
             decimalMode={decimalMode}
             highlightRed={isTopZone('FIX_AV')}
             hidden={!visibleFrontKeys.includes('FIX_AV')}
+            fullWidth={fullWidth}
           />
           <MiniMetricBox
             title="DECA"
@@ -246,6 +254,7 @@ function DistributionCourtTable({
             decimalMode={decimalMode}
             highlightRed={isTopZone('DECA')}
             hidden={!visibleFrontKeys.includes('DECA')}
+            fullWidth={fullWidth}
           />
           <MiniMetricBox
             title="EN 4"
@@ -253,13 +262,14 @@ function DistributionCourtTable({
             decimalMode={decimalMode}
             highlightRed={isTopZone('EN4')}
             hidden={!visibleFrontKeys.includes('EN4')}
+            fullWidth={fullWidth}
           />
         </div>
       </div>
 
       {/* Footer Row 18: TOTAL ACTIONS | ACTIONS # | EFF */}
       <div
-        className="grid grid-cols-12 items-center border-t border-black text-[10px] font-bold"
+        className={`grid grid-cols-12 items-center border-t border-black ${fullWidth ? 'text-xs' : 'text-[10px]'} font-bold`}
         style={{ backgroundColor: EXCEL_GREEN }}
       >
         <div className="col-span-3 px-1.5 py-1 truncate">TOTAL ACTIONS</div>
@@ -279,10 +289,10 @@ function DistributionCourtTable({
   );
 }
 
-function OrgaBaseSubTable({ title, baseData, decimalMode, highlightRed = false }) {
+function OrgaBaseSubTable({ title, baseData, decimalMode, highlightRed = false, fullWidth = false }) {
   return (
     <div
-      className={`border border-black/80 text-[10px] leading-tight text-black ${
+      className={`border border-black/80 ${fullWidth ? 'text-xs' : 'text-[10px]'} leading-tight text-black ${
         highlightRed ? 'ring-2 ring-red-600 rounded-sm' : ''
       }`}
     >
@@ -365,21 +375,21 @@ function OrgaBaseSubTable({ title, baseData, decimalMode, highlightRed = false }
   );
 }
 
-function OrgaCourtTable({ rotLabel, orgaData, decimalMode, showRedHighlights }) {
+export function OrgaCourtTable({ rotLabel, orgaData, decimalMode, showRedHighlights, fullWidth = false }) {
   return (
     <div
-      className="flex flex-col border-2 border-black text-black shadow-md select-none shrink-0"
-      style={{ backgroundColor: EXCEL_GREEN, width: '360px' }}
+      className={`flex flex-col border-2 border-black text-black shadow-md select-none ${fullWidth ? 'w-full' : 'shrink-0'}`}
+      style={{ backgroundColor: EXCEL_GREEN, ...(fullWidth ? {} : { width: '360px' }) }}
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-black/50">
         <div
-          className="px-2 py-0.5 text-[11px] font-bold"
+          className={`px-2 py-0.5 ${fullWidth ? 'text-xs' : 'text-[11px]'} font-bold`}
           style={{ backgroundColor: EXCEL_GRAY }}
         >
           Organisation offensive
         </div>
-        <div className="mr-3 rounded border border-black/40 bg-white/75 px-2 py-0.5 text-[11px] font-black text-black">
+        <div className={`mr-3 rounded border border-black/40 bg-white/75 px-2 py-0.5 ${fullWidth ? 'text-xs' : 'text-[11px]'} font-black text-black`}>
           {rotLabel}
         </div>
       </div>
@@ -387,7 +397,7 @@ function OrgaCourtTable({ rotLabel, orgaData, decimalMode, showRedHighlights }) 
       {/* BASE 0 centered */}
       <div className="px-1.5 pt-2 pb-1">
         <div className="grid grid-cols-3 gap-1 items-end">
-          <div className="flex flex-col items-end justify-end pr-1 text-[10px] font-bold leading-tight pb-0.5">
+          <div className={`flex flex-col items-end justify-end pr-1 ${fullWidth ? 'text-xs' : 'text-[10px]'} font-bold leading-tight pb-0.5`}>
             <span>Q</span>
             <span>#</span>
           </div>
@@ -396,6 +406,7 @@ function OrgaCourtTable({ rotLabel, orgaData, decimalMode, showRedHighlights }) 
             baseData={orgaData.base0}
             decimalMode={decimalMode}
             highlightRed={showRedHighlights && (orgaData.base0.pctBase ?? 0) >= 0.35}
+            fullWidth={fullWidth}
           />
           <div />
         </div>
@@ -409,25 +420,28 @@ function OrgaCourtTable({ rotLabel, orgaData, decimalMode, showRedHighlights }) 
             baseData={orgaData.base2}
             decimalMode={decimalMode}
             highlightRed={showRedHighlights && (orgaData.base2.pctBase ?? 0) >= 0.35}
+            fullWidth={fullWidth}
           />
           <OrgaBaseSubTable
             title="BASE 1"
             baseData={orgaData.base1}
             decimalMode={decimalMode}
             highlightRed={showRedHighlights && (orgaData.base1.pctBase ?? 0) >= 0.35}
+            fullWidth={fullWidth}
           />
           <OrgaBaseSubTable
             title="BASE 7"
             baseData={orgaData.base7}
             decimalMode={decimalMode}
             highlightRed={showRedHighlights && (orgaData.base7.pctBase ?? 0) >= 0.35}
+            fullWidth={fullWidth}
           />
         </div>
       </div>
 
       {/* Footer */}
       <div
-        className="grid grid-cols-12 items-center border-t border-black text-[10px] font-bold"
+        className={`grid grid-cols-12 items-center border-t border-black ${fullWidth ? 'text-xs' : 'text-[10px]'} font-bold`}
         style={{ backgroundColor: EXCEL_GREEN }}
       >
         <div className="col-span-3 px-1.5 py-1 truncate">TOTAL ACTIONS</div>

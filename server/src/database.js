@@ -252,6 +252,8 @@ db.serialize(() => {
     session_kind TEXT DEFAULT 'datavolley',
     fast_direct_state TEXT,
     fast_direct_revision INTEGER DEFAULT 0,
+    fast_direct_stats_state TEXT,
+    fast_direct_stats_revision INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
@@ -682,6 +684,12 @@ db.serialize(() => {
     }
     if (names.length > 0 && !names.includes('fast_direct_revision')) {
       db.run('ALTER TABLE live_sessions ADD COLUMN fast_direct_revision INTEGER DEFAULT 0');
+    }
+    if (names.length > 0 && !names.includes('fast_direct_stats_state')) {
+      db.run('ALTER TABLE live_sessions ADD COLUMN fast_direct_stats_state TEXT');
+    }
+    if (names.length > 0 && !names.includes('fast_direct_stats_revision')) {
+      db.run('ALTER TABLE live_sessions ADD COLUMN fast_direct_stats_revision INTEGER DEFAULT 0');
     }
   });
 

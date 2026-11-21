@@ -1,40 +1,48 @@
 import React, { useEffect, useState } from 'react';
 import {
+  BarChart3,
   Camera,
   Check,
   Code2,
   Copy,
-  Database,
   ExternalLink,
-  Eye,
   Link2,
+  Tablet,
   X,
 } from 'lucide-react';
 import { systemAPI } from '../../../services/api';
 
 const ROLE_LINKS = [
   {
-    id: 'distribution',
-    label: 'Prise de distribution',
-    description: 'Saisie et correction',
-    icon: Database,
+    id: 'stats',
+    label: 'Appareil Stats',
+    description: 'Distribution, Autres stats et Caméra (accès à tous les onglets)',
+    icon: BarChart3,
     tone: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200',
   },
   {
-    id: 'viewer',
-    label: 'Banc / Coach',
-    description: 'Consultation seule',
-    icon: Eye,
+    id: 'bench',
+    label: 'Banc (Tablette)',
+    description: 'Distribution adverse P1–P6 et Stats en direct',
+    icon: Tablet,
     tone: 'border-amber-500/40 bg-amber-500/10 text-amber-200',
   },
   {
     id: 'camera',
     label: 'Caméra',
-    description: 'Filmer le terrain',
+    description: 'Filmer le terrain en direct',
     icon: Camera,
     tone: 'border-rose-500/40 bg-rose-500/10 text-rose-200',
   },
 ];
+
+export function normalizeFastDirectRole(role) {
+  const raw = String(role || '').trim().toLowerCase();
+  if (raw === 'stats' || raw === 'distribution' || raw === 'statistician') return 'stats';
+  if (raw === 'camera') return 'camera';
+  if (raw === 'bench' || raw === 'viewer') return 'bench';
+  return 'bench';
+}
 
 function isLoopback(hostname) {
   return ['localhost', '127.0.0.1', '::1'].includes(String(hostname || '').toLowerCase());
@@ -57,7 +65,7 @@ export function resolveInviteBase(currentOrigin, networkUrl) {
 export function buildFastDirectInviteUrl(base, joinCode, role) {
   const cleanBase = String(base || 'http://localhost').replace(/\/+$/, '');
   const code = encodeURIComponent(String(joinCode || '').trim().toUpperCase());
-  const cleanRole = ['distribution', 'viewer', 'camera'].includes(role) ? role : 'viewer';
+  const cleanRole = normalizeFastDirectRole(role);
   return `${cleanBase}/fast-direct/join/${code}?role=${cleanRole}`;
 }
 

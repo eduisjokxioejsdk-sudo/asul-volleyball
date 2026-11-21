@@ -132,6 +132,33 @@ db.waitReady(() => {
     }
   });
 
+  // Erreur de démarrage (port déjà pris, droits insuffisants…) : sans ce
+  // gestionnaire, Node émet un événement `error` non capturé qui laissait le
+  // processus vivant mais SANS serveur — l'application affichait « le serveur
+  // s'est arrêté » sans jamais expliquer pourquoi. On affiche donc la cause en
+  // clair et on quitte avec un code d'erreur, que l'appelant peut interpréter.
+  server.on('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(
+        `[ASUL] Impossible de démarrer : le port ${PORT} est déjà utilisé. ` +
+          'Un autre serveur Pancake Stats (ou une autre application) l’occupe déjà. ' +
+          'Fermez-le, ou choisissez un autre port avec la variable PORT.'
+      );
+    } else if (err && err.code === 'EACCES') {
+      console.error(
+        `[ASUL] Impossible de démarrer : accès refusé au port ${PORT}. ` +
+          'Choisissez un port supérieur à 1024 avec la variable PORT.'
+      );
+    } else {
+      console.error(`[ASUL] Impossible de démarrer le serveur sur ${HOST}:${PORT} :`, err);
+    }
+    process.exitCode = 1;
+    // Laisse les messages ci-dessus atteindre la console / le journal avant l'arrêt
+    // (le minuteur n'est volontairement pas « unref » : il doit maintenir le
+    // processus en vie le temps que la sortie d'erreur soit écrite).
+    setTimeout(() => process.exit(1), 150);
+  });
+
   // Initialise Socket.IO pour le mode "match en direct" (multi-appareils).
   initSocket(server);
 

@@ -70,7 +70,7 @@ const MODES = [
     num: '07',
     key: 'fast-direct',
     title: 'Fast Direct',
-    desc: 'Prise de distribution au bord du terrain, banc en lecture seule et caméra, sans codage DataVolley.',
+    desc: '3 appareils en direct : Stats (Distribution + Autres stats + Caméra), Banc tablette (P1–P6 & Stats) et Caméra.',
     cta: 'Ouvrir Fast Direct',
     accent: '#f43f5e',
     path: '/fast-direct',
@@ -92,6 +92,15 @@ const MODES = [
     cta: 'S’entraîner',
     accent: '#f59e0b',
     path: '/training',
+  },
+  {
+    num: '10',
+    key: 'stats-fast-direct',
+    title: 'Stats Fast Direct',
+    desc: 'Statistiques de match : points, attaques, réception, distribution, bilans équipe et joueurs, avec exports Excel, PDF et CSV.',
+    cta: 'Ouvrir Stats',
+    accent: '#0d9488',
+    path: '/stats-fast-direct',
   },
 ];
 

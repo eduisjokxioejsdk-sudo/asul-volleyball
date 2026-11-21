@@ -951,11 +951,6 @@
         <span id="setterButtons"></span>
         <button id="lineupBtn" class="btn-sm tone-purple" type="button">6 de départ</button>
       </div>
-      <div class="topbar-group">
-        <span class="ctx-label">Rotation</span>
-        <span id="rotationButtons"></span>
-        <button id="nextRotBtn" class="btn-sm tone-sky" type="button">Tourner</button>
-      </div>
     </div>
 
     <!-- Stepper -->
@@ -1163,7 +1158,7 @@
       var activeLineupSlot = 1;
 
       var draft = {
-        service: '',
+        service: 'F',
         zoneR: '',
         qualiteR: '',
         zoneP: '',
@@ -1533,7 +1528,7 @@
 
       function resetDraft() {
         draft = {
-          service: '',
+          service: 'F',
           zoneR: '',
           qualiteR: '',
           zoneP: '',
@@ -1548,15 +1543,14 @@
 
       function canGoToStep(targetStep) {
         if (targetStep === 1) return true;
-        if (targetStep === 2) return Boolean(draft.service);
-        if (targetStep === 3) return Boolean(draft.service && draft.zoneR && draft.qualiteR && draft.zoneP);
-        if (targetStep === 4) return Boolean(draft.service && draft.zoneR && draft.qualiteR && draft.zoneP && draft.baseOff);
-        if (targetStep === 5) return Boolean(draft.service && draft.zoneR && draft.qualiteR && draft.zoneP && draft.baseOff && draft.distribP);
+        if (targetStep === 2) return Boolean(selectedRotation);
+        if (targetStep === 3) return Boolean(selectedRotation && draft.zoneR && draft.qualiteR && draft.zoneP);
+        if (targetStep === 4) return Boolean(selectedRotation && draft.zoneR && draft.qualiteR && draft.zoneP && draft.baseOff);
         return false;
       }
 
       function saveCurrentAction(resCode) {
-        var effectiveRes = resCode || draft.resAtt || '';
+        var effectiveRes = resCode !== undefined ? resCode : (editingRowId !== null ? (draft.resAtt || '') : '');
         var effectiveMatch = String(selectedMatch || 'MATCH 1').trim().toUpperCase();
         var sCode = getActiveSetterCode();
         var lineupInfo = computeLineupAtRotation(appState.teamLineup, selectedRotation);
@@ -1719,15 +1713,7 @@
       }
 
       function renderContextBar() {
-        var rotHtml = '';
         var i;
-        for (i = 0; i < ROTATIONS.length; i++) {
-          var r = ROTATIONS[i];
-          var cls = 'rot-btn' + (selectedRotation === r ? ' active' : '');
-          rotHtml += '<button type="button" class="' + cls + '" data-rot="' + r + '">P' + r + '</button>';
-        }
-        byId('rotationButtons').innerHTML = rotHtml;
-
         var activeSetter = getActiveSetterCode();
         var setters = [];
         if (appState.setterList && appState.setterList.length > 0) {
@@ -1751,7 +1737,7 @@
 
       function renderStepper() {
         var steps = [
-          { num: 1, title: 'Service', val: draft.service || '' },
+          { num: 1, title: 'Position', val: selectedRotation ? ('P' + selectedRotation) : '' },
           {
             num: 2,
             title: 'Récep & Passe (2D)',
@@ -1760,8 +1746,7 @@
               : (draft.zoneR ? (draft.zoneR + (draft.qualiteR || '?')) : '')
           },
           { num: 3, title: 'Annonce Central', val: draft.baseOff ? ('B' + draft.baseOff) : '' },
-          { num: 4, title: 'Distribution (2D)', val: draft.distribP ? (draft.distribP + ' (#' + draft.joueur + ')') : '' },
-          { num: 5, title: 'Résultat', val: draft.resAtt || '' }
+          { num: 4, title: 'Distribution (2D)', val: draft.distribP ? (draft.distribP + ' (#' + draft.joueur + ')') : '' }
         ];
 
         var html = '';
@@ -1783,7 +1768,7 @@
         byId('stepper').innerHTML = html;
 
         var restartBtn = byId('restartActionBtn');
-        restartBtn.style.display = (draft.service || editingRowId !== null) ? 'inline-block' : 'none';
+        restartBtn.style.display = (draft.zoneR || editingRowId !== null) ? 'inline-block' : 'none';
       }
 
       function renderStepPanel() {
@@ -1797,16 +1782,17 @@
 
         if (currentStep === 1) {
           html += '<div style="text-align:center; margin-top:8px;">';
-          html += '<span class="pill-tag tone-indigo">Étape 1 / 5 • ' + (editingRowId !== null ? ('Modification ligne #' + editingRowId) : (escapeHtml(selectedMatch || 'MATCH 1') + ' • P' + selectedRotation)) + '</span>';
-          html += '<h2 class="panel-title" style="font-size:24px; margin-top:8px;">Quel type de SERVICE / BALLE ?</h2>';
-          html += '<p class="panel-sub">Touchez un bouton pour passer directement au terrain 2D (Réception & Passe)</p>';
+          html += '<span class="pill-tag tone-sky">Étape 1 / 4 • ' + (editingRowId !== null ? ('Modif #' + editingRowId) : (escapeHtml(selectedMatch || 'Match') + ' • Passeur #' + escapeHtml(getActiveSetterCode()))) + '</span>';
+          html += '<h2 class="panel-title" style="font-size:24px; margin-top:8px;">Quelle POSITION (Rotation) ?</h2>';
+          html += '<p class="panel-sub">Touchez la position du passeur pour démarrer la saisie</p>';
           html += '</div>';
 
           html += '<div class="row-flex" style="margin:12px auto; max-width:100%; width:100%;">';
-          for (i = 0; i < SERVICE_OPTIONS.length; i++) {
-            var s = SERVICE_OPTIONS[i];
-            var sel = draft.service === s.code ? ' selected-btn' : '';
-            html += '<div class="cell-2"><button type="button" class="big-btn tone-slate' + sel + '" style="min-height:195px; font-size:48px;" data-service="' + s.code + '">' + s.code + '<small>' + s.label + '</small></button></div>';
+          for (i = 0; i < ROTATIONS.length; i++) {
+            var rotCode = ROTATIONS[i];
+            var rotAct = selectedRotation === rotCode;
+            var rotCls = rotAct ? ' selected-btn' : ' tone-slate';
+            html += '<div class="cell-3"><button type="button" class="big-btn' + rotCls + '" style="min-height:175px; font-size:48px;" data-step-rot="' + rotCode + '">P' + rotCode + '<small>Passeur en zone ' + rotCode + '</small></button></div>';
           }
           html += '</div><div></div>';
         } else if (currentStep === 2) {
@@ -1819,7 +1805,7 @@
 
           html += '<div class="step-header">';
           html += '<div class="step-header-left">';
-          html += '<button type="button" class="btn-sm" data-goto-step="1">← Service (' + escapeHtml(draft.service) + ')</button>';
+          html += '<button type="button" class="btn-sm" data-goto-step="1">← Position (P' + escapeHtml(selectedRotation) + ')</button>';
           html += '<h2 class="panel-title" style="font-size:17px;">' + escapeHtml(headerTitle) + '</h2>';
           html += '</div>';
           if (step2Phase === 'passe') {
@@ -1936,7 +1922,7 @@
           html += '</div>';
 
           html += '<div style="text-align:center;">';
-          html += '<span class="pill-tag tone-sky">Étape 3 / 5</span>';
+          html += '<span class="pill-tag tone-sky">Étape 3 / 4</span>';
           html += '<h2 class="panel-title" style="font-size:24px; margin-top:8px;">Annonce du Central (BASE OFF)</h2>';
           html += '<p class="panel-sub">Quelle fixation annonce le central ? (Central avant actuel : <strong style="color:#d8b4fe;">#' + escapeHtml(centralNum) + '</strong>)</p>';
           html += '</div>';
@@ -1956,7 +1942,7 @@
           html += '<div class="step-header">';
           html += '<div class="step-header-left">';
           html += '<button type="button" class="btn-sm" data-goto-step="' + backTarget + '">← ' + escapeHtml(backLabel) + '</button>';
-          html += '<div><h2 class="panel-title" style="font-size:18px;">Étape 4 / 5 — Touchez où la passe est distribuée sur le terrain</h2>';
+          html += '<div><h2 class="panel-title" style="font-size:18px;">Étape 4 / 4 — Touchez où la passe est distribuée sur le terrain</h2>';
           html += '<p class="panel-sub">Le numéro du joueur attaquant est déterminé automatiquement selon la rotation P' + selectedRotation + '</p></div>';
           html += '</div></div>';
 
@@ -2018,33 +2004,6 @@
           html += '</div>';
 
           html += '</div></div>'; // close distrib-court & distrib-frame
-        } else if (currentStep === 5) {
-          var players = getAllPlayerNumbers();
-          html += '<div class="step-header">';
-          html += '<button type="button" class="btn-sm" data-goto-step="4">← Changer Passe (' + escapeHtml(draft.distribP) + ')</button>';
-          html += '<div class="player-override-bar">';
-          html += '<span style="font-size:12px; font-weight:700; color:#e9d5ff;">Attaquant auto :</span>';
-          html += '<span style="background:#9333ea; color:#fff; padding:2px 8px; border-radius:7px; font-weight:900;">#' + escapeHtml(draft.joueur || '?') + '</span>';
-          html += '<span style="font-size:11px; color:#94a3b8;">Changer :</span>';
-          for (i = 0; i < players.length; i++) {
-            var pNum = players[i];
-            html += '<button type="button" class="player-chip' + (draft.joueur === pNum ? ' active' : '') + '" data-player="' + escapeHtml(pNum) + '">' + escapeHtml(pNum) + '</button>';
-          }
-          html += '</div></div>';
-
-          html += '<div style="text-align:center;">';
-          html += '<span class="pill-tag tone-emerald">Étape 5 / 5 • Validation finale</span>';
-          html += '<h2 class="panel-title" style="font-size:24px; margin-top:8px;">Résultat de l\'attaque (#' + escapeHtml(draft.joueur || '?') + ' sur passe ' + escapeHtml(draft.distribP) + ')</h2>';
-          html += '<p class="panel-sub">Touchez le résultat : l\'action s\'enregistre et revient automatiquement à l\'Étape 1</p>';
-          html += '</div>';
-
-          html += '<div class="row-flex" style="margin:10px auto; max-width:100%; width:100%;">';
-          for (i = 0; i < RES_ATT_OPTIONS.length; i++) {
-            var ro = RES_ATT_OPTIONS[i];
-            var rSel = draft.resAtt === ro.code ? ' selected-btn' : '';
-            html += '<div class="cell-7"><button type="button" class="big-btn tone-' + ro.tone + rSel + '" style="min-height:220px; font-size:40px;" data-res="' + ro.code + '">' + ro.label + '<small>' + ro.sub + '</small></button></div>';
-          }
-          html += '</div><div></div>';
         }
 
         panel.innerHTML = html;
@@ -2207,23 +2166,6 @@
         renderLineupModal();
       });
 
-      byId('nextRotBtn').addEventListener('click', function () {
-        var idx = ROTATIONS.indexOf(selectedRotation);
-        selectedRotation = ROTATIONS[(idx + 1) % ROTATIONS.length];
-        selectedSetterOverride = '';
-        renderContextBar();
-        if (currentStep >= 3) renderStepPanel();
-      });
-
-      byId('rotationButtons').addEventListener('click', function (e) {
-        var btn = closestAttr(e.target, 'data-rot');
-        if (!btn) return;
-        selectedRotation = btn.getAttribute('data-rot');
-        selectedSetterOverride = '';
-        renderContextBar();
-        if (currentStep >= 3) renderStepPanel();
-      });
-
       byId('setterButtons').addEventListener('click', function (e) {
         var btn = closestAttr(e.target, 'data-setter');
         if (!btn) return;
@@ -2267,9 +2209,11 @@
           renderStepPanel();
           return;
         }
-        if ((v = target.getAttribute('data-service')) !== null) {
-          draft.service = v;
+        if ((v = target.getAttribute('data-step-rot')) !== null) {
+          selectedRotation = v;
+          selectedSetterOverride = '';
           currentStep = 2;
+          renderContextBar();
           renderStepper();
           renderStepPanel();
         } else if ((v = target.getAttribute('data-zoner')) !== null) {
@@ -2303,16 +2247,7 @@
           var lineupInfo = computeLineupAtRotation(appState.teamLineup, selectedRotation);
           var autoPlayer = resolveAttackerForDistrib(v, lineupInfo);
           if (autoPlayer) draft.joueur = autoPlayer;
-          currentStep = 5;
-          renderStepper();
-          renderStepPanel();
-        } else if ((v = target.getAttribute('data-player')) !== null) {
-          draft.joueur = v;
-          renderStepper();
-          renderStepPanel();
-        } else if ((v = target.getAttribute('data-res')) !== null) {
-          draft.resAtt = v;
-          saveCurrentAction(v);
+          saveCurrentAction(editingRowId !== null ? draft.resAtt : '');
         }
       });
 

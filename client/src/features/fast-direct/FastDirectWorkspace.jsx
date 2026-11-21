@@ -93,7 +93,7 @@ function uniquePush(base = [], extras = []) {
   return out;
 }
 
-export default function FastDirectWorkspace({ session, user, initialData = null }) {
+export default function FastDirectWorkspace({ session, user, initialData = null, embedded = false }) {
   const configuredSessionRef = useRef(null);
   if (configuredSessionRef.current !== session?.id) {
     configuredSessionRef.current = session?.id;
@@ -128,9 +128,11 @@ export default function FastDirectWorkspace({ session, user, initialData = null 
   const initialLineup = useMemo(() => {
     const saved = readJsonStorage(STORAGE_KEYS.LINEUP, null);
     if (saved && typeof saved === 'object' && Object.keys(saved).length > 0) return saved;
-    return initialData?.teamLineup && typeof initialData.teamLineup === 'object'
+    return initialData?.teamLineup &&
+      typeof initialData.teamLineup === 'object' &&
+      Object.keys(initialData.teamLineup).length > 0
       ? initialData.teamLineup
-      : {};
+      : DEFAULT_TEAM_LINEUP;
   }, []);
 
   const initialCloudMeta = useMemo(
@@ -237,7 +239,7 @@ export default function FastDirectWorkspace({ session, user, initialData = null 
       typeof remoteState.teamLineup === 'object' &&
       Object.keys(remoteState.teamLineup).length > 0
         ? remoteState.teamLineup
-        : {};
+        : DEFAULT_TEAM_LINEUP;
     const nextRev = Number(remoteState.revision) || 1;
 
     stateRef.current = {
@@ -1255,9 +1257,13 @@ export default function FastDirectWorkspace({ session, user, initialData = null 
   }, [rows, activeTab, customFilter]);
 
   return (
-    <div className="fast-direct-root min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div
+      className={`${
+        embedded ? 'flex flex-1 flex-col' : 'fast-direct-root min-h-screen flex flex-col'
+      } bg-slate-950 text-slate-100`}
+    >
       {/* HEADER PRINCIPAL */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 backdrop-blur-md">
+      <header className={`${embedded ? '' : 'sticky top-0 z-40 '}border-b border-slate-800 bg-slate-950/95 backdrop-blur-md`}>
         <div className="mx-auto max-w-[1680px] px-3 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-black">
@@ -1275,7 +1281,7 @@ export default function FastDirectWorkspace({ session, user, initialData = null 
 
           {/* Boutons Cloud / Import / Export / Reset */}
           <div className="flex flex-wrap items-center gap-2">
-            <FastDirectJoinLinks session={session} />
+            {!embedded && <FastDirectJoinLinks session={session} />}
             {/* Pilule d'état Cloud & Sauvegardes */}
             <button
               type="button"

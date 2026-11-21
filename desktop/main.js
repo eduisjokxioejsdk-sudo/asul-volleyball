@@ -41,9 +41,20 @@ const SERVER_LOG = path.join(LOG_DIR, 'server.log');
 
 // En installation : server/ client/ ffmpeg/ sont copiés dans resources/.
 // En développement : ils sont lus directement dans le dépôt.
-const SERVER_ENTRY = app.isPackaged
-  ? path.join(process.resourcesPath, 'server', 'src', 'index.js')
-  : path.join(__dirname, '..', 'server', 'src', 'index.js');
+//
+// Plusieurs emplacements sont essayés : selon la façon dont le paquet a été
+// construit, le serveur peut se trouver dans resources/server (extraResources)
+// ou dans resources/app.asar.unpacked/server. Le premier chemin existant est
+// retenu, ce qui évite un « Cannot find module » au démarrage si le paquet a
+// été produit avec l'autre disposition.
+const SERVER_ENTRY_CANDIDATES = app.isPackaged
+  ? [
+      path.join(process.resourcesPath, 'server', 'src', 'index.js'),
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'server', 'src', 'index.js'),
+    ]
+  : [path.join(__dirname, '..', 'server', 'src', 'index.js')];
+const SERVER_ENTRY =
+  SERVER_ENTRY_CANDIDATES.find((candidate) => fs.existsSync(candidate)) || SERVER_ENTRY_CANDIDATES[0];
 const SERVER_CWD = app.isPackaged
   ? path.join(process.resourcesPath, 'server')
   : path.join(__dirname, '..');
@@ -66,6 +77,9 @@ let mainWindow = null;
 let splashWindow = null;
 let serverProcess = null;
 let serverRestarts = 0;
+// Renseigné quand le serveur ne peut pas être lancé du tout (fichier absent) :
+// le démarrage s'arrête immédiatement au lieu d'attendre 60 s une réponse.
+let serverStartFailure = null;
 let quitting = false;
 // Arrêt volontaire (redémarrage manuel, changement de mode, restauration) :
 // empêche la relance automatique de s'appliquer à un arrêt demandé.
@@ -213,6 +227,33 @@ async function waitForServer(port, timeoutMs = 40000, onTick) {
 
 function startServer(port) {
   if (serverProcess) return;
+
+  // Le serveur embarqué est un vrai dossier sur le disque (un processus fils ne
+  // peut pas s'exécuter depuis l'archive asar). Si une installation ou une mise
+  // à jour incomplète l'a omis, on le signale explicitement : auparavant Node
+  // échouait avec « Cannot find module …\server\src\index.js » et l'application
+  // relançait cinq fois ce fichier absent avant d'afficher une erreur obscure.
+  if (!fs.existsSync(SERVER_ENTRY)) {
+    const detail =
+      `Le serveur embarqué est introuvable :\n${SERVER_ENTRY}\n\n` +
+      'L’installation de Pancake Stats est incomplète. ' +
+      'Réinstallez l’application avec l’installeur le plus récent, sans supprimer ' +
+      'le dossier de données (vos matchs et vidéos sont conservés).';
+    appendLog(`[ASUL] Serveur embarqué introuvable : ${SERVER_ENTRY}`);
+    appendLog('[ASUL] Installation incomplète : réinstallez Pancake Stats.');
+    setSplashState({
+      screen: 'error',
+      message: 'Installation incomplète',
+      detail: `${detail}\n\nJournal : ${SERVER_LOG}`,
+    });
+    if (!process.argv.includes('--smoke-test')) {
+      dialog.showErrorBox('Pancake Stats — installation incomplète', detail);
+    }
+    serverStartFailure = detail;
+    return;
+  }
+
+  serverStartFailure = null;
 
   // Pré-remplit la config Supabase embarquée (premier lancement uniquement).
   seedSyncConfig();
@@ -605,6 +646,10 @@ async function boot(options = {}) {
     }
     serverRestarts = 0;
     startServer(port);
+
+    // Serveur embarqué absent : l'erreur explicite est déjà affichée, inutile
+    // d'attendre une minute une réponse qui ne viendra jamais.
+    if (serverStartFailure) return;
 
     const ready = await waitForServer(port, 60000, (attempt) => {
       setSplashState({
