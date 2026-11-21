@@ -287,6 +287,24 @@ try {
       cameraHtml.includes('Actualiser')
   );
 
+  const cameraBigView = (await vite.ssrLoadModule(
+    '/src/features/fast-direct/components/FastDirectCameraBigView.jsx'
+  )).default;
+  const cameraBigHtml = renderToString(
+    React.createElement(MemoryRouter, null, React.createElement(cameraBigView, { session }))
+  );
+  check(
+    'caméra en grand rendue dans un onglet dédié depuis le Banc',
+    cameraBigHtml.includes('Caméra du match') &&
+      cameraBigHtml.includes('Plein écran') &&
+      cameraBigHtml.includes('Délai') &&
+      cameraBigHtml.includes('Aucune caméra active')
+  );
+  check(
+    'le Banc ouvre la caméra en grand (nouvel onglet)',
+    benchHtml.includes('Ouvrir la caméra en grand dans un nouvel onglet')
+  );
+
   const statsPage = (await vite.ssrLoadModule('/src/pages/StatsFastDirectPage.jsx')).default;
   const statsHtml = renderToString(
     React.createElement(

@@ -7,10 +7,8 @@ import {
   LayoutGrid,
   SlidersHorizontal,
   Video,
-  X,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import LiveCameraPanel from '../../../components/LiveCameraPanel';
 import { DistributionCourtTable, OrgaCourtTable } from './SetterAnalysisSheetView';
 import FastDirectStatsPane from './FastDirectStatsPane';
 import useLiveCameraStream from '../hooks/useLiveCameraStream';
@@ -49,7 +47,8 @@ const SITUATIONS = {
  * - Exactement 2 onglets :
  *   1. Distribution P1–P6 (sélecteur P1..P6 + terrain 8 zones + organisation offensive)
  *   2. Stats (Stats Fast Direct en direct, lecture seule)
- * - Bouton Caméra escamotable dans l'en-tête avec réglage délai & DVR.
+ * - Bouton Caméra dans l'en-tête : la caméra s'ouvre en grand dans un nouvel
+ *   onglet (réglage du délai & DVR conservés).
  */
 export default function FastDirectBench({
   session,
@@ -67,8 +66,21 @@ export default function FastDirectBench({
   const [setterFilter, setSetterFilter] = useState('ALL');
   const [matchFilter, setMatchFilter] = useState('ALL');
   const [situationFilter, setSituationFilter] = useState('all');
-  const [showCameraDrawer, setShowCameraDrawer] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // La caméra s'affiche en grand dans un onglet dédié : le Banc reste sur la
+  // distribution adverse, et la vidéo profite de tout l'écran (TV, 2e écran).
+  const openCameraTab = () => {
+    const url = `/fast-direct/${session.id}?view=camera-live`;
+    if (typeof window === 'undefined') return;
+    const opened = window.open(url, '_blank');
+    if (opened) {
+      opened.focus?.();
+      return;
+    }
+    // Pop-up bloquée par le navigateur : ouverture dans l'onglet courant.
+    navigate(url);
+  };
 
   const rows = useMemo(
     () => (state.rows || []).map((r, i) => normalizeRow(r, i)),
@@ -241,16 +253,13 @@ export default function FastDirectBench({
             </button>
           </nav>
 
-          {/* Droite : Caméra escamotable + badge lecture seule */}
+          {/* Droite : Caméra en grand (nouvel onglet) + badge lecture seule */}
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowCameraDrawer((open) => !open)}
-              className={`flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-black transition ${
-                showCameraDrawer
-                  ? 'border-rose-400 bg-rose-600 text-white'
-                  : 'border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
-              }`}
+              onClick={openCameraTab}
+              className="flex h-10 items-center gap-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 px-3 text-xs font-black text-rose-200 transition hover:bg-rose-500/25"
+              title="Ouvrir la caméra en grand dans un nouvel onglet"
             >
               <Video className="h-4 w-4" />
               Caméra
@@ -276,49 +285,6 @@ export default function FastDirectBench({
           </div>
         </div>
       </header>
-
-      {/* TIROIR VIDÉO ESCAMOTABLE (sans créer de 3e onglet) */}
-      {showCameraDrawer && (
-        <section className="border-b border-slate-800 bg-slate-900/95 px-3 py-2.5">
-          <div className="mx-auto max-w-[1680px] overflow-hidden rounded-2xl border border-slate-700 bg-black">
-            <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950 px-3 py-1.5">
-              <div className="flex items-center gap-2 text-xs font-black text-white">
-                <Video className="h-4 w-4 text-rose-400" />
-                Caméra du match
-                {camera.camera.active && (
-                  <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] text-rose-200">
-                    Délai {camera.camera.delay} s · lecture {camera.latency} s
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCameraDrawer(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
-                title="Fermer la caméra"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="h-[260px] sm:h-[320px]">
-              <LiveCameraPanel
-                compact
-                sessionId={session.id}
-                bindVideo={camera.bindVideo}
-                active={camera.camera.active}
-                delay={camera.camera.delay}
-                canChangeDelay
-                onDelayChange={camera.changeDelay}
-                canStartLocal={false}
-                onSeekRelative={camera.seekRelative}
-                onJumpToLive={camera.jumpToLive}
-                onTogglePause={camera.togglePause}
-                message={camera.message}
-              />
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* ONGLET 1 : CONSULTATION DISTRIBUTION ADVERSE P1 À P6 */}
       {tab === 'distrib' && (

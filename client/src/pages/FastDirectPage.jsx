@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import { liveAPI, teamsAPI } from '../services/api';
 import FastDirectStatsShell from '../features/fast-direct/FastDirectStatsShell';
 import FastDirectBench from '../features/fast-direct/components/FastDirectBench';
+import FastDirectCameraBigView from '../features/fast-direct/components/FastDirectCameraBigView';
 import FastDirectCameraPage from '../features/fast-direct/components/FastDirectCameraPage';
 import { normalizeFastDirectRole } from '../features/fast-direct/components/FastDirectJoinLinks';
 import '../features/fast-direct/fast-direct.css';
@@ -165,6 +166,13 @@ export default function FastDirectPage({ user, onLogout }) {
   const { session, me } = data;
   const memberRole = me?.role || 'bench';
   const isEditor = ['stats', 'statistician', 'distribution'].includes(memberRole);
+  const requestedView = String(searchParams.get('view') || '').trim().toLowerCase();
+
+  // Caméra en grand dans son propre onglet (bouton « Caméra » du Banc).
+  if (requestedView === 'camera-live') {
+    return <FastDirectCameraBigView session={session} />;
+  }
+
   const deviceMode = resolveDeviceMode(memberRole, searchParams.get('view'));
 
   if (deviceMode === 'camera') {

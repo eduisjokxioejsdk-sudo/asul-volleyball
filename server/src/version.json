@@ -1,8 +1,20 @@
 {
-  "version": "3.24.2",
+  "version": "3.24.3",
   "releasedAt": "2026-11-21",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.24.3",
+      "date": "2026-11-21",
+      "title": "Fast Direct : caméra en grand dans un nouvel onglet depuis le Banc",
+      "items": [
+        "Le bouton « Caméra » du Banc Fast Direct ouvre désormais la caméra en grand dans un nouvel onglet, au lieu d'un aperçu réduit intégré à la page",
+        "L'onglet caméra occupe toute la fenêtre, avec un bouton « Plein écran » pour l'afficher sur un écran ou une TV, et propose les commandes DVR (délai vidéo, -5 s, pause / lecture, +5 s, retour au direct) et la latence de lecture",
+        "Le Banc reste sur la distribution adverse P1–P6 pendant que la caméra tourne dans son onglet : le bouton « Banc » referme l'onglet et revient à la tablette",
+        "Si le navigateur bloque l'ouverture d'un nouvel onglet, la caméra s'ouvre dans l'onglet courant : la fonction reste toujours accessible",
+        "Validation : build client, rendus Fast Direct (dont le nouvel écran caméra) et tests de synchronisation sans erreur"
+      ]
+    },
     {
       "version": "3.24.2",
       "date": "2026-11-21",
