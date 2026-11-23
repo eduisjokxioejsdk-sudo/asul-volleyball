@@ -5,8 +5,8 @@ const STATS_APP_URL = `${import.meta.env.BASE_URL}stats-fast-direct/index.html?t
 
 /**
  * Application « Stats facile » : page autonome (HTML/JS) servie depuis
- * client/public/stats-fast-direct et affichée directement en plein écran.
- * La barre de navigation globale reste accessible au survol en haut de l'écran.
+ * client/public/stats-fast-direct et affichée en plein écran sous la barre de
+ * navigation globale, qui reste déployée en permanence.
  */
 export default function StatsFastDirectPage({ user, onLogout }) {
   return (
@@ -37,14 +37,14 @@ export default function StatsFastDirectPage({ user, onLogout }) {
         className="stats-facile-iframe"
         style={{
           position: 'fixed',
-          top: 0,
+          top: 'var(--nav-h)',
           left: 0,
           right: 0,
           bottom: 0,
           display: 'block',
           width: '100vw',
-          height: '100vh',
-          minHeight: '100vh',
+          height: 'calc(100vh - var(--nav-h))',
+          minHeight: 'calc(100vh - var(--nav-h))',
           border: 0,
           margin: 0,
           padding: 0,

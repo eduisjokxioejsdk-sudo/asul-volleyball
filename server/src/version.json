@@ -1,8 +1,24 @@
 {
-  "version": "3.26.0",
+  "version": "3.26.1",
   "releasedAt": "2026-11-23",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.26.1",
+      "date": "2026-11-23",
+      "title": "Barre de navigation toujours visible et pages qui remplissent pile l'écran",
+      "items": [
+        "La barre de navigation du haut reste désormais déployée en permanence : plus besoin de passer la souris en haut de l'écran pour la faire apparaître, les onglets, le profil et la déconnexion sont toujours accessibles",
+        "Un espaceur de même hauteur est réservé dans la page : la barre est fixée en haut de la fenêtre et ne recouvre plus le contenu, quel que soit le défilement",
+        "Hauteur unifiée de la barre (46 px, 38 px en mode codage compact) via les variables --nav-h et --nav-h-compact, reprises par toutes les pages au lieu de valeurs fixes éparpillées",
+        "Les conteneurs principaux (accueil, Data Volley, Centre vidéo, Équipes, Académie, Trajectoires, Matchs et multi-matchs, pratique, coque sombre) mesurent maintenant exactement la fenêtre moins la barre : plus de double défilement ni de bande vide en bas",
+        "Stats facile s'affiche sous la barre permanente (top et hauteurs calculés sur --nav-h), y compris sur tablette : la grille de distribution garde tout l'espace utile sans être masquée par la navigation",
+        "Codage Data Volley : le poste de travail prend la hauteur restante sous la barre au lieu de 100 vh, ce qui supprime le décalage de la barre vidéo et des panneaux",
+        "Le bandeau de mise à jour descend automatiquement sous la barre permanente pour ne plus être recouvert par elle",
+        "Académie : le tutoriel « Équipes cloisonnées » explique désormais de cliquer sur le profil en haut à droite, sans mention du survol devenu inutile",
+        "Validation : build de production, journal des versions cohérent et suites de tests client (dont rendus Fast Direct et Académie) sans erreur"
+      ]
+    },
     {
       "version": "3.26.0",
       "date": "2026-11-23",

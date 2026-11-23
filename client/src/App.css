@@ -2359,7 +2359,7 @@ html, body, #root, .app, .page-shell {
    Codage DataVolley
    ============================================================ */
 .dv-page .vd-workspace {
-  min-height: 100vh;
+  min-height: calc(100vh - var(--nav-h));
   height: auto;
   overflow: visible;
 }

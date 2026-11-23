@@ -1,6 +1,9 @@
 // ============================================================================
-// PANCAKE STATS — barre de navigation globale auto-cachée au survol en haut
-// de l'écran, avec menu profil cliquable pour changer d'équipe.
+// PANCAKE STATS — barre de navigation globale toujours déployée en haut de
+// l'écran, avec menu profil cliquable pour changer d'équipe.
+//
+// La barre est fixée en haut de la fenêtre ; un espaceur de même hauteur est
+// rendu dans le flux de la page pour que le contenu ne soit jamais recouvert.
 // ============================================================================
 
 import { useEffect, useRef, useState } from 'react';
@@ -105,19 +108,13 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
   const { pathname } = useLocation();
   const { clubs, activeClub, switchingClub, selectClub } = useClub();
 
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [switchError, setSwitchError] = useState('');
   const [tabsOverflowLeft, setTabsOverflowLeft] = useState(false);
   const [tabsOverflowRight, setTabsOverflowRight] = useState(false);
 
-  const hideTimerRef = useRef(null);
-  const shellRef = useRef(null);
   const profileRef = useRef(null);
   const tabsRef = useRef(null);
-
-  const isRevealed = hovered || focused || menuOpen;
 
   // La rangée d'onglets peut devenir défilable sur les écrans étroits :
   // on centre l'onglet actif pour qu'il reste toujours visible.
@@ -161,27 +158,6 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
     };
   }, []);
 
-  const cancelHide = () => {
-    if (hideTimerRef.current) {
-      window.clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = null;
-    }
-  };
-
-  const revealNav = () => {
-    cancelHide();
-    setHovered(true);
-  };
-
-  const scheduleHideNav = () => {
-    cancelHide();
-    hideTimerRef.current = window.setTimeout(() => {
-      setHovered(false);
-    }, 180);
-  };
-
-  useEffect(() => () => cancelHide(), []);
-
   useEffect(() => {
     if (!menuOpen) return undefined;
     const onMouseDown = (event) => {
@@ -220,161 +196,152 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
   const isActive = (tab) => (tab.isActive ? tab.isActive(pathname) : pathname === tab.path);
 
   return (
-    <div
-      ref={shellRef}
-      className={`app-global-nav-shell ${isRevealed ? 'is-revealed' : ''}`}
-      onMouseEnter={revealNav}
-      onMouseLeave={scheduleHideNav}
-      onFocus={() => setFocused(true)}
-      onBlur={(e) => {
-        if (shellRef.current && !shellRef.current.contains(e.relatedTarget)) {
-          setFocused(false);
-        }
-      }}
-    >
-      <div className="nav-hover-trigger" aria-hidden="true">
-        <span className="nav-hover-hint" />
-      </div>
+    <>
+      {/* Réserve la hauteur de la barre dans le flux : le contenu commence
+          sous la barre, qui reste fixée en haut de la fenêtre. */}
+      <div className={`nav-spacer ${compact ? 'is-compact' : ''}`} aria-hidden="true" />
 
-      <header className={`app-global-nav ${compact ? 'is-compact' : ''}`}>
-        <div className="nav-brand-section" onClick={() => navigate('/dashboard')} title="Accueil">
-          <span className="brand-logo-glow"><PancakeLogo size={compact ? 24 : 40} /></span>
-          <span className="brand-name">Pancake</span>
-        </div>
+      <div className="app-global-nav-shell">
+        <header className={`app-global-nav ${compact ? 'is-compact' : ''}`}>
+          <div className="nav-brand-section" onClick={() => navigate('/dashboard')} title="Accueil">
+            <span className="brand-logo-glow"><PancakeLogo size={compact ? 22 : 30} /></span>
+            <span className="brand-name">Pancake</span>
+          </div>
 
-        <nav
-          className={`nav-apps-menu ${tabsOverflowLeft ? 'has-overflow-left' : ''} ${
-            tabsOverflowRight ? 'has-overflow-right' : ''
-          }`}
-          aria-label="Navigation principale"
-          ref={tabsRef}
-        >
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              className={`nav-app-btn ${isActive(tab) ? 'active' : ''}`}
-              onClick={() => navigate(tab.path)}
-              title={tab.hint}
-              aria-current={isActive(tab) ? 'page' : undefined}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="nav-right-section">
-          {tools}
-          <button
-            type="button"
-            className={`nav-action-btn nav-action-keyboard ${
-              pathname === '/datavolley/auto-codes' ? 'active' : ''
+          <nav
+            className={`nav-apps-menu ${tabsOverflowLeft ? 'has-overflow-left' : ''} ${
+              tabsOverflowRight ? 'has-overflow-right' : ''
             }`}
-            onClick={() => navigate('/datavolley/auto-codes')}
-            title="Clavier — codes automatiques & macros clavier"
-            aria-current={pathname === '/datavolley/auto-codes' ? 'page' : undefined}
+            aria-label="Navigation principale"
+            ref={tabsRef}
           >
-            <Settings size={14} />
-            <span className="nav-action-label">Clavier</span>
-          </button>
-          <button
-            type="button"
-            className={`nav-action-btn nav-action-teams ${pathname === '/teams' ? 'active' : ''}`}
-            onClick={() => navigate('/teams')}
-            title="Équipes — effectifs & joueurs de l'équipe active"
-            aria-current={pathname === '/teams' ? 'page' : undefined}
-          >
-            <Users size={14} />
-            <span className="nav-action-label">Équipes</span>
-          </button>
-          {user && (
-            <div className="nav-user-group" ref={profileRef}>
+            {TABS.map((tab) => (
               <button
+                key={tab.key}
                 type="button"
-                className={`nav-user-pill nav-user-trigger ${menuOpen ? 'is-open' : ''}`}
-                onClick={() => {
-                  setSwitchError('');
-                  setMenuOpen((prev) => !prev);
-                }}
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                title={
-                  activeClub
-                    ? `${user.name} · Équipe : ${activeClub.name} (cliquer pour changer d’équipe)`
-                    : `${user.name} (cliquer pour choisir une équipe)`
-                }
+                className={`nav-app-btn ${isActive(tab) ? 'active' : ''}`}
+                onClick={() => navigate(tab.path)}
+                title={tab.hint}
+                aria-current={isActive(tab) ? 'page' : undefined}
               >
-                <span className="user-initial">{user.name?.charAt(0)?.toUpperCase() || 'U'}</span>
-                <span className="user-fullname">{user.name}</span>
-                {activeClub && (
-                  <span
-                    className="nav-club-badge"
-                    style={{ '--club-accent': activeClub.color || '#c8a165' }}
-                  >
-                    <span className="nav-club-dot" />
-                    <span className="nav-club-label">
-                      {activeClub.shortName || activeClub.name}
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="nav-right-section">
+            {tools}
+            <button
+              type="button"
+              className={`nav-action-btn nav-action-keyboard ${
+                pathname === '/datavolley/auto-codes' ? 'active' : ''
+              }`}
+              onClick={() => navigate('/datavolley/auto-codes')}
+              title="Clavier — codes automatiques & macros clavier"
+              aria-current={pathname === '/datavolley/auto-codes' ? 'page' : undefined}
+            >
+              <Settings size={14} />
+              <span className="nav-action-label">Clavier</span>
+            </button>
+            <button
+              type="button"
+              className={`nav-action-btn nav-action-teams ${pathname === '/teams' ? 'active' : ''}`}
+              onClick={() => navigate('/teams')}
+              title="Équipes — effectifs & joueurs de l'équipe active"
+              aria-current={pathname === '/teams' ? 'page' : undefined}
+            >
+              <Users size={14} />
+              <span className="nav-action-label">Équipes</span>
+            </button>
+            {user && (
+              <div className="nav-user-group" ref={profileRef}>
+                <button
+                  type="button"
+                  className={`nav-user-pill nav-user-trigger ${menuOpen ? 'is-open' : ''}`}
+                  onClick={() => {
+                    setSwitchError('');
+                    setMenuOpen((prev) => !prev);
+                  }}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  title={
+                    activeClub
+                      ? `${user.name} · Équipe : ${activeClub.name} (cliquer pour changer d’équipe)`
+                      : `${user.name} (cliquer pour choisir une équipe)`
+                  }
+                >
+                  <span className="user-initial">{user.name?.charAt(0)?.toUpperCase() || 'U'}</span>
+                  <span className="user-fullname">{user.name}</span>
+                  {activeClub && (
+                    <span
+                      className="nav-club-badge"
+                      style={{ '--club-accent': activeClub.color || '#c8a165' }}
+                    >
+                      <span className="nav-club-dot" />
+                      <span className="nav-club-label">
+                        {activeClub.shortName || activeClub.name}
+                      </span>
                     </span>
-                  </span>
-                )}
-                <ChevronDown size={13} className="nav-user-chevron" />
-              </button>
-
-              {menuOpen && (
-                <div className="nav-profile-menu" role="menu" aria-label="Profil et changement d'équipe">
-                  <div className="nav-profile-head">
-                    <div className="nav-profile-name">{user.name}</div>
-                    <div className="nav-profile-email">{user.email}</div>
-                  </div>
-
-                  {switchError && (
-                    <div className="nav-profile-error">{switchError}</div>
                   )}
+                  <ChevronDown size={13} className="nav-user-chevron" />
+                </button>
 
-                  <div className="nav-profile-section-title">Changer d’équipe</div>
-                  <div className="nav-profile-clubs">
-                    {(clubs || []).map((club) => {
-                      const current = club.id === activeClub?.id;
-                      const accent = club.color || '#c8a165';
-                      return (
-                        <button
-                          key={club.id}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={current}
-                          className={`nav-profile-club-item ${current ? 'is-active' : ''}`}
-                          onClick={() => handleSelectClub(club.id)}
-                          disabled={switchingClub}
-                        >
-                          <span className="nav-profile-club-dot" style={{ background: accent }} />
-                          <span className="nav-profile-club-text">
-                            <span className="nav-profile-club-name">{club.name}</span>
-                            {club.description && (
-                              <span className="nav-profile-club-desc">{club.description}</span>
-                            )}
-                          </span>
-                          {current && <Check size={14} className="nav-profile-club-check" />}
-                        </button>
-                      );
-                    })}
+                {menuOpen && (
+                  <div className="nav-profile-menu" role="menu" aria-label="Profil et changement d'équipe">
+                    <div className="nav-profile-head">
+                      <div className="nav-profile-name">{user.name}</div>
+                      <div className="nav-profile-email">{user.email}</div>
+                    </div>
+
+                    {switchError && (
+                      <div className="nav-profile-error">{switchError}</div>
+                    )}
+
+                    <div className="nav-profile-section-title">Changer d’équipe</div>
+                    <div className="nav-profile-clubs">
+                      {(clubs || []).map((club) => {
+                        const current = club.id === activeClub?.id;
+                        const accent = club.color || '#c8a165';
+                        return (
+                          <button
+                            key={club.id}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={current}
+                            className={`nav-profile-club-item ${current ? 'is-active' : ''}`}
+                            onClick={() => handleSelectClub(club.id)}
+                            disabled={switchingClub}
+                          >
+                            <span className="nav-profile-club-dot" style={{ background: accent }} />
+                            <span className="nav-profile-club-text">
+                              <span className="nav-profile-club-name">{club.name}</span>
+                              {club.description && (
+                                <span className="nav-profile-club-desc">{club.description}</span>
+                              )}
+                            </span>
+                            {current && <Check size={14} className="nav-profile-club-check" />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <button
-                type="button"
-                className="nav-logout-btn"
-                onClick={onLogout}
-                title="Se déconnecter"
-                aria-label="Se déconnecter"
-              >
-                <LogOut size={13} />
-                <span className="nav-logout-label">Déconnexion</span>
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
-    </div>
+                <button
+                  type="button"
+                  className="nav-logout-btn"
+                  onClick={onLogout}
+                  title="Se déconnecter"
+                  aria-label="Se déconnecter"
+                >
+                  <LogOut size={13} />
+                  <span className="nav-logout-label">Déconnexion</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
+      </div>
+    </>
   );
 }

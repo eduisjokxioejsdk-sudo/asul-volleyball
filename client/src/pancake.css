@@ -61,6 +61,10 @@
   --font-display: 'Inter', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  /* --- Barre de navigation globale (toujours déployée) ------------------ */
+  --nav-h: 46px;
+  --nav-h-compact: 38px;
 }
 
 /* ---------------------------------------------------------------------------
@@ -262,7 +266,9 @@ input, textarea, select, [contenteditable='true'] { user-select: text; }
 }
 
 /* Conteneurs principaux : toutes les pages et postes de travail sont scrollables
-   verticalement et horizontalement pour qu'aucun élément ne soit jamais caché */
+   verticalement et horizontalement pour qu'aucun élément ne soit jamais caché.
+   Leur hauteur minimale retire la barre de navigation permanente, déjà réservée
+   par l'espaceur (.nav-spacer) : la page tient exactement dans la fenêtre. */
 .page-shell,
 .dashboard,
 .video-center-page,
@@ -273,8 +279,10 @@ input, textarea, select, [contenteditable='true'] { user-select: text; }
 .dv-fullpage,
 .teams-page,
 .training-page,
-.tj-page {
-  min-height: 100vh !important;
+.multi-match-page,
+.practice-mode-page,
+.app-shell-dark {
+  min-height: calc(100vh - var(--nav-h)) !important;
   height: auto !important;
   overflow-x: auto !important;
   overflow-y: auto !important;
@@ -285,7 +293,7 @@ input, textarea, select, [contenteditable='true'] { user-select: text; }
 
 .vd-workspace {
   flex: 1 1 auto;
-  min-height: calc(100vh - 44px);
+  min-height: calc(100vh - var(--nav-h));
   display: flex;
   flex-direction: column;
   overflow-x: auto !important;
@@ -479,8 +487,21 @@ kbd, .pk-kbd {
 }
 
 /* ---------------------------------------------------------------------------
-   4. Barre de navigation globale auto-cachée + menu profil / changement d'équipe
+   4. Barre de navigation globale permanente + menu profil / changement d'équipe
    --------------------------------------------------------------------------- */
+/* Espaceur rendu dans le flux de la page : il réserve exactement la hauteur de
+   la barre, qui reste fixée en haut de la fenêtre sans jamais recouvrir le
+   contenu (quel que soit le défilement). */
+.nav-spacer {
+  flex: 0 0 var(--nav-h);
+  height: var(--nav-h);
+  width: 100%;
+  pointer-events: none;
+}
+.nav-spacer.is-compact {
+  flex: 0 0 var(--nav-h-compact);
+  height: var(--nav-h-compact);
+}
 .app-global-nav-shell {
   position: fixed;
   top: 0;
@@ -489,33 +510,9 @@ kbd, .pk-kbd {
   z-index: 1200;
   pointer-events: none;
 }
-.nav-hover-trigger {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 14px;
-  pointer-events: auto;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  z-index: 1201;
-}
-.nav-hover-hint {
-  width: 52px;
-  height: 3px;
-  border-radius: 0 0 4px 4px;
-  background: rgba(200, 161, 101, 0.55);
-  box-shadow: 0 2px 8px rgba(200, 161, 101, 0.35);
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-.app-global-nav-shell.is-revealed .nav-hover-hint {
-  opacity: 0;
-  transform: translateY(-4px);
-}
 .app-global-nav {
-  flex: 0 0 54px;
-  height: 54px;
+  flex: 0 0 var(--nav-h);
+  height: var(--nav-h);
   width: 100%;
   min-width: 0;
   display: flex;
@@ -530,16 +527,8 @@ kbd, .pk-kbd {
   position: relative !important;
   top: 0;
   z-index: 1202;
-  transform: translateY(-102%);
-  opacity: 0;
-  pointer-events: none;
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.16s ease;
-}
-.app-global-nav-shell.is-revealed .app-global-nav {
-  transform: translateY(0);
-  opacity: 1;
   pointer-events: auto;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.58);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
 }
 .app-global-nav::after {
   content: '';
@@ -547,6 +536,11 @@ kbd, .pk-kbd {
   left: 0; right: 0; bottom: -1px; height: 1px;
   background: linear-gradient(90deg, #c8a165 0%, rgba(200, 161, 101, 0.4) 35%, transparent 80%);
   pointer-events: none;
+}
+/* Le bandeau de mise à jour (rendu au-dessus des pages) passe sous la barre
+   permanente au lieu d'être recouvert par elle. */
+.app:has(.nav-spacer) .update-banner {
+  margin-top: var(--nav-h);
 }
 .nav-brand-section {
   display: flex;
@@ -971,11 +965,11 @@ kbd, .pk-kbd {
   box-shadow: inset 0 -3px 0 #c8a165;
 }
 
-/* Barre réduite pendant le codage : 40 px au lieu de 54 px. Les onglets
+/* Barre réduite pendant le codage : 38 px au lieu de 46 px. Les onglets
    restent cliquables, seuls le logo et les badges de raccourcis rétrécissent. */
 .app-global-nav.is-compact {
-  flex: 0 0 40px;
-  height: 40px;
+  flex: 0 0 var(--nav-h-compact);
+  height: var(--nav-h-compact);
 }
 .app-global-nav.is-compact .nav-brand-section { padding: 0 8px; gap: 0; }
 .app-global-nav.is-compact .brand-name { display: none; }
@@ -1877,7 +1871,7 @@ tbody tr:hover, .dvx-drill-point:hover, .dv-code-row:hover, .shelf-clip-card:hov
   object-fit: contain;
 }
 
-/* Mode Stats facile — plein écran direct */
+/* Mode Stats facile — plein écran sous la barre de navigation permanente */
 .stats-facile-page {
   position: fixed !important;
   inset: 0 !important;
@@ -1893,12 +1887,15 @@ tbody tr:hover, .dvx-drill-point:hover, .dv-code-row:hover, .shelf-clip-card:hov
 }
 .stats-facile-iframe {
   position: fixed !important;
-  inset: 0 !important;
+  top: var(--nav-h) !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
   display: block !important;
   width: 100vw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  min-height: 100vh !important;
+  height: calc(100vh - var(--nav-h)) !important;
+  height: calc(100dvh - var(--nav-h)) !important;
+  min-height: calc(100vh - var(--nav-h)) !important;
   border: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
