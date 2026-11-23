@@ -3208,7 +3208,8 @@ function DataVolleyDashboard({ user, onLogout }) {
       title="Coder sans évaluation (ex. *02S a10A) — les points se découpent par service"
       aria-pressed={lightMode}
     >
-      {lightMode ? <ListChecks size={13} /> : <Volleyball size={13} />} Sans évaluation
+      {lightMode ? <ListChecks size={13} /> : <Volleyball size={13} />}
+      <span className="nav-tool-label">Sans évaluation</span>
     </button>
   );
 

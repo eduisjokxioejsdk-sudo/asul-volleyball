@@ -5,12 +5,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Check, ChevronDown, LogOut } from './icons';
+import { Check, ChevronDown, LogOut, Settings, Users } from './icons';
 import PancakeLogo from './PancakeLogo';
 import { useClub } from '../contexts/ClubContext';
 
 // Sous-pages de Stats (ancien Data Volley) qui ont leur propre onglet ou
-// destination (« Codes Auto ») : l'onglet « Stats » ne reste pas surligné dessus.
+// destination (« Clavier ») : l'onglet « Stats » ne reste pas surligné dessus.
 const DATAVOLLEY_SUBROUTES = new Set(['multi', 'auto-codes', 'distribution']);
 
 const TABS = [
@@ -109,12 +109,57 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
   const [focused, setFocused] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [switchError, setSwitchError] = useState('');
+  const [tabsOverflowLeft, setTabsOverflowLeft] = useState(false);
+  const [tabsOverflowRight, setTabsOverflowRight] = useState(false);
 
   const hideTimerRef = useRef(null);
   const shellRef = useRef(null);
   const profileRef = useRef(null);
+  const tabsRef = useRef(null);
 
   const isRevealed = hovered || focused || menuOpen;
+
+  // La rangée d'onglets peut devenir défilable sur les écrans étroits :
+  // on centre l'onglet actif pour qu'il reste toujours visible.
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    const active = el.querySelector('.nav-app-btn.active');
+    if (!active || typeof el.scrollTo !== 'function') return;
+    const left = active.offsetLeft - el.offsetLeft;
+    const target = left - (el.clientWidth - active.offsetWidth) / 2;
+    el.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+  }, [pathname]);
+
+  // Signale visuellement (dégradés) qu'il reste des onglets hors champ,
+  // côté gauche et/ou droit, sans jamais masquer un onglet entièrement visible.
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el) return undefined;
+    const update = () => {
+      const max = el.scrollWidth - el.clientWidth;
+      const scrollable = max > 2;
+      const left = scrollable && el.scrollLeft > 2;
+      const right = scrollable && max - el.scrollLeft > 2;
+      setTabsOverflowLeft((prev) => (prev === left ? prev : left));
+      setTabsOverflowRight((prev) => (prev === right ? prev : right));
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update);
+      return () => {
+        el.removeEventListener('scroll', update);
+        window.removeEventListener('resize', update);
+      };
+    }
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      observer.disconnect();
+    };
+  }, []);
 
   const cancelHide = () => {
     if (hideTimerRef.current) {
@@ -197,7 +242,13 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
           <span className="brand-name">Pancake</span>
         </div>
 
-        <nav className="nav-apps-menu">
+        <nav
+          className={`nav-apps-menu ${tabsOverflowLeft ? 'has-overflow-left' : ''} ${
+            tabsOverflowRight ? 'has-overflow-right' : ''
+          }`}
+          aria-label="Navigation principale"
+          ref={tabsRef}
+        >
           {TABS.map((tab) => (
             <button
               key={tab.key}
@@ -205,6 +256,7 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
               className={`nav-app-btn ${isActive(tab) ? 'active' : ''}`}
               onClick={() => navigate(tab.path)}
               title={tab.hint}
+              aria-current={isActive(tab) ? 'page' : undefined}
             >
               {tab.label}
             </button>
@@ -215,19 +267,25 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
           {tools}
           <button
             type="button"
-            className="btn btn-sm nav-teams-btn"
+            className={`nav-action-btn nav-action-keyboard ${
+              pathname === '/datavolley/auto-codes' ? 'active' : ''
+            }`}
             onClick={() => navigate('/datavolley/auto-codes')}
-            title="Codes automatiques & macros clavier"
+            title="Clavier — codes automatiques & macros clavier"
+            aria-current={pathname === '/datavolley/auto-codes' ? 'page' : undefined}
           >
-            Codes Auto
+            <Settings size={14} />
+            <span className="nav-action-label">Clavier</span>
           </button>
           <button
             type="button"
-            className="btn btn-sm nav-teams-btn"
+            className={`nav-action-btn nav-action-teams ${pathname === '/teams' ? 'active' : ''}`}
             onClick={() => navigate('/teams')}
-            title="Effectifs & joueurs de l'équipe active"
+            title="Équipes — effectifs & joueurs de l'équipe active"
+            aria-current={pathname === '/teams' ? 'page' : undefined}
           >
-            Équipes
+            <Users size={14} />
+            <span className="nav-action-label">Équipes</span>
           </button>
           {user && (
             <div className="nav-user-group" ref={profileRef}>
@@ -303,8 +361,15 @@ export default function AppNavigation({ user, onLogout, compact = false, tools =
                 </div>
               )}
 
-              <button type="button" className="nav-logout-btn" onClick={onLogout} title="Se déconnecter">
-                <LogOut size={12} /> Déconnexion
+              <button
+                type="button"
+                className="nav-logout-btn"
+                onClick={onLogout}
+                title="Se déconnecter"
+                aria-label="Se déconnecter"
+              >
+                <LogOut size={13} />
+                <span className="nav-logout-label">Déconnexion</span>
               </button>
             </div>
           )}

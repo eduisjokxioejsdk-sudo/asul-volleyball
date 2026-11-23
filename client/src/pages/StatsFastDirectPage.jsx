@@ -11,15 +11,47 @@ const STATS_APP_URL = `${import.meta.env.BASE_URL}stats-fast-direct/index.html?t
 export default function StatsFastDirectPage({ user, onLogout }) {
   return (
     <div
-      className="h-screen w-full overflow-hidden bg-[#09090b] text-zinc-100"
-      style={{ borderRadius: 0 }}
+      className="stats-facile-page"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100vh',
+        minHeight: '100vh',
+        margin: 0,
+        padding: 0,
+        overflow: 'hidden',
+        background: '#09090b',
+        borderRadius: 0,
+      }}
     >
       <AppNavigation user={user} onLogout={onLogout} />
       <iframe
         title="Stats facile"
         src={STATS_APP_URL}
-        className="block h-screen w-full border-0 bg-[#09090b]"
-        style={{ borderRadius: 0 }}
+        width="100%"
+        height="100%"
+        className="stats-facile-iframe"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'block',
+          width: '100vw',
+          height: '100vh',
+          minHeight: '100vh',
+          border: 0,
+          margin: 0,
+          padding: 0,
+          background: '#09090b',
+          borderRadius: 0,
+          zIndex: 1,
+        }}
       />
     </div>
   );

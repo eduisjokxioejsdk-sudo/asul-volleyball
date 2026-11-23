@@ -109,7 +109,7 @@ export default function CodeAutomationPage() {
             </Link>
           </div>
           <h1 style={{ margin: 0, fontSize: '1.75rem' }}>
-            Codes Automatiques (« Compound Codes ») & Macros Clavier
+            Clavier — Codes automatiques (« Compound Codes ») &amp; Macros
           </h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: 6, maxWidth: 820 }}>
             Comprenez en détail comment DataVolley 4 génère automatiquement <strong>2 à 3 actions en une seule frappe</strong>{' '}

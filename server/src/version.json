@@ -1,8 +1,23 @@
 {
-  "version": "3.25.0",
+  "version": "3.26.0",
   "releasedAt": "2026-11-23",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.26.0",
+      "date": "2026-11-23",
+      "title": "Barre de navigation recompactée, Direct unifié façon Pancake et Stats facile plein écran",
+      "items": [
+        "La barre de navigation du haut a été entièrement recompactée : même hauteur et même gabarit partout, onglets défilables horizontalement avec dégradés de bord lorsqu'ils dépassent, et onglet actif automatiquement recentré au changement de page",
+        "Les accès « Clavier » (icône réglages) et « Équipes » (icône effectifs) remplacent les anciens boutons « Codes Auto » et « Équipes », avec un état actif visible et des libellés qui s'effacent progressivement selon la largeur de l'écran (1560 → 860 px), jusqu'à la déconnexion en icône seule",
+        "L'onglet Direct présente désormais la même interface Pancake dans ses deux modes : en-tête commun, boutons de mode « Stats en direct faciles » / « Stats en direct avancées » et grille à deux colonnes (sessions à gauche, invitation à droite)",
+        "Stats en direct faciles : les sessions Fast Direct s'affichent en cartes cliquables avec le code de session, la création reste sur la même page et la colonne « Rejoindre depuis un autre appareil » détaille en trois étapes les liens Appareil Stats, Banc tablette et Caméra",
+        "Stats en direct avancées : le code de session est visible sur chaque session, un bouton « Ouvrir → » mène directement au match, et la corbeille (restauration / suppression définitive) est conservée avec les mêmes indications d'invitation",
+        "Stats facile s'affiche réellement en plein écran dans Pancake (100 vw × 100 vh, y compris sur tablette) et l'application autonome occupe toute la hauteur : la grille de distribution remplit l'écran au lieu de laisser une bande vide en bas",
+        "Les tutoriels de l'Académie et la page Clavier reprennent le nouveau libellé « Clavier (icône paramètres) » ; les codes automatiques et les macros clavier restent inchangés",
+        "Validation : build de production, suites de tests client (rendus Fast Direct, Direct unifié et Stats facile) et contrôle du journal des versions, tous sans erreur"
+      ]
+    },
     {
       "version": "3.25.0",
       "date": "2026-11-23",

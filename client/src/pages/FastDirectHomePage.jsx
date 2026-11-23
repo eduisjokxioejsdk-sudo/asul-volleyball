@@ -1,19 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  ArrowRight,
-  Plus,
-  Radio,
-  RefreshCw,
-  ShieldCheck,
-  Users,
-} from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import AppNavigation from '../components/AppNavigation';
+import PancakeLogo from '../components/PancakeLogo';
 import { liveAPI, teamsAPI } from '../services/api';
 import useCollectionChanged from '../hooks/useCollectionChanged';
-import '../features/fast-direct/fast-direct.css';
 
-/** Accueil du mode Fast Direct : création, reprise et invitations par lien. */
+/**
+ * Accueil du mode « Stats en direct faciles » (Fast Direct) :
+ * partage exactement la même UI, la même palette de boutons (Or Pancake #c8a165 /
+ * Zinc #18181b) et la même répartition à l'écran en 2 colonnes que le mode
+ * « Stats en direct avancées ».
+ */
 export default function FastDirectHomePage({ user, onLogout, embedded = false }) {
   const navigate = useNavigate();
   const [teams, setTeams] = useState([]);
@@ -81,194 +79,275 @@ export default function FastDirectHomePage({ user, onLogout, embedded = false })
     }
   };
 
-  const joinInfo = (
-    <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4">
-      <h2 className="text-sm font-black text-white">Rejoindre depuis un autre appareil</h2>
-      <p className="mt-1 text-[11px] font-semibold text-emerald-100/80">
-        Aucun code à saisir : le PC hôte envoie directement le lien correspondant au rôle.
-      </p>
-      <ol className="mt-3 space-y-2 text-[11px] text-slate-300">
-        <li className="flex gap-2">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-slate-950">
-            1
-          </span>
-          Sur le PC hôte, ouvrez la session puis cliquez sur <strong className="text-white">Code</strong>.
-        </li>
-        <li className="flex gap-2">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-slate-950">
-            2
-          </span>
-          Copiez le lien de l’appareil : Appareil Stats (tous onglets), Banc (Tablette) ou Caméra.
-        </li>
-        <li className="flex gap-2">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-slate-950">
-            3
-          </span>
-          Ouvrez ce lien sur le téléphone, la tablette ou l’autre poste. Il rejoint la session
-          automatiquement après la connexion au compte.
-        </li>
-      </ol>
-      <p className="mt-3 rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-[10px] font-semibold text-slate-400">
-        Le lien utilise l’adresse réseau du PC hôte. Tous les appareils doivent être connectés au
-        même réseau Wi‑Fi.
-      </p>
-    </section>
-  );
+  const content = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {error && <div className="dv-flash err">{error}</div>}
 
-  return (
-    <div className={`fast-direct-root ${embedded ? '' : 'min-h-screen bg-slate-950'} text-slate-100`}>
-      {!embedded && <AppNavigation user={user} onLogout={onLogout} />}
-      <main className={embedded ? 'mx-auto w-full max-w-6xl px-4 py-4' : 'mx-auto w-full max-w-6xl px-4 py-6'}>
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="mb-1 inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.15em] text-rose-300">
-              <Radio className="h-3.5 w-3.5" /> Session multi-appareils
+      <div className="pk-direct-grid">
+        {/* COLONNE GAUCHE : SESSIONS FAST DIRECT & CRÉATION */}
+        <section className="pk-showcase-box">
+          <div className="pk-showcase-box-head">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <PancakeLogo size={20} />
+              <h3>Sessions Fast Direct ({activeSessions.length})</h3>
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-white">Stats en direct faciles</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              3 appareils reliés en direct : Stats (Distribution + Autres stats + Caméra), Banc
-              tablette (P1–P6 &amp; Stats) et Caméra terrain.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowCreate((value) => !value)}
-            className="flex h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-xs font-black text-white hover:bg-rose-500"
-          >
-            {showCreate ? <ArrowRight className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-            {showCreate ? 'Masquer la création' : 'Créer un Fast Direct'}
-          </button>
-        </div>
-
-        {error && (
-          <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-950/40 px-4 py-2.5 text-xs font-bold text-rose-200">
-            {error}
-          </div>
-        )}
-
-        <div className={`grid gap-4 ${showCreate ? 'lg:grid-cols-2' : ''}`}>
-          {showCreate && (
-            <form
-              onSubmit={createSession}
-              className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4"
-            >
-              <h2 className="text-sm font-black text-white">Héberger sur ce PC</h2>
-              <p className="mb-3 text-[11px] text-slate-500">
-                Le PC conserve la session et fournit le code aux autres appareils du réseau.
-              </p>
-              <Field label="Nom de la session">
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex. ASUL — match du 17/11"
-                  className="h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-white outline-none focus:border-rose-400"
-                />
-              </Field>
-              <Field label="Équipe analysée (optionnelle)">
-                <select
-                  value={team1}
-                  onChange={(e) => setTeam1(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-white"
-                >
-                  <option value="">— Sans fiche d’équipe —</option>
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Adversaire (optionnel)">
-                <select
-                  value={team2}
-                  onChange={(e) => setTeam2(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-white"
-                >
-                  <option value="">— Aucun adversaire précis —</option>
-                  {teams
-                    .filter((team) => String(team.id) !== String(team1))
-                    .map((team) => (
-                      <option key={team.id} value={team.id}>
-                        {team.name}
-                      </option>
-                    ))}
-                </select>
-              </Field>
-              <button
-                type="submit"
-                disabled={creating}
-                className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-rose-600 text-xs font-black text-white disabled:opacity-40"
-              >
-                <Users className="h-4 w-4" />
-                {creating ? 'Création…' : 'Démarrer et afficher le code'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={load}>
+                <RefreshCw size={13} /> Actualiser
               </button>
-              {!teams.length && (
-                <p className="mt-2 text-[11px] text-amber-300">
-                  Aucune fiche équipe : la session utilisera le nom saisi et les joueurs pourront
-                  être renseignés directement dans la prise de distribution.
-                </p>
-              )}
-            </form>
-          )}
-
-
-          {joinInfo}
-        </div>
-
-        <section className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-400" />
-            <h2 className="text-sm font-black text-white">Sessions Fast Direct</h2>
-            <button
-              type="button"
-              onClick={load}
-              className="ml-auto flex h-8 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-[11px] font-bold text-slate-300"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Actualiser
-            </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setShowCreate((value) => !value)}
+              >
+                <Plus size={14} />
+                {showCreate ? 'Masquer la création' : 'Nouvelle session Fast Direct'}
+              </button>
+            </div>
           </div>
-          {loading ? (
-            <p className="py-6 text-center text-xs text-slate-500">Chargement…</p>
-          ) : activeSessions.length === 0 ? (
-            <p className="py-6 text-center text-xs text-slate-500">
-              Aucune session Fast Direct. Créez la première depuis le PC hôte.
-            </p>
-          ) : (
-            <div className="grid gap-2 md:grid-cols-2">
-              {activeSessions.map((session) => (
-                <button
-                  key={session.id}
-                  type="button"
-                  onClick={() => navigate(`/fast-direct/${session.id}`)}
-                  className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-left hover:border-slate-600"
+
+          <div className="pk-showcase-box-body">
+            {showCreate && (
+              <form
+                onSubmit={createSession}
+                style={{
+                  padding: 16,
+                  background: '#0d0d11',
+                  border: '1px solid #3f3f46',
+                  borderLeft: '3px solid #c8a165',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: 12.5,
+                    color: '#e8c98f',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300">
-                    <Radio className="h-5 w-5" />
+                  Héberger une nouvelle session Fast Direct sur ce poste
+                </div>
+
+                <div className="pk-direct-form-grid">
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Nom de la session</label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Ex. ASUL — match du 17/11"
+                    />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-black text-white">{session.name}</div>
-                    <div className="truncate text-[11px] text-slate-400">
-                      {session.team1_name} · {session.team2_name}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Équipe analysée (optionnelle)</label>
+                    <select value={team1} onChange={(e) => setTeam1(e.target.value)}>
+                      <option value="">— Sans fiche d’équipe —</option>
+                      {teams.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Adversaire (optionnel)</label>
+                    <select value={team2} onChange={(e) => setTeam2(e.target.value)}>
+                      <option value="">— Aucun adversaire précis —</option>
+                      {teams
+                        .filter((team) => String(team.id) !== String(team1))
+                        .map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                {!teams.length && (
+                  <div style={{ fontSize: 12, color: '#e8c98f' }}>
+                    Aucune fiche équipe : la session utilisera le nom saisi et les joueurs pourront
+                    être renseignés directement dans la prise de distribution.
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowCreate(false)}
+                  >
+                    Annuler
+                  </button>
+                  <button type="submit" className="btn btn-primary" disabled={creating}>
+                    {creating ? 'Création…' : 'Démarrer la session en direct →'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {loading ? (
+              <div
+                style={{
+                  padding: '28px 18px',
+                  textAlign: 'center',
+                  color: '#a1a1aa',
+                  background: '#0d0d11',
+                  border: '1px dashed #2e2e38',
+                }}
+              >
+                Chargement des sessions Fast Direct…
+              </div>
+            ) : activeSessions.length === 0 ? (
+              <div
+                style={{
+                  padding: '28px 18px',
+                  textAlign: 'center',
+                  color: '#a1a1aa',
+                  background: '#0d0d11',
+                  border: '1px dashed #2e2e38',
+                }}
+              >
+                Aucune session Fast Direct active. Cliquez sur{' '}
+                <strong style={{ color: '#e8c98f' }}>« + Nouvelle session Fast Direct »</strong> pour
+                lancer un direct depuis ce poste.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {activeSessions.map((session) => (
+                  <div
+                    key={session.id}
+                    onClick={() => navigate(`/fast-direct/${session.id}`)}
+                    className="pk-direct-session-card"
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: 800, color: '#f4f4f5', fontSize: 14 }}>
+                        {session.name}
+                      </div>
+                      <div style={{ fontSize: 12.5, color: '#a1a1aa', marginTop: 2 }}>
+                        {session.team1_name}{' '}
+                        <span style={{ color: '#c8a165', fontWeight: 700 }}>vs</span>{' '}
+                        {session.team2_name}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {session.join_code && (
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: 11.5,
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            background: 'rgba(200, 161, 101, 0.14)',
+                            color: '#e8c98f',
+                            border: '1px solid rgba(200, 161, 101, 0.45)',
+                          }}
+                        >
+                          CODE {session.join_code}
+                        </span>
+                      )}
+                      <span
+                        style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '3px 8px',
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: '#10b981',
+                          border: '1px solid #059669',
+                        }}
+                      >
+                        ● EN DIRECT
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/fast-direct/${session.id}`);
+                        }}
+                      >
+                        Ouvrir →
+                      </button>
                     </div>
                   </div>
-                  <span className="rounded-lg bg-slate-800 px-2 py-1 font-mono text-xs font-black text-amber-200">
-                    {session.join_code}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </section>
-      </main>
+
+        {/* COLONNE DROITE : REJOINDRE DEPUIS UN AUTRE APPAREIL */}
+        <section className="pk-showcase-box">
+          <div className="pk-showcase-box-head">
+            <h3>Rejoindre depuis un autre appareil</h3>
+          </div>
+          <div className="pk-showcase-box-body">
+            <div
+              style={{
+                padding: '10px 12px',
+                background: '#0d0d11',
+                border: '1px solid #2e2e38',
+                borderLeft: '3px solid #c8a165',
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: '#e8c98f',
+              }}
+            >
+              Aucun code à saisir : le PC hôte envoie directement le lien correspondant au rôle.
+            </div>
+
+            <div className="pk-direct-step">
+              <span className="pk-direct-step-num">1</span>
+              <div>
+                Sur le PC hôte, ouvrez la session puis cliquez sur <strong style={{ color: '#fff' }}>Code</strong> en haut à droite.
+              </div>
+            </div>
+            <div className="pk-direct-step">
+              <span className="pk-direct-step-num">2</span>
+              <div>
+                Copiez le lien de l’appareil souhaité : <strong style={{ color: '#fff' }}>Appareil Stats</strong> (tous onglets), <strong style={{ color: '#fff' }}>Banc (Tablette)</strong> ou <strong style={{ color: '#fff' }}>Caméra</strong>.
+              </div>
+            </div>
+            <div className="pk-direct-step">
+              <span className="pk-direct-step-num">3</span>
+              <div>
+                Ouvrez ce lien sur la tablette, le téléphone ou l’autre poste connecté au même réseau Wi‑Fi : il rejoint la session automatiquement.
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   );
-}
 
-function Field({ label, children }) {
+  if (embedded) {
+    return content;
+  }
+
   return (
-    <label className="mb-2.5 block">
-      <span className="mb-1 block text-[11px] font-black text-slate-400">{label}</span>
-      {children}
-    </label>
+    <div className="dv-matches-page">
+      <AppNavigation user={user} onLogout={onLogout} />
+      <main className="pk-mode-home">
+        <header className="pk-mode-header">
+          <div className="pk-mode-header-left">
+            <PancakeLogo size={56} />
+            <div>
+              <h1 className="pk-mode-header-title">Direct · Stats en direct faciles</h1>
+              <p className="pk-mode-header-sub">
+                3 appareils reliés en direct : Stats (Distribution + Autres stats + Caméra), Banc
+                tablette (P1–P6 &amp; Stats) et Caméra terrain.
+              </p>
+            </div>
+          </div>
+        </header>
+        {content}
+      </main>
+    </div>
   );
 }

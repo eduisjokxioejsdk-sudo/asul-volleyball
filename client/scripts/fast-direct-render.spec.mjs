@@ -317,7 +317,36 @@ try {
     'app Stats facile rendue en plein écran dans Pancake',
     statsHtml.includes('Stats facile') &&
       statsHtml.includes('stats-fast-direct/index.html?theme=dark') &&
+      statsHtml.includes('stats-facile-iframe') &&
+      statsHtml.includes('position:fixed') &&
+      statsHtml.includes('100vw') &&
+      statsHtml.includes('100vh') &&
       !statsHtml.includes('Ouvrir en plein écran')
+  );
+
+  const directHub = (await vite.ssrLoadModule('/src/pages/DirectHubPage.jsx')).default;
+  const directEasyHtml = renderToString(
+    React.createElement(
+      MemoryRouter,
+      { initialEntries: ['/direct?tab=easy'] },
+      React.createElement(directHub, { user: { id: 1, name: 'Test' }, onLogout: noop })
+    )
+  );
+  const directAdvHtml = renderToString(
+    React.createElement(
+      MemoryRouter,
+      { initialEntries: ['/direct?tab=advanced'] },
+      React.createElement(directHub, { user: { id: 1, name: 'Test' }, onLogout: noop })
+    )
+  );
+  check(
+    'onglet Direct unifié avec même UI Pancake pour les 2 modes',
+    directEasyHtml.includes('mode-btn active') &&
+      directEasyHtml.includes('pk-direct-grid') &&
+      directEasyHtml.includes('Sessions Fast Direct') &&
+      directAdvHtml.includes('mode-btn active') &&
+      directAdvHtml.includes('pk-direct-grid') &&
+      directAdvHtml.includes('Sessions en direct avancées')
   );
 } catch (err) {
   failures += 1;

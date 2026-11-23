@@ -514,10 +514,12 @@ kbd, .pk-kbd {
   transform: translateY(-4px);
 }
 .app-global-nav {
-  flex: 0 0 56px;
-  height: 56px;
+  flex: 0 0 54px;
+  height: 54px;
   width: 100%;
+  min-width: 0;
   display: flex;
+  flex-wrap: nowrap;
   align-items: stretch;
   justify-content: space-between;
   padding: 0 !important;
@@ -549,8 +551,9 @@ kbd, .pk-kbd {
 .nav-brand-section {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 20px;
+  flex: 0 0 auto;
+  gap: 10px;
+  padding: 0 16px;
   border-right: 1px solid #27272a;
   cursor: pointer;
   background: linear-gradient(90deg, rgba(200, 161, 101, 0.08) 0%, transparent 100%);
@@ -564,7 +567,7 @@ kbd, .pk-kbd {
   border: 0 !important;
 }
 .brand-name {
-  font-size: 18.5px;
+  font-size: 17px;
   font-weight: 800;
   letter-spacing: -0.05em;
   color: #f4f4f5;
@@ -575,21 +578,45 @@ kbd, .pk-kbd {
   display: flex;
   align-items: stretch;
   flex: 1 1 auto;
+  min-width: 0;
   gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   background: none !important;
   border: 0 !important;
   padding: 0 !important;
 }
+.nav-apps-menu::-webkit-scrollbar { display: none; }
+/* Dégradés de bord : posés par AppNavigation uniquement quand la rangée
+   d'onglets déborde réellement de ce côté-là. */
+.nav-apps-menu.has-overflow-right {
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
+}
+.nav-apps-menu.has-overflow-left {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 26px, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 26px, #000 100%);
+}
+.nav-apps-menu.has-overflow-left.has-overflow-right {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%);
+}
 .nav-app-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   gap: 6px;
-  padding: 0 18px !important;
+  padding: 0 13px !important;
   height: 100%;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
   color: #a1a1aa;
   background: transparent !important;
   border: 0 !important;
@@ -608,23 +635,58 @@ kbd, .pk-kbd {
   background: linear-gradient(180deg, rgba(200, 161, 101, 0.12) 0%, #09090b 100%) !important;
   border-bottom-color: #c8a165 !important;
 }
-.nav-right-section { display: flex; align-items: stretch; gap: 0 !important; }
-.nav-right-section .btn, .nav-teams-btn {
+.nav-right-section {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 0 !important;
+}
+.nav-right-section .btn,
+.nav-teams-btn,
+.nav-action-btn {
   height: 100%;
   border: 0 !important;
   border-left: 1px solid #27272a !important;
   border-radius: 0 !important;
   background: transparent !important;
-  padding: 0 16px !important;
-  font-size: 12px !important;
+  padding: 0 13px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
 }
-.nav-right-section .btn:hover { background: #1c1c22 !important; transform: none; }
+.nav-right-section .btn:hover,
+.nav-action-btn:hover {
+  background: #1c1c22 !important;
+  color: #f4f4f5;
+  transform: none;
+}
+/* Bouton d'accès à une page secondaire (Clavier, Équipes) : icône + libellé,
+   même gabarit que les onglets pour garder la barre parfaitement alignée. */
+.nav-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nav-action-btn svg { flex-shrink: 0; }
+.nav-action-btn.active {
+  color: #f4f4f5;
+  background: linear-gradient(180deg, rgba(200, 161, 101, 0.12) 0%, #09090b 100%) !important;
+  box-shadow: inset 0 -3px 0 #c8a165;
+}
+.nav-action-label { line-height: 1; }
 .nav-user-group { display: flex; align-items: stretch; gap: 0 !important; position: relative; }
 .nav-user-pill {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 14px;
+  gap: 7px;
+  padding: 0 12px;
   background: transparent !important;
   border: 0 !important;
   border-left: 1px solid #27272a !important;
@@ -852,16 +914,25 @@ kbd, .pk-kbd {
   justify-content: center;
   border-radius: 2px;
 }
-.user-fullname { font-size: 12px; font-weight: 600; color: #e4e4e7; }
+.user-fullname {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e4e4e7;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .nav-logout-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 14px;
-  font-size: 11.5px;
+  padding: 0 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
   color: #a1a1aa;
   background: transparent !important;
   border: 0 !important;
@@ -870,6 +941,7 @@ kbd, .pk-kbd {
   cursor: pointer;
   transition: all 0.15s ease;
 }
+.nav-logout-btn svg { flex-shrink: 0; }
 .nav-logout-btn:hover { background: #e11d48 !important; color: #fff; }
 
 /* Actions fournies par une page (ex. « Sans évaluation » de Data Volley) :
@@ -899,18 +971,19 @@ kbd, .pk-kbd {
   box-shadow: inset 0 -3px 0 #c8a165;
 }
 
-/* Barre réduite pendant le codage : 38 px au lieu de 56 px. Les onglets
+/* Barre réduite pendant le codage : 40 px au lieu de 54 px. Les onglets
    restent cliquables, seuls le logo et les badges de raccourcis rétrécissent. */
 .app-global-nav.is-compact {
-  flex: 0 0 38px;
-  height: 38px;
+  flex: 0 0 40px;
+  height: 40px;
 }
 .app-global-nav.is-compact .nav-brand-section { padding: 0 8px; gap: 0; }
 .app-global-nav.is-compact .brand-name { display: none; }
 .app-global-nav.is-compact .pk-logo-badge { width: 24px !important; height: 24px !important; }
-.app-global-nav.is-compact .nav-app-btn { padding: 0 11px !important; font-size: 11px; letter-spacing: 0.03em; }
+.app-global-nav.is-compact .nav-app-btn { padding: 0 11px !important; font-size: 10.5px; letter-spacing: 0.03em; }
 .app-global-nav.is-compact .nav-tool-btn,
-.app-global-nav.is-compact .nav-teams-btn { padding: 0 10px !important; font-size: 10.5px !important; }
+.app-global-nav.is-compact .nav-teams-btn,
+.app-global-nav.is-compact .nav-action-btn { padding: 0 10px !important; font-size: 10.5px !important; }
 .app-global-nav.is-compact .nav-tool-btn kbd { display: none; }
 .app-global-nav.is-compact .nav-user-pill { padding: 0 8px; gap: 6px; }
 .app-global-nav.is-compact .user-initial { width: 18px; height: 18px; font-size: 10px; }
@@ -918,6 +991,38 @@ kbd, .pk-kbd {
 .app-global-nav.is-compact .nav-club-label { display: none; }
 .app-global-nav.is-compact .nav-club-badge { padding: 2px 4px; }
 .app-global-nav.is-compact .nav-logout-btn { padding: 0 10px; font-size: 10.5px; }
+
+/* --- Adaptation en largeur : on libère de la place par ordre d'importance.
+   Les onglets du milieu restent défilables horizontalement en dernier recours,
+   la zone de droite n'est donc jamais poussée hors de l'écran. --- */
+@media (max-width: 1560px) {
+  .app-global-nav .nav-club-label { display: none; }
+  .app-global-nav .nav-club-badge { padding: 2px 5px; }
+  .app-global-nav .user-fullname { max-width: 104px; }
+}
+@media (max-width: 1440px) {
+  .app-global-nav .nav-app-btn { padding: 0 11px !important; font-size: 10.5px; letter-spacing: 0.04em; }
+  .app-global-nav .nav-action-btn { padding: 0 11px !important; }
+  .app-global-nav .nav-logout-label { display: none; }
+  .app-global-nav .nav-logout-btn { padding: 0 12px; }
+}
+@media (max-width: 1280px) {
+  .app-global-nav .brand-name { display: none; }
+  .app-global-nav .nav-brand-section { padding: 0 12px; }
+  .app-global-nav .nav-action-teams .nav-action-label { display: none; }
+  .app-global-nav .user-fullname { display: none; }
+  .app-global-nav .nav-user-pill { padding: 0 10px; }
+}
+@media (max-width: 1080px) {
+  .app-global-nav .nav-action-keyboard .nav-action-label { display: none; }
+  .app-global-nav .nav-club-badge { display: none; }
+  .app-global-nav .nav-app-btn { padding: 0 10px !important; }
+}
+@media (max-width: 860px) {
+  .app-global-nav .nav-tool-btn .nav-tool-label { display: none; }
+  .app-global-nav .nav-tool-btn { padding: 0 10px !important; }
+  .app-global-nav .nav-right-section .btn { padding: 0 10px !important; }
+}
 
 /* ---------------------------------------------------------------------------
    5. COMPOSANT ANIMÉ PANCAKE (Hero Hub & Formation)
@@ -1770,4 +1875,102 @@ tbody tr:hover, .dvx-drill-point:hover, .dv-code-row:hover, .shelf-clip-card:hov
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* Mode Stats facile — plein écran direct */
+.stats-facile-page {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #09090b !important;
+  border-radius: 0 !important;
+}
+.stats-facile-iframe {
+  position: fixed !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 100vh !important;
+  border: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #09090b !important;
+  border-radius: 0 !important;
+  z-index: 1 !important;
+}
+
+/* Modes Direct unifiés (Stats en direct faciles & Stats en direct avancées) */
+.pk-direct-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(330px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.pk-direct-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1024px) {
+  .pk-direct-grid {
+    grid-template-columns: 1fr;
+  }
+  .pk-direct-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.pk-direct-session-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: #0d0d11;
+  border: 1px solid #27272a;
+  border-left: 3px solid #10b981;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+.pk-direct-session-card:hover {
+  background: #17171f;
+  border-color: #52525b;
+  border-left-color: #c8a165;
+  transform: translateY(-1px);
+}
+.pk-direct-session-card.is-finished {
+  border-left-color: #52525b;
+}
+.pk-direct-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #0d0d11;
+  border: 1px solid #27272a;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #d4d4d8;
+}
+.pk-direct-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 800;
+  background: rgba(200, 161, 101, 0.16);
+  border: 1px solid #c8a165;
+  color: #e8c98f;
 }
