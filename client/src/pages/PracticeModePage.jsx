@@ -740,6 +740,13 @@ export default function PracticeModePage({ user, onLogout }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <button
                 type="button"
+                className="btn btn-secondary"
+                onClick={() => navigate('/datavolley')}
+              >
+                ← Retour aux Stats
+              </button>
+              <button
+                type="button"
                 className="btn btn-primary btn-lg"
                 onClick={() => {
                   setModalError('');

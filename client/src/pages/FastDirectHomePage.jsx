@@ -14,7 +14,7 @@ import useCollectionChanged from '../hooks/useCollectionChanged';
 import '../features/fast-direct/fast-direct.css';
 
 /** Accueil du mode Fast Direct : création, reprise et invitations par lien. */
-export default function FastDirectHomePage({ user, onLogout }) {
+export default function FastDirectHomePage({ user, onLogout, embedded = false }) {
   const navigate = useNavigate();
   const [teams, setTeams] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -116,15 +116,15 @@ export default function FastDirectHomePage({ user, onLogout }) {
   );
 
   return (
-    <div className="fast-direct-root min-h-screen bg-slate-950 text-slate-100">
-      <AppNavigation user={user} onLogout={onLogout} />
-      <main className="mx-auto w-full max-w-6xl px-4 py-6">
+    <div className={`fast-direct-root ${embedded ? '' : 'min-h-screen bg-slate-950'} text-slate-100`}>
+      {!embedded && <AppNavigation user={user} onLogout={onLogout} />}
+      <main className={embedded ? 'mx-auto w-full max-w-6xl px-4 py-4' : 'mx-auto w-full max-w-6xl px-4 py-6'}>
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="mb-1 inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.15em] text-rose-300">
               <Radio className="h-3.5 w-3.5" /> Session multi-appareils
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-white">Fast Direct</h1>
+            <h1 className="text-3xl font-black tracking-tight text-white">Stats en direct faciles</h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-400">
               3 appareils reliés en direct : Stats (Distribution + Autres stats + Caméra), Banc
               tablette (P1–P6 &amp; Stats) et Caméra terrain.

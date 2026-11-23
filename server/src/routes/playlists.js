@@ -8,10 +8,10 @@ const db = require('../database');
 
 const router = express.Router();
 
-function loadAllPlaylists(callback) {
+function loadAllPlaylists(clubId, callback) {
   db.all(
-    'SELECT * FROM dv_playlists ORDER BY updated_at DESC, id DESC',
-    [],
+    'SELECT * FROM dv_playlists WHERE club_id = ? ORDER BY updated_at DESC, id DESC',
+    [clubId],
     (err, playlists) => {
       if (err) return callback(err);
       if (!playlists || playlists.length === 0) return callback(null, []);
@@ -50,9 +50,9 @@ function loadAllPlaylists(callback) {
   );
 }
 
-// Liste toutes les playlists avec leurs clips
+// Liste toutes les playlists du club actif avec leurs clips
 router.get('/', authenticateToken, (req, res) => {
-  loadAllPlaylists((err, playlists) => {
+  loadAllPlaylists(req.clubId, (err, playlists) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     res.json({ playlists });
   });
@@ -65,14 +65,14 @@ router.post('/', authenticateToken, (req, res) => {
   if (!cleanName) return res.status(400).json({ error: 'Le nom de la playlist est requis' });
 
   db.run(
-    'INSERT INTO dv_playlists (user_id, name, description) VALUES (?, ?, ?)',
-    [req.user.id, cleanName, description ? String(description).trim() : null],
+    'INSERT INTO dv_playlists (user_id, club_id, name, description) VALUES (?, ?, ?, ?)',
+    [req.user.id, req.clubId, cleanName, description ? String(description).trim() : null],
     function (err) {
       if (err) return res.status(500).json({ error: 'Database error' });
       const playlistId = this.lastID;
 
       if (!Array.isArray(items) || items.length === 0) {
-        return loadAllPlaylists((err2, playlists) => {
+        return loadAllPlaylists(req.clubId, (err2, playlists) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
           res.status(201).json({
             playlist: playlists.find((p) => p.id === playlistId),
@@ -103,7 +103,7 @@ router.post('/', authenticateToken, (req, res) => {
         );
       });
       stmt.finalize(() => {
-        loadAllPlaylists((err2, playlists) => {
+        loadAllPlaylists(req.clubId, (err2, playlists) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
           res.status(201).json({
             playlist: playlists.find((p) => p.id === playlistId),
@@ -129,8 +129,8 @@ router.post('/:id/items', authenticateToken, (req, res) => {
   }
 
   db.get(
-    'SELECT * FROM dv_playlists WHERE id = ?',
-    [playlistId],
+    'SELECT * FROM dv_playlists WHERE id = ? AND club_id = ?',
+    [playlistId, req.clubId],
     (err, pl) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!pl) return res.status(404).json({ error: 'Playlist introuvable' });
@@ -163,7 +163,7 @@ router.post('/:id/items', authenticateToken, (req, res) => {
           });
           stmt.finalize(() => {
             db.run('UPDATE dv_playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [playlistId], () => {
-              loadAllPlaylists((err3, playlists) => {
+              loadAllPlaylists(req.clubId, (err3, playlists) => {
                 if (err3) return res.status(500).json({ error: 'Database error' });
                 res.json({
                   playlist: playlists.find((p) => p.id === playlistId),
@@ -184,8 +184,8 @@ router.put('/:id', authenticateToken, (req, res) => {
   const { name, description, items } = req.body || {};
 
   db.get(
-    'SELECT * FROM dv_playlists WHERE id = ?',
-    [playlistId],
+    'SELECT * FROM dv_playlists WHERE id = ? AND club_id = ?',
+    [playlistId, req.clubId],
     (err, pl) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!pl) return res.status(404).json({ error: 'Playlist introuvable' });
@@ -194,13 +194,13 @@ router.put('/:id', authenticateToken, (req, res) => {
       const newDesc = description !== undefined ? description : pl.description;
 
       db.run(
-        'UPDATE dv_playlists SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [newName, newDesc, playlistId],
+        'UPDATE dv_playlists SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND club_id = ?',
+        [newName, newDesc, playlistId, req.clubId],
         (err2) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
 
           if (!Array.isArray(items)) {
-            return loadAllPlaylists((err3, playlists) => {
+            return loadAllPlaylists(req.clubId, (err3, playlists) => {
               if (err3) return res.status(500).json({ error: 'Database error' });
               res.json({
                 playlist: playlists.find((p) => p.id === playlistId),
@@ -212,7 +212,7 @@ router.put('/:id', authenticateToken, (req, res) => {
           db.run('DELETE FROM dv_playlist_items WHERE playlist_id = ?', [playlistId], (err3) => {
             if (err3) return res.status(500).json({ error: 'Database error' });
             if (items.length === 0) {
-              return loadAllPlaylists((err4, playlists) => {
+              return loadAllPlaylists(req.clubId, (err4, playlists) => {
                 if (err4) return res.status(500).json({ error: 'Database error' });
                 res.json({
                   playlist: playlists.find((p) => p.id === playlistId),
@@ -242,7 +242,7 @@ router.put('/:id', authenticateToken, (req, res) => {
               );
             });
             stmt.finalize(() => {
-              loadAllPlaylists((err4, playlists) => {
+              loadAllPlaylists(req.clubId, (err4, playlists) => {
                 if (err4) return res.status(500).json({ error: 'Database error' });
                 res.json({
                   playlist: playlists.find((p) => p.id === playlistId),
@@ -261,18 +261,26 @@ router.put('/:id', authenticateToken, (req, res) => {
 router.delete('/:id/items/:itemId', authenticateToken, (req, res) => {
   const playlistId = Number(req.params.id);
   const itemId = Number(req.params.itemId);
-  db.run(
-    'DELETE FROM dv_playlist_items WHERE id = ? AND playlist_id = ?',
-    [itemId, playlistId],
-    function (err) {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      loadAllPlaylists((err2, playlists) => {
-        if (err2) return res.status(500).json({ error: 'Database error' });
-        res.json({
-          playlist: playlists.find((p) => p.id === playlistId),
-          playlists,
-        });
-      });
+  db.get(
+    'SELECT id FROM dv_playlists WHERE id = ? AND club_id = ?',
+    [playlistId, req.clubId],
+    (plErr, pl) => {
+      if (plErr) return res.status(500).json({ error: 'Database error' });
+      if (!pl) return res.status(404).json({ error: 'Playlist introuvable' });
+      db.run(
+        'DELETE FROM dv_playlist_items WHERE id = ? AND playlist_id = ?',
+        [itemId, playlistId],
+        function (err) {
+          if (err) return res.status(500).json({ error: 'Database error' });
+          loadAllPlaylists(req.clubId, (err2, playlists) => {
+            if (err2) return res.status(500).json({ error: 'Database error' });
+            res.json({
+              playlist: playlists.find((p) => p.id === playlistId),
+              playlists,
+            });
+          });
+        }
+      );
     }
   );
 });
@@ -281,11 +289,11 @@ router.delete('/:id/items/:itemId', authenticateToken, (req, res) => {
 router.delete('/:id', authenticateToken, (req, res) => {
   const playlistId = Number(req.params.id);
   db.run(
-    'DELETE FROM dv_playlists WHERE id = ?',
-    [playlistId],
+    'DELETE FROM dv_playlists WHERE id = ? AND club_id = ?',
+    [playlistId, req.clubId],
     function (err) {
       if (err) return res.status(500).json({ error: 'Database error' });
-      loadAllPlaylists((err2, playlists) => {
+      loadAllPlaylists(req.clubId, (err2, playlists) => {
         if (err2) return res.status(500).json({ error: 'Database error' });
         res.json({ playlists });
       });

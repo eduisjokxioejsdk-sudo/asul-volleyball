@@ -5,6 +5,7 @@ const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
+const { DEFAULT_CLUB_ID } = require('../clubs');
 const syncHub = require('../syncHub');
 const { emitCollectionChanged } = require('../socket');
 const { mountSyncRoutes } = require('./sync');
@@ -235,31 +236,36 @@ router.post('/upload', authenticateToken, (req, res) => {
 
     const teamIds = [home_team_id, away_team_id].filter(Boolean);
     const loadTeamUuids = (cb) => {
-      if (!teamIds.length) return cb(null, null);
+      if (!teamIds.length) return cb(null, null, null, null);
       db.all(
-        `SELECT id, sync_uuid FROM teams WHERE id IN (${teamIds.map(() => '?').join(', ')})`,
-        teamIds,
+        `SELECT id, sync_uuid FROM teams WHERE id IN (${teamIds.map(() => '?').join(', ')}) AND club_id = ?`,
+        [...teamIds, req.clubId],
         (tErr, tRows) => {
-          if (tErr) return cb(null, null);
+          if (tErr) return cb(null, null, null, null);
           const map = new Map((tRows || []).map((r) => [Number(r.id), r.sync_uuid]));
+          const validHomeId = home_team_id && map.has(home_team_id) ? home_team_id : null;
+          const validAwayId = away_team_id && map.has(away_team_id) ? away_team_id : null;
           cb(
-            home_team_id ? map.get(home_team_id) || null : null,
-            away_team_id ? map.get(away_team_id) || null : null
+            validHomeId,
+            validAwayId,
+            validHomeId ? map.get(validHomeId) || null : null,
+            validAwayId ? map.get(validAwayId) || null : null
           );
         }
       );
     };
 
-    loadTeamUuids((home_team_uuid, away_team_uuid) => {
+    loadTeamUuids((validHomeId, validAwayId, home_team_uuid, away_team_uuid) => {
       db.run(
         `INSERT INTO videos (
-          user_id, filename, original_name, display_name, journee, youtube_url, youtube_url_angle2, filepath,
+          user_id, club_id, filename, original_name, display_name, journee, youtube_url, youtube_url_angle2, filepath,
           filename_angle2, filepath_angle2, angle2_offset,
           team1_name, team2_name, home_team_id, away_team_id, home_team_uuid, away_team_uuid,
           status, sync_uuid, dirty, deleted, local_updated_at
-        ) VALUES (?, '', ?, ?, ?, ?, ?, '', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
+        ) VALUES (?, ?, '', ?, ?, ?, ?, ?, '', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
         [
           req.user.id,
+          req.clubId,
           original_name,
           display_name,
           journee,
@@ -268,8 +274,8 @@ router.post('/upload', authenticateToken, (req, res) => {
           angle2_offset,
           team1_name,
           team2_name,
-          home_team_id,
-          away_team_id,
+          validHomeId,
+          validAwayId,
           home_team_uuid,
           away_team_uuid,
           status,
@@ -294,10 +300,12 @@ router.post('/upload', authenticateToken, (req, res) => {
                away_team_uuid = excluded.away_team_uuid,
                dirty = 1,
                local_updated_at = excluded.local_updated_at`,
-            [videoId, uuidv4(), home_team_id, away_team_id, home_team_uuid, away_team_uuid, nowIso],
+            [videoId, uuidv4(), validHomeId, validAwayId, home_team_uuid, away_team_uuid, nowIso],
             () => {
-              syncHub.videos.syncNow({ reason: 'upload' }).catch(() => {});
-              syncHub.matches.syncNow({ reason: 'upload' }).catch(() => {});
+              if (req.clubId === DEFAULT_CLUB_ID) {
+                syncHub.videos.syncNow({ reason: 'upload' }).catch(() => {});
+                syncHub.matches.syncNow({ reason: 'upload' }).catch(() => {});
+              }
             }
           );
 
@@ -307,6 +315,7 @@ router.post('/upload', authenticateToken, (req, res) => {
             id: videoId,
             sync_uuid: videoSyncUuid,
             user_id: req.user.id,
+            club_id: req.clubId,
             filename: '',
             original_name,
             display_name,
@@ -319,8 +328,8 @@ router.post('/upload', authenticateToken, (req, res) => {
             angle2_offset,
             team1_name,
             team2_name,
-            home_team_id,
-            away_team_id,
+            home_team_id: validHomeId,
+            away_team_id: validAwayId,
             status,
             duration: null,
           });
@@ -351,19 +360,20 @@ router.post('/purge-local', authenticateToken, (req, res) => {
     .catch((err) => res.status(500).json({ error: err.message || 'Nettoyage impossible.' }));
 });
 
-// Get all videos (uniquement les matchs YouTube, partagés entre tous les
-// comptes et tous les postes : la bibliothèque est identique partout)
+// Get all videos du club actif (uniquement les matchs YouTube)
 router.get('/', authenticateToken, (req, res) => {
   db.all(
     `SELECT v.*,
             (SELECT GROUP_CONCAT(DISTINCT vf.folder_id)
                FROM video_folders vf
-              WHERE vf.video_id = v.id) AS folder_ids
+               JOIN folders f ON f.id = vf.folder_id
+              WHERE vf.video_id = v.id AND f.club_id = v.club_id) AS folder_ids
        FROM videos v
-      WHERE COALESCE(v.deleted, 0) = 0
+      WHERE v.club_id = ?
+        AND COALESCE(v.deleted, 0) = 0
         AND TRIM(COALESCE(v.youtube_url, '')) <> ''
       ORDER BY v.created_at DESC, v.id DESC`,
-    [],
+    [req.clubId],
     (err, rows) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
@@ -377,9 +387,9 @@ router.get('/', authenticateToken, (req, res) => {
 router.get('/:id', authenticateToken, (req, res) => {
   db.get(
     `SELECT * FROM videos
-      WHERE id = ? AND COALESCE(deleted, 0) = 0
+      WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0
         AND TRIM(COALESCE(youtube_url, '')) <> ''`,
-    [req.params.id],
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
@@ -398,8 +408,8 @@ router.get('/:id', authenticateToken, (req, res) => {
 
 router.post('/:id/playable/diagnose', authenticateToken, (req, res) => {
   db.get(
-    'SELECT id FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
-    [req.params.id],
+    'SELECT id FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -412,8 +422,8 @@ router.post('/:id/playable/diagnose', authenticateToken, (req, res) => {
 
 router.get('/:id/playable/status', authenticateToken, (req, res) => {
   db.get(
-    'SELECT id, filepath_proxy, proxy_status, proxy_error FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
-    [req.params.id],
+    'SELECT id, filepath_proxy, proxy_status, proxy_error FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -437,8 +447,8 @@ router.get('/:id/playable/status', authenticateToken, (req, res) => {
 
 router.post('/:id/playable', authenticateToken, (req, res) => {
   db.get(
-    'SELECT id FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
-    [req.params.id],
+    'SELECT id FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -452,8 +462,8 @@ router.post('/:id/playable', authenticateToken, (req, res) => {
 // Delete a video (pierre tombale propagée au Cloud + nettoyage des fichiers locaux)
 router.delete('/:id', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
-    [req.params.id],
+    'SELECT * FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
@@ -472,8 +482,8 @@ router.delete('/:id', authenticateToken, (req, res) => {
         `UPDATE videos
             SET sync_uuid = ?, deleted = 1, dirty = 1, local_updated_at = ?,
                 filename = '', filepath = '', filepath_proxy = NULL, filename_angle2 = NULL, filepath_angle2 = NULL
-          WHERE id = ?`,
-        [syncUuid, nowIso, video.id],
+          WHERE id = ? AND club_id = ?`,
+        [syncUuid, nowIso, video.id, req.clubId],
         function (delErr) {
           if (delErr) {
             return res.status(500).json({ error: 'Failed to delete video' });
@@ -482,8 +492,10 @@ router.delete('/:id', authenticateToken, (req, res) => {
             'UPDATE volley_matches SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_id = ?',
             [nowIso, video.id],
             () => {
-              syncHub.videos.syncNow({ reason: 'delete' }).catch(() => {});
-              syncHub.matches.syncNow({ reason: 'delete' }).catch(() => {});
+              if (req.clubId === DEFAULT_CLUB_ID) {
+                syncHub.videos.syncNow({ reason: 'delete' }).catch(() => {});
+                syncHub.matches.syncNow({ reason: 'delete' }).catch(() => {});
+              }
             }
           );
           emitCollectionChanged('videos');
@@ -528,8 +540,8 @@ router.patch('/:id', authenticateToken, (req, res) => {
   const { display_name, color, angle2_offset, youtube_url, youtube_url_angle2, team1_name, team2_name, duration, status, journee } = req.body || {};
 
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
-    [req.params.id],
+    'SELECT * FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
@@ -618,14 +630,16 @@ router.patch('/:id', authenticateToken, (req, res) => {
       updates.push('local_updated_at = ?');
       values.push(new Date().toISOString());
 
-      values.push(req.params.id);
-      const query = `UPDATE videos SET ${updates.join(', ')} WHERE id = ?`;
+      values.push(req.params.id, req.clubId);
+      const query = `UPDATE videos SET ${updates.join(', ')} WHERE id = ? AND club_id = ?`;
 
       db.run(query, values, function (upErr) {
         if (upErr) {
           return res.status(500).json({ error: 'Failed to update video' });
         }
-        syncHub.videos.syncNow({ reason: 'patch' }).catch(() => {});
+        if (req.clubId === DEFAULT_CLUB_ID) {
+          syncHub.videos.syncNow({ reason: 'patch' }).catch(() => {});
+        }
         emitCollectionChanged('videos');
         db.get(
           'SELECT * FROM videos WHERE id = ?',
@@ -647,18 +661,27 @@ router.post('/:id/folders', authenticateToken, (req, res) => {
   const { folder_id } = req.body;
 
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
-    [req.params.id],
+    'SELECT * FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
 
-      db.run(
-        'INSERT OR IGNORE INTO video_folders (video_id, folder_id) VALUES (?, ?)',
-        [req.params.id, folder_id],
-        function (insErr) {
-          if (insErr) return res.status(500).json({ error: 'Failed to add video to folder' });
-          res.json({ message: 'Video added to folder' });
+      db.get(
+        'SELECT id FROM folders WHERE id = ? AND club_id = ?',
+        [folder_id, req.clubId],
+        (fErr, folder) => {
+          if (fErr) return res.status(500).json({ error: 'Database error' });
+          if (!folder) return res.status(404).json({ error: 'Folder not found' });
+
+          db.run(
+            'INSERT OR IGNORE INTO video_folders (video_id, folder_id) VALUES (?, ?)',
+            [req.params.id, folder_id],
+            function (insErr) {
+              if (insErr) return res.status(500).json({ error: 'Failed to add video to folder' });
+              res.json({ message: 'Video added to folder' });
+            }
+          );
         }
       );
     }
@@ -668,8 +691,8 @@ router.post('/:id/folders', authenticateToken, (req, res) => {
 // Remove video from folder
 router.delete('/:id/folders/:folderId', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
-    [req.params.id],
+    'SELECT * FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -689,8 +712,8 @@ router.delete('/:id/folders/:folderId', authenticateToken, (req, res) => {
 // Get folders for a video
 router.get('/:id/folders', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
-    [req.params.id],
+    'SELECT * FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -698,9 +721,9 @@ router.get('/:id/folders', authenticateToken, (req, res) => {
       db.all(
         `SELECT f.* FROM folders f
          INNER JOIN video_folders vf ON f.id = vf.folder_id
-         WHERE vf.video_id = ?
+         WHERE vf.video_id = ? AND f.club_id = ?
          ORDER BY f.name ASC`,
-        [req.params.id],
+        [req.params.id, req.clubId],
         (fErr, folders) => {
           if (fErr) return res.status(500).json({ error: 'Database error' });
           res.json({ folders: folders || [] });
@@ -717,11 +740,13 @@ router.get('/folders/all', authenticateToken, (req, res) => {
      FROM folders f
      LEFT JOIN video_folders vf ON f.id = vf.folder_id
      LEFT JOIN videos v ON v.id = vf.video_id
+       AND v.club_id = f.club_id
        AND COALESCE(v.deleted, 0) = 0
        AND TRIM(COALESCE(v.youtube_url, '')) <> ''
+     WHERE f.club_id = ?
      GROUP BY f.id
      ORDER BY f.name ASC`,
-    [],
+    [req.clubId],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       res.json({ folders: rows || [] });
@@ -732,8 +757,8 @@ router.get('/folders/all', authenticateToken, (req, res) => {
 // Get videos in a folder
 router.get('/folders/:id/videos', authenticateToken, (req, res) => {
   db.get(
-    'SELECT * FROM folders WHERE id = ?',
-    [req.params.id],
+    'SELECT * FROM folders WHERE id = ? AND club_id = ?',
+    [req.params.id, req.clubId],
     (err, folder) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!folder) return res.status(404).json({ error: 'Folder not found' });
@@ -741,10 +766,10 @@ router.get('/folders/:id/videos', authenticateToken, (req, res) => {
       db.all(
         `SELECT v.* FROM videos v
          INNER JOIN video_folders vf ON v.id = vf.video_id
-         WHERE vf.folder_id = ? AND COALESCE(v.deleted, 0) = 0
+         WHERE vf.folder_id = ? AND v.club_id = ? AND COALESCE(v.deleted, 0) = 0
            AND TRIM(COALESCE(v.youtube_url, '')) <> ''
          ORDER BY v.created_at DESC`,
-        [req.params.id],
+        [req.params.id, req.clubId],
         (vErr, videos) => {
           if (vErr) return res.status(500).json({ error: 'Database error' });
           res.json({ videos: videos || [] });
@@ -764,8 +789,8 @@ router.put('/:id/folder', authenticateToken, (req, res) => {
   }
 
   db.get(
-    'SELECT id FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0',
-    [req.params.id],
+    'SELECT id FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [req.params.id, req.clubId],
     (err, video) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!video) return res.status(404).json({ error: 'Video not found' });
@@ -790,7 +815,7 @@ router.put('/:id/folder', authenticateToken, (req, res) => {
       };
 
       if (!folderId) return apply();
-      db.get('SELECT id FROM folders WHERE id = ?', [folderId], (fErr, folder) => {
+      db.get('SELECT id FROM folders WHERE id = ? AND club_id = ?', [folderId, req.clubId], (fErr, folder) => {
         if (fErr) return res.status(500).json({ error: 'Database error' });
         if (!folder) return res.status(404).json({ error: 'Folder not found' });
         apply();
@@ -805,8 +830,8 @@ router.post('/folders', authenticateToken, (req, res) => {
   if (!name) return res.status(400).json({ error: 'Folder name is required' });
 
   db.run(
-    'INSERT INTO folders (user_id, name, color, parent_folder_id) VALUES (?, ?, ?, ?)',
-    [req.user.id, name, color || '#1a73e8', parent_folder_id || null],
+    'INSERT INTO folders (user_id, club_id, name, color, parent_folder_id) VALUES (?, ?, ?, ?, ?)',
+    [req.user.id, req.clubId, name, color || '#1a73e8', parent_folder_id || null],
     function (err) {
       if (err) return res.status(500).json({ error: 'Failed to create folder' });
       db.get('SELECT * FROM folders WHERE id = ?', [this.lastID], (err2, folder) => {
@@ -821,7 +846,7 @@ router.post('/folders', authenticateToken, (req, res) => {
 router.patch('/folders/:id', authenticateToken, (req, res) => {
   const { name, color } = req.body;
 
-  db.get('SELECT * FROM folders WHERE id = ?', [req.params.id], (err, folder) => {
+  db.get('SELECT * FROM folders WHERE id = ? AND club_id = ?', [req.params.id, req.clubId], (err, folder) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (!folder) return res.status(404).json({ error: 'Folder not found' });
 
@@ -837,8 +862,8 @@ router.patch('/folders/:id', authenticateToken, (req, res) => {
     }
     if (updates.length === 0) return res.status(400).json({ error: 'No updates provided' });
 
-    values.push(req.params.id);
-    db.run(`UPDATE folders SET ${updates.join(', ')} WHERE id = ?`, values, function (upErr) {
+    values.push(req.params.id, req.clubId);
+    db.run(`UPDATE folders SET ${updates.join(', ')} WHERE id = ? AND club_id = ?`, values, function (upErr) {
       if (upErr) return res.status(500).json({ error: 'Failed to update folder' });
       db.get('SELECT * FROM folders WHERE id = ?', [req.params.id], (err2, updatedFolder) => {
         if (err2) return res.status(500).json({ error: 'Database error' });
@@ -850,13 +875,13 @@ router.patch('/folders/:id', authenticateToken, (req, res) => {
 
 // Delete a folder
 router.delete('/folders/:id', authenticateToken, (req, res) => {
-  db.get('SELECT * FROM folders WHERE id = ?', [req.params.id], (err, folder) => {
+  db.get('SELECT * FROM folders WHERE id = ? AND club_id = ?', [req.params.id, req.clubId], (err, folder) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (!folder) return res.status(404).json({ error: 'Folder not found' });
 
     db.run('DELETE FROM video_folders WHERE folder_id = ?', [req.params.id], function (delVfErr) {
       if (delVfErr) return res.status(500).json({ error: 'Failed to remove videos from folder' });
-      db.run('DELETE FROM folders WHERE id = ?', [req.params.id], function (delFErr) {
+      db.run('DELETE FROM folders WHERE id = ? AND club_id = ?', [req.params.id, req.clubId], function (delFErr) {
         if (delFErr) return res.status(500).json({ error: 'Failed to delete folder' });
         res.json({ message: 'Folder deleted successfully' });
       });

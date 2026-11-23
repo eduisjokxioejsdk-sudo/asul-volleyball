@@ -21,21 +21,25 @@ const runAsync = (sql, params = []) =>
 
 const SIDE_NAME = { home: 'team1_name', away: 'team2_name' };
 
-/** Re-lie un côté par UUID quand l'id manque mais que l'uuid est connu. */
+/** Re-lie un côté par UUID quand l'id manque mais que l'uuid est connu (même club). */
 function relinkSideByUuid(table, side) {
   const idCol = `${side}_team_id`;
   const uuidCol = `${side}_team_uuid`;
+  const clubCond =
+    table === 'volley_matches'
+      ? `club_id = COALESCE((SELECT club_id FROM videos WHERE videos.id = volley_matches.video_id LIMIT 1), 'asul')`
+      : `club_id = ${table}.club_id`;
   return runAsync(
     `UPDATE ${table} SET ${idCol} = (
         SELECT id FROM teams
-         WHERE sync_uuid = ${table}.${uuidCol} AND COALESCE(deleted, 0) = 0
+         WHERE sync_uuid = ${table}.${uuidCol} AND ${clubCond} AND COALESCE(deleted, 0) = 0
          LIMIT 1
       )
      WHERE ${idCol} IS NULL AND ${uuidCol} IS NOT NULL`
   );
 }
 
-/** Repli par nom pour les fiches/vidéos sans UUID stocké. */
+/** Repli par nom pour les fiches/vidéos sans UUID stocké (même club). */
 function relinkSideByName(table, side) {
   const idCol = `${side}_team_id`;
   const uuidCol = `${side}_team_uuid`;
@@ -43,19 +47,19 @@ function relinkSideByName(table, side) {
   return runAsync(
     `UPDATE ${table} SET ${idCol} = (
         SELECT id FROM teams
-         WHERE LOWER(name) = LOWER(${table}.${nameCol}) AND COALESCE(deleted, 0) = 0
+         WHERE LOWER(name) = LOWER(${table}.${nameCol}) AND club_id = ${table}.club_id AND COALESCE(deleted, 0) = 0
          LIMIT 1
       )
      WHERE ${idCol} IS NULL AND ${uuidCol} IS NULL AND ${nameCol} IS NOT NULL`
   );
 }
 
-/** Re-lie video_id sur trajectory_matches à partir de video_uuid. */
+/** Re-lie video_id sur trajectory_matches à partir de video_uuid (même club). */
 function relinkTrajectoryVideoByUuid() {
   return runAsync(
     `UPDATE trajectory_matches SET video_id = (
         SELECT id FROM videos
-         WHERE sync_uuid = trajectory_matches.video_uuid AND COALESCE(deleted, 0) = 0
+         WHERE sync_uuid = trajectory_matches.video_uuid AND club_id = trajectory_matches.club_id AND COALESCE(deleted, 0) = 0
          LIMIT 1
       )
      WHERE video_id IS NULL AND video_uuid IS NOT NULL`

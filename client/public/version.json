@@ -1,8 +1,23 @@
 {
-  "version": "3.24.3",
-  "releasedAt": "2026-11-21",
+  "version": "3.25.0",
+  "releasedAt": "2026-11-23",
   "downloadUrl": "https://github.com/eduisjokxioejsdk-sudo/asul-volleyball/releases/latest",
   "notes": [
+    {
+      "version": "3.25.0",
+      "date": "2026-11-23",
+      "title": "Espaces par équipe, onglet Direct unifié et Stats facile en plein écran",
+      "items": [
+        "Chaque équipe dispose désormais de son propre espace cloisonné : vidéos, dossiers, matchs Data Volley, directs, trajectoires, playlists et séances d'entraînement ne se mélangent plus entre clubs",
+        "Au premier connexion, l'utilisateur choisit son espace ; un badge d'équipe dans la barre de navigation permet d'en changer à tout moment, sans code d'accès, en revenant automatiquement à une page compatible",
+        "Les espaces disponibles sont déclarés dans server/src/clubs.js (ASUL Lyon par défaut, second espace d'exemple fourni) : les données existantes sont toutes conservées et rattachées à ASUL",
+        "Les accès aux données sont revérifiés à chaque requête (jeton, équipe de l'utilisateur) : un appareil ne peut plus lire ni modifier les données d'un autre espace",
+        "Nouvel onglet Direct unifié : les stats en direct faciles (Fast Direct) et les stats avancées (Play-by-Play) se rejoignent sur une seule page, avec les mêmes liens d'invitation",
+        "Stats facile s'affiche maintenant en plein écran dans Pancake (barre de navigation conservée) et son application autonome a été entièrement restylée en thème sombre, plus lisible sur tablette",
+        "Codage Data Volley : la macro de point collée à la fin d'une action (*09A4ap) résout bien l'attaque en faute (*09A4=) au lieu d'être découpée en deux codes",
+        "Validation : build client, 40 tests client, tests serveur, test d'isolation multi-clubs de bout en bout et rendus des écrans Fast Direct, tous sans erreur"
+      ]
+    },
     {
       "version": "3.24.3",
       "date": "2026-11-21",

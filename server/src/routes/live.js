@@ -4,6 +4,7 @@ const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
+const { DEFAULT_CLUB_ID, getClubById } = require('../clubs');
 const { emitToSession, emitCollectionChanged } = require('../socket');
 const { getSetups, saveSetups } = require('../setups');
 const liveStream = require('../liveStream');
@@ -180,40 +181,45 @@ function withoutFastDirectState(session) {
 
 /**
  * Marque la session live comme modifiée localement et déclenche une
- * synchronisation Supabase immédiate (en tâche de fond).
+ * synchronisation Supabase immédiate (uniquement pour le club principal).
  */
 function touchLiveSession(sessionId, extraDeletedUuids = []) {
   const now = new Date().toISOString();
   const cleanDeleted = (extraDeletedUuids || []).filter(Boolean).map(String);
-  if (cleanDeleted.length > 0) {
-    db.get('SELECT deleted_items FROM live_sessions WHERE id = ?', [sessionId], (err, row) => {
+  db.get('SELECT club_id, deleted_items FROM live_sessions WHERE id = ?', [sessionId], (err, row) => {
+    const canSync = (row?.club_id || DEFAULT_CLUB_ID) === DEFAULT_CLUB_ID;
+    if (cleanDeleted.length > 0) {
       const prev = safeParse(row?.deleted_items);
       const merged = Array.from(new Set([...(Array.isArray(prev) ? prev : []), ...cleanDeleted]));
       db.run(
         'UPDATE live_sessions SET dirty = 1, local_updated_at = ?, deleted_items = ? WHERE id = ?',
         [now, JSON.stringify(merged), sessionId],
         () => {
-          syncHub.live.syncNow({ reason: 'live-api' }).catch(() => {});
+          if (canSync) syncHub.live.syncNow({ reason: 'live-api' }).catch(() => {});
         }
       );
-    });
-    return;
-  }
-  db.run(
-    'UPDATE live_sessions SET dirty = 1, local_updated_at = ? WHERE id = ?',
-    [now, sessionId],
-    () => {
-      syncHub.live.syncNow({ reason: 'live-api' }).catch(() => {});
+      return;
     }
-  );
+    db.run(
+      'UPDATE live_sessions SET dirty = 1, local_updated_at = ? WHERE id = ?',
+      [now, sessionId],
+      () => {
+        if (canSync) syncHub.live.syncNow({ reason: 'live-api' }).catch(() => {});
+      }
+    );
+  });
 }
 
-function loadSession(sessionId, res, callback) {
-  db.get('SELECT * FROM live_sessions WHERE id = ? AND COALESCE(deleted, 0) = 0', [sessionId], (err, session) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    if (!session) return res.status(404).json({ error: 'Session introuvable' });
-    callback(session);
-  });
+function loadSession(sessionId, clubId, res, callback) {
+  db.get(
+    'SELECT * FROM live_sessions WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [sessionId, clubId],
+    (err, session) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!session) return res.status(404).json({ error: 'Session introuvable' });
+      callback(session);
+    }
+  );
 }
 
 // Vérifie l'accès à la session ; si la session est partagée (Cloud ou autre poste)
@@ -328,27 +334,30 @@ router.post('/', authenticateToken, (req, res) => {
   const now = new Date().toISOString();
 
   db.all(
-    'SELECT id, sync_uuid FROM teams WHERE id IN (?, ?)',
-    [home_team_id ? Number(home_team_id) : -1, away_team_id ? Number(away_team_id) : -1],
+    'SELECT id, sync_uuid FROM teams WHERE id IN (?, ?) AND club_id = ?',
+    [home_team_id ? Number(home_team_id) : -1, away_team_id ? Number(away_team_id) : -1, req.clubId],
     (tErr, teamRows) => {
       const byId = new Map((teamRows || []).map((r) => [Number(r.id), r.sync_uuid]));
-      const homeTeamUuid = home_team_id ? byId.get(Number(home_team_id)) || null : null;
-      const awayTeamUuid = away_team_id ? byId.get(Number(away_team_id)) || null : null;
+      const validHomeId = home_team_id && byId.has(Number(home_team_id)) ? Number(home_team_id) : null;
+      const validAwayId = away_team_id && byId.has(Number(away_team_id)) ? Number(away_team_id) : null;
+      const homeTeamUuid = validHomeId ? byId.get(validHomeId) || null : null;
+      const awayTeamUuid = validAwayId ? byId.get(validAwayId) || null : null;
 
       db.run(
         `INSERT INTO live_sessions
-          (id, sync_uuid, name, team1_name, team2_name, home_team_id, away_team_id,
+          (id, sync_uuid, club_id, name, team1_name, team2_name, home_team_id, away_team_id,
            home_team_uuid, away_team_uuid, owner_user_id, join_code, session_kind,
            dirty, deleted, local_updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
         [
           id,
           id,
+          req.clubId,
           title,
           (team1_name || '').trim() || 'Domicile',
           (team2_name || '').trim() || 'Extérieur',
-          home_team_id ? Number(home_team_id) : null,
-          away_team_id ? Number(away_team_id) : null,
+          validHomeId,
+          validAwayId,
           homeTeamUuid,
           awayTeamUuid,
           req.user.id,
@@ -366,7 +375,7 @@ router.post('/', authenticateToken, (req, res) => {
             (err2) => {
               if (err2) return res.status(500).json({ error: 'Failed to add owner as member' });
               touchLiveSession(id);
-              res.status(201).json({ id, join_code: joinCode, name: title, session_kind: sessionKind });
+              res.status(201).json({ id, join_code: joinCode, name: title, session_kind: sessionKind, club_id: req.clubId });
             }
           );
         }
@@ -375,16 +384,19 @@ router.post('/', authenticateToken, (req, res) => {
   );
 });
 
-// Lister toutes les sessions live actives ou terminées (partagées entre tous les postes).
+// Lister les sessions live actives ou terminées du club actif.
 router.get('/mine', authenticateToken, (req, res) => {
-  syncHub.live.syncNow({ reason: 'live-list' }).catch(() => {});
+  if (req.clubId === DEFAULT_CLUB_ID) {
+    syncHub.live.syncNow({ reason: 'live-list' }).catch(() => {});
+  }
   db.all(
     `SELECT s.*
        FROM live_sessions s
-      WHERE s.deleted_at IS NULL
+      WHERE s.club_id = ?
+        AND s.deleted_at IS NULL
         AND COALESCE(s.deleted, 0) = 0
       ORDER BY s.created_at DESC`,
-    [],
+    [req.clubId],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       res.json({ sessions: (rows || []).map(withoutFastDirectState) });
@@ -392,13 +404,13 @@ router.get('/mine', authenticateToken, (req, res) => {
   );
 });
 
-// Corbeille : matchs mis à la corbeille.
+// Corbeille : matchs mis à la corbeille du club actif.
 router.get('/trash', authenticateToken, (req, res) => {
   db.all(
     `SELECT * FROM live_sessions
-      WHERE deleted_at IS NOT NULL AND COALESCE(deleted, 0) = 0
+      WHERE club_id = ? AND deleted_at IS NOT NULL AND COALESCE(deleted, 0) = 0
       ORDER BY deleted_at DESC`,
-    [],
+    [req.clubId],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       res.json({ sessions: (rows || []).map(withoutFastDirectState) });
@@ -408,7 +420,7 @@ router.get('/trash', authenticateToken, (req, res) => {
 
 // État de distribution Fast Direct (lecture pour tous les rôles de la session).
 router.get('/:sessionId/fast-direct', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     if (session.session_kind !== 'fast_direct') {
       return res.status(409).json({ error: 'Cette session n’utilise pas le mode Fast Direct.' });
     }
@@ -423,7 +435,7 @@ router.get('/:sessionId/fast-direct', authenticateToken, (req, res) => {
 
 // Enregistrement atomique : seul l'hôte ou un appareil Stats / distribution peut écrire.
 router.put('/:sessionId/fast-direct', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     if (session.session_kind !== 'fast_direct') {
       return res.status(409).json({ error: 'Cette session n’utilise pas le mode Fast Direct.' });
     }
@@ -503,7 +515,7 @@ router.put('/:sessionId/fast-direct', authenticateToken, (req, res) => {
 
 // État des autres stats Fast Direct (Volley Stats) : lecture pour tous les rôles de la session.
 router.get('/:sessionId/fast-direct-stats', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     if (session.session_kind !== 'fast_direct') {
       return res.status(409).json({ error: 'Cette session n’utilise pas le mode Fast Direct.' });
     }
@@ -518,7 +530,7 @@ router.get('/:sessionId/fast-direct-stats', authenticateToken, (req, res) => {
 
 // Enregistrement atomique des autres stats Fast Direct : réservé aux appareils Stats / hôte.
 router.put('/:sessionId/fast-direct-stats', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     if (session.session_kind !== 'fast_direct') {
       return res.status(409).json({ error: 'Cette session n’utilise pas le mode Fast Direct.' });
     }
@@ -597,7 +609,7 @@ router.put('/:sessionId/fast-direct-stats', authenticateToken, (req, res) => {
 
 // État complet d'une session (session + membres + actions + événements).
 router.get('/:sessionId', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       loadSessionState(s.id, res, ({ session: full, members, actions, events }) => {
         const me = members.find((m) => m.user_id === req.user.id) || null;
@@ -623,6 +635,14 @@ router.post('/join', authenticateToken, (req, res) => {
   if (!code) return res.status(400).json({ error: 'Code requis' });
 
   const proceedWithSession = (session) => {
+    const sessionClubId = session.club_id || DEFAULT_CLUB_ID;
+    if (sessionClubId !== req.clubId) {
+      const ownerClub = getClubById(sessionClubId);
+      const ownerLabel = ownerClub ? ownerClub.name : sessionClubId;
+      return res.status(403).json({
+        error: `Cette session appartient à l’équipe « ${ownerLabel} ». Changez d’équipe depuis votre profil en haut à droite pour la rejoindre.`,
+      });
+    }
     const isFastDirect = session.session_kind === 'fast_direct';
     const isSessionOwner = Number(session.owner_user_id) === Number(req.user.id);
     const memberRole = isFastDirect
@@ -680,13 +700,15 @@ router.post('/join', authenticateToken, (req, res) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (session) return proceedWithSession(session);
 
-      try {
-        await Promise.all([
-          syncHub.teams.syncNow({ reason: 'live-join' }).catch(() => {}),
-          syncHub.live.syncNow({ reason: 'live-join' }).catch(() => {}),
-        ]);
-      } catch {
-        // Ignoré : la vérification SQLite ci-dessous tranchera.
+      if (req.clubId === DEFAULT_CLUB_ID) {
+        try {
+          await Promise.all([
+            syncHub.teams.syncNow({ reason: 'live-join' }).catch(() => {}),
+            syncHub.live.syncNow({ reason: 'live-join' }).catch(() => {}),
+          ]);
+        } catch {
+          // Ignoré : la vérification SQLite ci-dessous tranchera.
+        }
       }
 
       db.get(
@@ -705,7 +727,7 @@ router.post('/join', authenticateToken, (req, res) => {
 // Mettre à jour nom / équipes.
 router.patch('/:sessionId', authenticateToken, (req, res) => {
   const { name, team1_name, team2_name } = req.body || {};
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       if (denyUnlessSessionAdmin(isOwner, res)) return;
       db.run(
@@ -729,7 +751,7 @@ router.patch('/:sessionId', authenticateToken, (req, res) => {
 
 // Terminer un match.
 router.post('/:sessionId/finish', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       if (denyUnlessSessionAdmin(isOwner, res)) return;
       db.run("UPDATE live_sessions SET status = 'finished' WHERE id = ?", [session.id], (err) => {
@@ -744,7 +766,7 @@ router.post('/:sessionId/finish', authenticateToken, (req, res) => {
 
 // Rouvrir un match terminé.
 router.post('/:sessionId/reopen', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       if (denyUnlessSessionAdmin(isOwner, res)) return;
       db.run("UPDATE live_sessions SET status = 'active' WHERE id = ?", [session.id], (err) => {
@@ -759,7 +781,7 @@ router.post('/:sessionId/reopen', authenticateToken, (req, res) => {
 
 // Mettre un match à la corbeille (soft delete).
 router.post('/:sessionId/trash', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       if (denyUnlessSessionAdmin(isOwner, res)) return;
       db.run(
@@ -778,7 +800,7 @@ router.post('/:sessionId/trash', authenticateToken, (req, res) => {
 
 // Restaurer un match depuis la corbeille.
 router.post('/:sessionId/restore', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       if (denyUnlessSessionAdmin(isOwner, res)) return;
       db.run(
@@ -797,7 +819,7 @@ router.post('/:sessionId/restore', authenticateToken, (req, res) => {
 
 // Supprimer définitivement un match et toutes ses données.
 router.delete('/:sessionId', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       if (denyUnlessSessionAdmin(isOwner, res)) return;
       const now = new Date().toISOString();
@@ -811,7 +833,9 @@ router.delete('/:sessionId', authenticateToken, (req, res) => {
           [now, now, session.id],
           (err) => {
             if (err) return res.status(500).json({ error: 'Database error' });
-            syncHub.live.syncNow({ reason: 'live-delete' }).catch(() => {});
+            if (req.clubId === DEFAULT_CLUB_ID) {
+              syncHub.live.syncNow({ reason: 'live-delete' }).catch(() => {});
+            }
             res.json({ message: 'Match supprimé définitivement' });
           }
         );
@@ -827,7 +851,7 @@ router.post('/:sessionId/invite', authenticateToken, (req, res) => {
     return res.status(400).json({ error: "Liste d'emails requise" });
   }
 
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       if (denyUnlessSessionAdmin(isOwner, res)) return;
       const normalized = [
@@ -887,7 +911,7 @@ router.put('/:sessionId/members/:memberId', authenticateToken, (req, res) => {
   const { role, nickname, assignment } = req.body || {};
   const memberId = Number(req.params.memberId);
 
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       db.get(
         'SELECT * FROM live_members WHERE id = ? AND session_id = ?',
@@ -955,7 +979,7 @@ router.post('/:sessionId/actions', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'Code invalide' });
   }
 
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
       if (!canCodeLive(member)) {
         return res.status(403).json({ error: 'Codage réservé aux statisticiens.' });
@@ -1086,7 +1110,7 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
   } = req.body || {};
   const actionId = Number(req.params.actionId);
 
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
       if (!canCodeLive(member)) {
         return res.status(403).json({ error: 'Codage réservé aux statisticiens.' });
@@ -1188,7 +1212,7 @@ router.patch('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
 // Supprimer une action.
 router.delete('/:sessionId/actions/:actionId', authenticateToken, (req, res) => {
   const actionId = Number(req.params.actionId);
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
       if (!canCodeLive(member)) {
         return res.status(403).json({ error: 'Codage réservé aux statisticiens.' });
@@ -1217,7 +1241,7 @@ router.delete('/:sessionId/actions/:actionId', authenticateToken, (req, res) => 
 // --- Événements de match en direct ------------------------------------------
 
 router.get('/:sessionId/events', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, () => {
       db.all(
         `SELECT * FROM live_events
@@ -1301,7 +1325,7 @@ router.post('/:sessionId/events', authenticateToken, (req, res) => {
   const setNumber = Number(set_number) > 0 ? Number(set_number) : 1;
   const pointNumber = Number.isFinite(Number(point_number)) ? Number(point_number) : 0;
 
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
       const canSendMessage = kind === 'message' && member?.role === 'viewer';
       if (!canCodeLive(member) && !canSendMessage) {
@@ -1329,7 +1353,7 @@ router.post('/:sessionId/events', authenticateToken, (req, res) => {
 
 router.delete('/:sessionId/events/:eventId', authenticateToken, (req, res) => {
   const eventId = Number(req.params.eventId);
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
       if (!canCodeLive(member)) {
         return res.status(403).json({ error: 'Action réservée aux statisticiens.' });
@@ -1358,7 +1382,7 @@ router.delete('/:sessionId/events/:eventId', authenticateToken, (req, res) => {
 // --- Synchronisation du point (statisticiens multiples) -----------------------
 
 router.post('/:sessionId/point/complete', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
       if (!canCodeLive(member)) {
         return res.status(403).json({ error: 'Réservé aux statisticiens' });
@@ -1402,7 +1426,7 @@ router.post('/:sessionId/point/complete', authenticateToken, (req, res) => {
 
 router.put('/:sessionId/video-delay', authenticateToken, (req, res) => {
   const { delay } = req.body || {};
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner, member) => {
       const canAdjustBenchCamera =
         s.session_kind === 'fast_direct' &&
@@ -1428,7 +1452,7 @@ router.put('/:sessionId/video-delay', authenticateToken, (req, res) => {
 });
 
 router.get('/:sessionId/video-state', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, () => {
       res.json({
         ...liveStream.streamState(session.id),
@@ -1441,7 +1465,7 @@ router.get('/:sessionId/video-state', authenticateToken, (req, res) => {
 // --- Équipes associées (partagées entre les appareils de la session) --------
 
 router.get('/:sessionId/teams', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, () => {
       db.get(
         'SELECT home_team_id, away_team_id FROM live_sessions WHERE id = ?',
@@ -1456,28 +1480,30 @@ router.get('/:sessionId/teams', authenticateToken, (req, res) => {
 });
 
 router.put('/:sessionId/teams', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       if (denyUnlessSessionAdmin(isOwner, res)) return;
       const { home_team_id, away_team_id } = req.body || {};
       db.all(
-        'SELECT id, sync_uuid FROM teams WHERE id IN (?, ?)',
-        [home_team_id ? Number(home_team_id) : -1, away_team_id ? Number(away_team_id) : -1],
+        'SELECT id, sync_uuid FROM teams WHERE id IN (?, ?) AND club_id = ?',
+        [home_team_id ? Number(home_team_id) : -1, away_team_id ? Number(away_team_id) : -1, req.clubId],
         (tErr, teamRows) => {
           const byId = new Map((teamRows || []).map((r) => [Number(r.id), r.sync_uuid]));
-          const homeUuid = home_team_id ? byId.get(Number(home_team_id)) || null : null;
-          const awayUuid = away_team_id ? byId.get(Number(away_team_id)) || null : null;
+          const validHomeId = home_team_id && byId.has(Number(home_team_id)) ? Number(home_team_id) : null;
+          const validAwayId = away_team_id && byId.has(Number(away_team_id)) ? Number(away_team_id) : null;
+          const homeUuid = validHomeId ? byId.get(validHomeId) || null : null;
+          const awayUuid = validAwayId ? byId.get(validAwayId) || null : null;
           db.run(
             'UPDATE live_sessions SET home_team_id = ?, away_team_id = ?, home_team_uuid = ?, away_team_uuid = ? WHERE id = ?',
-            [home_team_id ?? null, away_team_id ?? null, homeUuid, awayUuid, session.id],
+            [validHomeId, validAwayId, homeUuid, awayUuid, session.id],
             (err) => {
               if (err) return res.status(500).json({ error: 'Failed to save teams' });
               emitToSession(session.id, 'session:teams', {
-                home_team_id: home_team_id ?? null,
-                away_team_id: away_team_id ?? null,
+                home_team_id: validHomeId,
+                away_team_id: validAwayId,
               });
               touchLiveSession(session.id);
-              res.json({ home_team_id: home_team_id ?? null, away_team_id: away_team_id ?? null });
+              res.json({ home_team_id: validHomeId, away_team_id: validAwayId });
             }
           );
         }
@@ -1489,7 +1515,7 @@ router.put('/:sessionId/teams', authenticateToken, (req, res) => {
 // --- Positions de départ par set (partagées) ---------------------------------
 
 router.get('/:sessionId/setups', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, () => {
       getSetups(`session:${session.id}`, (err, setups) => {
         if (err) return res.status(500).json({ error: 'Database error' });
@@ -1500,7 +1526,7 @@ router.get('/:sessionId/setups', authenticateToken, (req, res) => {
 });
 
 router.put('/:sessionId/setups', authenticateToken, (req, res) => {
-  loadSession(req.params.sessionId, res, (session) => {
+  loadSession(req.params.sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, (s, isOwner) => {
       if (denyUnlessSessionAdmin(isOwner, res)) return;
       const { setups } = req.body || {};
@@ -1521,7 +1547,7 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
   const { sessionId } = req.params;
   const youtubeUrl = req.body?.youtube_url ? String(req.body.youtube_url).trim() || null : null;
 
-  loadSession(sessionId, res, (session) => {
+  loadSession(sessionId, req.clubId, res, (session) => {
     verifyAccess(session, req, res, async () => {
       const info = liveRecord.lastRecording(sessionId);
       const hasLocalRecording = Boolean(info && fs.existsSync(info.path));
@@ -1586,14 +1612,18 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
         const videoSyncUuid = uuidv4();
         const videoStatus = hasLocalRecording || youtubeUrl ? 'uploaded' : 'pending_video';
 
+        const targetClubId = session.club_id || req.clubId;
+        const canSyncTarget = targetClubId === DEFAULT_CLUB_ID;
+
         db.run(
           `INSERT INTO videos (
-             user_id, filename, original_name, display_name, youtube_url, filepath, filepath_proxy,
+             user_id, club_id, filename, original_name, display_name, youtube_url, filepath, filepath_proxy,
              team1_name, team2_name, home_team_id, away_team_id, home_team_uuid, away_team_uuid,
              status, sync_uuid, dirty, deleted, local_updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
           [
             req.user.id,
+            targetClubId,
             mp4Name,
             hasLocalRecording ? `${session.name}.mp4` : `Direct — ${session.name}`,
             `Direct — ${session.name}`,
@@ -1640,7 +1670,7 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
             getSetups(`session:${sessionId}`, (setupErr, sessionSetups) => {
               if (!setupErr && sessionSetups && Object.keys(sessionSetups).length > 0) {
                 saveSetups(`video:${videoId}`, sessionSetups, () => {
-                  syncHub.setups.syncNow({ reason: 'live-finalize' }).catch(() => {});
+                  if (canSyncTarget) syncHub.setups.syncNow({ reason: 'live-finalize' }).catch(() => {});
                   emitCollectionChanged('setups');
                 });
               }
@@ -1658,15 +1688,17 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
                     () => {}
                   );
                 }
-                syncHub.events.syncNow({ reason: 'live-finalize' }).catch(() => {});
+                if (canSyncTarget) syncHub.events.syncNow({ reason: 'live-finalize' }).catch(() => {});
                 emitCollectionChanged('events');
               }
             });
 
             emitCollectionChanged('videos');
             emitCollectionChanged('matches');
-            syncHub.videos.syncNow({ reason: 'live-finalize' }).catch(() => {});
-            syncHub.matches.syncNow({ reason: 'live-finalize' }).catch(() => {});
+            if (canSyncTarget) {
+              syncHub.videos.syncNow({ reason: 'live-finalize' }).catch(() => {});
+              syncHub.matches.syncNow({ reason: 'live-finalize' }).catch(() => {});
+            }
 
             if (!actions.length) {
               return res.json({ videoId, actionCount: 0, hasLocalRecording });
@@ -1722,7 +1754,7 @@ router.post('/:sessionId/finalize-recording', authenticateToken, (req, res) => {
               });
               stmt.finalize(() =>
                 db.run('COMMIT', () => {
-                  syncHub.actions.syncNow({ reason: 'live-finalize' }).catch(() => {});
+                  if (canSyncTarget) syncHub.actions.syncNow({ reason: 'live-finalize' }).catch(() => {});
                   emitCollectionChanged('actions');
                   res.json({ videoId, actionCount: actions.length, hasLocalRecording });
                 })

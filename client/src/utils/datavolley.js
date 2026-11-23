@@ -642,8 +642,14 @@ export function scanCode(str, start = 0, opts = {}) {
     i += 1;
   }
   if (zones.length >= 1 && i < s.length && DV_SUBZONE_KEYS.includes(s[i].toUpperCase())) {
-    out.end_subzone = s[i].toUpperCase();
-    i += 1;
+    // Un « a » minuscule est la clé de l'équipe extérieure : suivi d'un « p »,
+    // il ouvre la macro de point `ap` (ex. `*09A4ap` = attaque domicile en faute)
+    // et ne doit donc PAS être pris pour la sous-zone A.
+    const isLowerTeamKey = s[i] === 'a' && /^[pP](?![0-9])/.test(s.slice(i + 1, i + 3));
+    if (!isLowerTeamKey) {
+      out.end_subzone = s[i].toUpperCase();
+      i += 1;
+    }
   }
   if (out.combo) {
     // La combinaison fixe la zone de départ (position de l'attaquant).

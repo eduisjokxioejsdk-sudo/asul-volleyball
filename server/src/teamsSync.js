@@ -7,6 +7,7 @@
 // ============================================================================
 
 const db = require('./database');
+const { DEFAULT_CLUB_ID } = require('./clubs');
 const core = require('./teamsSyncCore');
 const { emitTeamsChanged, emitCollectionChanged } = require('./socket');
 const { relinkTeamReferences } = require('./relinkTeams');
@@ -30,9 +31,9 @@ const getAsync = (sql, params = []) =>
     db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row || null)));
   });
 
-/** Toutes les équipes locales (avec leurs joueurs), y compris les tombstones. */
+/** Toutes les équipes locales de l'espace principal (avec leurs joueurs), y compris les tombstones. */
 async function loadLocalTeams() {
-  const teams = await allAsync('SELECT * FROM teams ORDER BY id ASC', []);
+  const teams = await allAsync('SELECT * FROM teams WHERE club_id = ? ORDER BY id ASC', [DEFAULT_CLUB_ID]);
   if (!teams.length) return [];
   const players = await allAsync('SELECT * FROM team_players ORDER BY number ASC, id ASC', []);
   const byTeam = new Map();
@@ -115,12 +116,12 @@ const teamsCollection = {
     core.planMerge({ localTeams: localRows, remoteRows, lastSyncAt, originId }),
   rowToCloud: core.teamRowToCloud,
   pendingCount: async () => {
-    const row = await getAsync('SELECT COUNT(*) AS n FROM teams WHERE dirty = 1', []);
+    const row = await getAsync('SELECT COUNT(*) AS n FROM teams WHERE club_id = ? AND dirty = 1', [DEFAULT_CLUB_ID]);
     return row ? row.n : 0;
   },
   statusCounts: async () => {
-    const active = await getAsync('SELECT COUNT(*) AS n FROM teams WHERE deleted = 0', []);
-    const tombstones = await getAsync('SELECT COUNT(*) AS n FROM teams WHERE deleted = 1', []);
+    const active = await getAsync('SELECT COUNT(*) AS n FROM teams WHERE club_id = ? AND deleted = 0', [DEFAULT_CLUB_ID]);
+    const tombstones = await getAsync('SELECT COUNT(*) AS n FROM teams WHERE club_id = ? AND deleted = 1', [DEFAULT_CLUB_ID]);
     return {
       teams: active ? active.n : 0,
       tombstones: tombstones ? tombstones.n : 0,

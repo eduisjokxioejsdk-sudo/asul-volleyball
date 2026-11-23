@@ -11,6 +11,7 @@
 
 const crypto = require('crypto');
 const db = require('./database');
+const { DEFAULT_CLUB_ID } = require('./clubs');
 const { fieldsEqual, planMergeGeneric, isAfter } = require('./syncCore');
 const { emitCollectionChanged, emitToSession } = require('./socket');
 const { relinkTeamReferences } = require('./relinkTeams');
@@ -112,10 +113,12 @@ function makeFlatCollection(spec) {
   const planMerge = ({ localRows, remoteRows, lastSyncAt }) =>
     planMergeGeneric({ localRows, remoteRows, lastSyncAt, fields });
 
-  const pendingCount = async () => {
-    const row = await getAsync(`SELECT COUNT(*) AS n FROM ${table} WHERE dirty = 1`, []);
-    return row ? row.n : 0;
-  };
+  const pendingCount =
+    spec.pendingCount ||
+    (async () => {
+      const row = await getAsync(`SELECT COUNT(*) AS n FROM ${table} WHERE dirty = 1`, []);
+      return row ? row.n : 0;
+    });
 
   const statusCounts =
     spec.statusCounts ||
@@ -148,24 +151,24 @@ function makeFlatCollection(spec) {
 // Helpers équipes & vidéos : id local ↔ sync_uuid
 // ---------------------------------------------------------------------------
 
-/** id d'équipe local → sync_uuid. */
+/** id d'équipe local → sync_uuid (espace principal). */
 async function teamIdToUuid() {
-  const rows = await allAsync('SELECT id, sync_uuid FROM teams', []);
+  const rows = await allAsync('SELECT id, sync_uuid FROM teams WHERE club_id = ?', [DEFAULT_CLUB_ID]);
   const map = new Map();
   for (const row of rows) map.set(Number(row.id), row.sync_uuid);
   return map;
 }
 
-/** sync_uuid → id d'équipe local. */
+/** sync_uuid → id d'équipe local (espace principal). */
 async function teamUuidToId() {
-  const rows = await allAsync('SELECT id, sync_uuid FROM teams WHERE sync_uuid IS NOT NULL', []);
+  const rows = await allAsync('SELECT id, sync_uuid FROM teams WHERE club_id = ? AND sync_uuid IS NOT NULL', [DEFAULT_CLUB_ID]);
   const map = new Map();
   for (const row of rows) map.set(String(row.sync_uuid), Number(row.id));
   return map;
 }
 
 async function videoIdToUuid() {
-  const rows = await allAsync('SELECT id, sync_uuid FROM videos WHERE sync_uuid IS NOT NULL', []);
+  const rows = await allAsync('SELECT id, sync_uuid FROM videos WHERE club_id = ? AND sync_uuid IS NOT NULL', [DEFAULT_CLUB_ID]);
   const map = new Map();
   for (const r of rows) map.set(Number(r.id), r.sync_uuid);
   return map;
@@ -173,12 +176,12 @@ async function videoIdToUuid() {
 
 async function ensureVideoByUuid(uuid) {
   if (!uuid) return null;
-  const row = await getAsync('SELECT id FROM videos WHERE sync_uuid = ?', [uuid]);
-  if (row) return Number(row.id);
+  const row = await getAsync('SELECT id, club_id FROM videos WHERE sync_uuid = ?', [uuid]);
+  if (row) return row.club_id === DEFAULT_CLUB_ID ? Number(row.id) : null;
   const result = await runAsync(
-    `INSERT INTO videos (sync_uuid, user_id, filename, original_name, filepath, status, dirty, deleted, local_updated_at)
-     VALUES (?, 0, '', '', '', 'uploaded', 0, 0, ?)`,
-    [uuid, new Date().toISOString()]
+    `INSERT INTO videos (sync_uuid, club_id, user_id, filename, original_name, filepath, status, dirty, deleted, local_updated_at)
+     VALUES (?, ?, 0, '', '', '', 'uploaded', 0, 0, ?)`,
+    [uuid, DEFAULT_CLUB_ID, new Date().toISOString()]
   );
   return result.lastID;
 }
@@ -206,7 +209,7 @@ const trajectoriesCollection = makeFlatCollection({
   ],
 
   loadLocal: async () => {
-    const matches = await allAsync('SELECT * FROM trajectory_matches ORDER BY id ASC', []);
+    const matches = await allAsync('SELECT * FROM trajectory_matches WHERE club_id = ? ORDER BY id ASC', [DEFAULT_CLUB_ID]);
     if (!matches.length) return [];
     const idToUuid = await teamIdToUuid();
     const vidToUuid = await videoIdToUuid();
@@ -348,6 +351,24 @@ const trajectoriesCollection = makeFlatCollection({
     }
     return localId;
   },
+  pendingCount: async () => {
+    const row = await getAsync(
+      'SELECT COUNT(*) AS n FROM trajectory_matches WHERE club_id = ? AND dirty = 1',
+      [DEFAULT_CLUB_ID]
+    );
+    return row ? row.n : 0;
+  },
+  statusCounts: async () => {
+    const active = await getAsync(
+      'SELECT COUNT(*) AS n FROM trajectory_matches WHERE club_id = ? AND COALESCE(deleted, 0) = 0',
+      [DEFAULT_CLUB_ID]
+    );
+    const tombstones = await getAsync(
+      'SELECT COUNT(*) AS n FROM trajectory_matches WHERE club_id = ? AND COALESCE(deleted, 0) = 1',
+      [DEFAULT_CLUB_ID]
+    );
+    return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
+  },
   onChanged: (applied, removed) => {
     if (applied || removed) {
       relinkTeamReferences().catch(() => {});
@@ -358,19 +379,59 @@ const trajectoriesCollection = makeFlatCollection({
 
 /**
  * Collection référençant une vidéo : convertit `video_id` (local) en `video_uuid`
- * (partagé) à l'export, et inversement à l'import.
+ * (partagé) à l'export, et inversement à l'import. Scopée à DEFAULT_CLUB_ID.
  */
 function makeVideoRefCollection(spec) {
   const base = makeFlatCollection(spec);
   return {
     ...base,
     loadLocal: async () => {
-      const rows = await base.loadLocal();
+      const rows = await allAsync(
+        `SELECT t.*
+           FROM ${spec.table} t
+           JOIN videos v ON v.id = t.video_id
+          WHERE v.club_id = ?
+          ORDER BY t.id ASC`,
+        [DEFAULT_CLUB_ID]
+      );
+      for (const r of rows) {
+        if (!r.sync_uuid && r.id != null) {
+          r.sync_uuid = crypto.randomUUID();
+          await runAsync(`UPDATE ${spec.table} SET sync_uuid = ? WHERE id = ?`, [r.sync_uuid, r.id]);
+        }
+      }
       const idToUuid = await videoIdToUuid();
       return rows.map((r) => ({
         ...r,
         video_uuid: r.video_id ? idToUuid.get(Number(r.video_id)) || null : null,
       }));
+    },
+    pendingCount: async () => {
+      const row = await getAsync(
+        `SELECT COUNT(*) AS n
+           FROM ${spec.table} t
+           JOIN videos v ON v.id = t.video_id
+          WHERE v.club_id = ? AND t.dirty = 1`,
+        [DEFAULT_CLUB_ID]
+      );
+      return row ? row.n : 0;
+    },
+    statusCounts: async () => {
+      const active = await getAsync(
+        `SELECT COUNT(*) AS n
+           FROM ${spec.table} t
+           JOIN videos v ON v.id = t.video_id
+          WHERE v.club_id = ? AND COALESCE(t.deleted, 0) = 0`,
+        [DEFAULT_CLUB_ID]
+      );
+      const tombstones = await getAsync(
+        `SELECT COUNT(*) AS n
+           FROM ${spec.table} t
+           JOIN videos v ON v.id = t.video_id
+          WHERE v.club_id = ? AND COALESCE(t.deleted, 0) = 1`,
+        [DEFAULT_CLUB_ID]
+      );
+      return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
     },
     rowToCloud: (row, originId) => {
       const cloud = { sync_uuid: row.sync_uuid, deleted: Boolean(Number(row.deleted)) };
@@ -435,7 +496,7 @@ const videosCollection = makeFlatCollection({
     'color',
   ],
   loadLocal: async () => {
-    const rows = await allAsync('SELECT * FROM videos ORDER BY id ASC', []);
+    const rows = await allAsync('SELECT * FROM videos WHERE club_id = ? ORDER BY id ASC', [DEFAULT_CLUB_ID]);
     if (!rows.length) return [];
     const teamMap = await teamIdToUuid();
     const out = [];
@@ -549,6 +610,24 @@ const videosCollection = makeFlatCollection({
     );
     return result.lastID;
   },
+  pendingCount: async () => {
+    const row = await getAsync(
+      'SELECT COUNT(*) AS n FROM videos WHERE club_id = ? AND dirty = 1',
+      [DEFAULT_CLUB_ID]
+    );
+    return row ? row.n : 0;
+  },
+  statusCounts: async () => {
+    const active = await getAsync(
+      'SELECT COUNT(*) AS n FROM videos WHERE club_id = ? AND COALESCE(deleted, 0) = 0',
+      [DEFAULT_CLUB_ID]
+    );
+    const tombstones = await getAsync(
+      'SELECT COUNT(*) AS n FROM videos WHERE club_id = ? AND COALESCE(deleted, 0) = 1',
+      [DEFAULT_CLUB_ID]
+    );
+    return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
+  },
   onChanged: (applied, removed) => {
     if (applied || removed) {
       relinkTeamReferences().catch(() => {});
@@ -617,6 +696,50 @@ const claimsCollection = makeFlatCollection({
   defaultTable: 'asul_set_claims',
   table: 'video_set_claims',
   fields: ['video_uuid', 'set_number', 'claimed_by_uuid', 'claimed_by_name', 'claimed_by_email', 'claimed_at'],
+  loadLocal: async () => {
+    const rows = await allAsync(
+      `SELECT c.*
+         FROM video_set_claims c
+         LEFT JOIN videos v ON v.sync_uuid = c.video_uuid
+        WHERE v.id IS NULL OR v.club_id = ?
+        ORDER BY c.id ASC`,
+      [DEFAULT_CLUB_ID]
+    );
+    for (const r of rows) {
+      if (!r.sync_uuid && r.id != null) {
+        r.sync_uuid = crypto.randomUUID();
+        await runAsync('UPDATE video_set_claims SET sync_uuid = ? WHERE id = ?', [r.sync_uuid, r.id]);
+      }
+    }
+    return rows;
+  },
+  pendingCount: async () => {
+    const row = await getAsync(
+      `SELECT COUNT(*) AS n
+         FROM video_set_claims c
+         LEFT JOIN videos v ON v.sync_uuid = c.video_uuid
+        WHERE (v.id IS NULL OR v.club_id = ?) AND c.dirty = 1`,
+      [DEFAULT_CLUB_ID]
+    );
+    return row ? row.n : 0;
+  },
+  statusCounts: async () => {
+    const active = await getAsync(
+      `SELECT COUNT(*) AS n
+         FROM video_set_claims c
+         LEFT JOIN videos v ON v.sync_uuid = c.video_uuid
+        WHERE (v.id IS NULL OR v.club_id = ?) AND COALESCE(c.deleted, 0) = 0`,
+      [DEFAULT_CLUB_ID]
+    );
+    const tombstones = await getAsync(
+      `SELECT COUNT(*) AS n
+         FROM video_set_claims c
+         LEFT JOIN videos v ON v.sync_uuid = c.video_uuid
+        WHERE (v.id IS NULL OR v.club_id = ?) AND COALESCE(c.deleted, 0) = 1`,
+      [DEFAULT_CLUB_ID]
+    );
+    return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
+  },
   onChanged: (applied, removed) => {
     if (applied || removed) emitCollectionChanged('claims');
   },
@@ -644,7 +767,13 @@ const matchesCollection = {
   defaultTable: 'asul_matches',
   envPrefix: 'TEAMS_SYNC',
   loadLocal: async () => {
-    const rows = await allAsync('SELECT *, video_id AS id FROM volley_matches', []);
+    const rows = await allAsync(
+      `SELECT m.*, m.video_id AS id
+         FROM volley_matches m
+         JOIN videos v ON v.id = m.video_id
+        WHERE v.club_id = ?`,
+      [DEFAULT_CLUB_ID]
+    );
     if (!rows.length) return [];
     const idToUuid = await videoIdToUuid();
     const teamMap = await teamIdToUuid();
@@ -755,12 +884,30 @@ const matchesCollection = {
   planMerge: ({ localRows, remoteRows, lastSyncAt }) =>
     planMergeGeneric({ localRows, remoteRows, lastSyncAt, fields: MATCH_FIELDS }),
   pendingCount: async () => {
-    const r = await getAsync('SELECT COUNT(*) AS n FROM volley_matches WHERE dirty = 1', []);
+    const r = await getAsync(
+      `SELECT COUNT(*) AS n
+         FROM volley_matches m
+         JOIN videos v ON v.id = m.video_id
+        WHERE v.club_id = ? AND m.dirty = 1`,
+      [DEFAULT_CLUB_ID]
+    );
     return r ? r.n : 0;
   },
   statusCounts: async () => {
-    const active = await getAsync('SELECT COUNT(*) AS n FROM volley_matches WHERE COALESCE(deleted, 0) = 0', []);
-    const tombstones = await getAsync('SELECT COUNT(*) AS n FROM volley_matches WHERE COALESCE(deleted, 0) = 1', []);
+    const active = await getAsync(
+      `SELECT COUNT(*) AS n
+         FROM volley_matches m
+         JOIN videos v ON v.id = m.video_id
+        WHERE v.club_id = ? AND COALESCE(m.deleted, 0) = 0`,
+      [DEFAULT_CLUB_ID]
+    );
+    const tombstones = await getAsync(
+      `SELECT COUNT(*) AS n
+         FROM volley_matches m
+         JOIN videos v ON v.id = m.video_id
+        WHERE v.club_id = ? AND COALESCE(m.deleted, 0) = 1`,
+      [DEFAULT_CLUB_ID]
+    );
     return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
   },
   onChanged: (applied, removed) => {
@@ -792,7 +939,13 @@ const setupsCollection = {
   defaultTable: 'asul_setups',
   envPrefix: 'TEAMS_SYNC',
   loadLocal: async () => {
-    const rows = await allAsync("SELECT * FROM set_setups WHERE match_key LIKE 'video:%'", []);
+    const rows = await allAsync(
+      `SELECT s.*
+         FROM set_setups s
+         JOIN videos v ON s.match_key = ('video:' || v.id)
+        WHERE v.club_id = ?`,
+      [DEFAULT_CLUB_ID]
+    );
     if (!rows.length) return [];
     const idToUuid = await videoIdToUuid();
     const out = [];
@@ -877,17 +1030,29 @@ const setupsCollection = {
   planMerge: ({ localRows, remoteRows, lastSyncAt }) =>
     planMergeGeneric({ localRows, remoteRows, lastSyncAt, fields: SETUP_FIELDS }),
   pendingCount: async () => {
-    const r = await getAsync('SELECT COUNT(*) AS n FROM set_setups WHERE dirty = 1', []);
+    const r = await getAsync(
+      `SELECT COUNT(*) AS n
+         FROM set_setups s
+         JOIN videos v ON s.match_key = ('video:' || v.id)
+        WHERE v.club_id = ? AND s.dirty = 1`,
+      [DEFAULT_CLUB_ID]
+    );
     return r ? r.n : 0;
   },
   statusCounts: async () => {
     const active = await getAsync(
-      "SELECT COUNT(*) AS n FROM set_setups WHERE match_key LIKE 'video:%' AND COALESCE(deleted, 0) = 0",
-      []
+      `SELECT COUNT(*) AS n
+         FROM set_setups s
+         JOIN videos v ON s.match_key = ('video:' || v.id)
+        WHERE v.club_id = ? AND COALESCE(s.deleted, 0) = 0`,
+      [DEFAULT_CLUB_ID]
     );
     const tombstones = await getAsync(
-      "SELECT COUNT(*) AS n FROM set_setups WHERE match_key LIKE 'video:%' AND COALESCE(deleted, 0) = 1",
-      []
+      `SELECT COUNT(*) AS n
+         FROM set_setups s
+         JOIN videos v ON s.match_key = ('video:' || v.id)
+        WHERE v.club_id = ? AND COALESCE(s.deleted, 0) = 1`,
+      [DEFAULT_CLUB_ID]
     );
     return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
   },
@@ -1101,7 +1266,10 @@ const liveCollection = {
   envPrefix: 'TEAMS_SYNC',
 
   loadLocal: async (originId) => {
-    const sessions = await allAsync('SELECT * FROM live_sessions ORDER BY created_at ASC', []);
+    const sessions = await allAsync(
+      'SELECT * FROM live_sessions WHERE club_id = ? ORDER BY created_at ASC',
+      [DEFAULT_CLUB_ID]
+    );
     if (!sessions.length) return [];
 
     const idToTeamUuid = await teamIdToUuid();
@@ -1790,12 +1958,21 @@ const liveCollection = {
   touchPushed: (uuid, cloudUpdatedAt) =>
     runAsync('UPDATE live_sessions SET dirty = 0, cloud_updated_at = ? WHERE sync_uuid = ? OR id = ?', [cloudUpdatedAt, uuid, uuid]),
   pendingCount: async () => {
-    const r = await getAsync('SELECT COUNT(*) AS n FROM live_sessions WHERE dirty = 1', []);
+    const r = await getAsync(
+      'SELECT COUNT(*) AS n FROM live_sessions WHERE club_id = ? AND dirty = 1',
+      [DEFAULT_CLUB_ID]
+    );
     return r ? r.n : 0;
   },
   statusCounts: async () => {
-    const active = await getAsync('SELECT COUNT(*) AS n FROM live_sessions WHERE COALESCE(deleted, 0) = 0 AND deleted_at IS NULL', []);
-    const tombstones = await getAsync('SELECT COUNT(*) AS n FROM live_sessions WHERE COALESCE(deleted, 0) = 1 OR deleted_at IS NOT NULL', []);
+    const active = await getAsync(
+      'SELECT COUNT(*) AS n FROM live_sessions WHERE club_id = ? AND COALESCE(deleted, 0) = 0 AND deleted_at IS NULL',
+      [DEFAULT_CLUB_ID]
+    );
+    const tombstones = await getAsync(
+      'SELECT COUNT(*) AS n FROM live_sessions WHERE club_id = ? AND (COALESCE(deleted, 0) = 1 OR deleted_at IS NOT NULL)',
+      [DEFAULT_CLUB_ID]
+    );
     return { active: active ? active.n : 0, tombstones: tombstones ? tombstones.n : 0 };
   },
   onChanged: (applied, removed) => {

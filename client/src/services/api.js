@@ -41,6 +41,8 @@ export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   register: (email, password, name) => api.post('/auth/register', { email, password, name }),
   me: () => api.get('/auth/me'),
+  getClubs: () => api.get('/auth/clubs'),
+  selectClub: (clubId) => api.put('/auth/club', { club_id: clubId }),
 };
 
 // Progression personnelle de l'Académie (aucun classement ou partage global).

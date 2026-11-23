@@ -111,6 +111,34 @@ function addSyncColumns(tableName, callback, idColumn = 'id') {
   });
 }
 
+/**
+ * Ajoute la colonne `club_id` à une table racine pour cloisonner les données
+ * par équipe/club. Toutes les données existantes sont rattachées à `'asul'`.
+ */
+function addClubColumn(tableName, callback) {
+  db.all(`PRAGMA table_info(${tableName})`, (err, columns) => {
+    if (err) return callback();
+    const names = (columns || []).map((c) => c.name);
+    if (!names.length) return callback();
+
+    const steps = [];
+    if (!names.includes('club_id')) {
+      steps.push(`ALTER TABLE ${tableName} ADD COLUMN club_id TEXT NOT NULL DEFAULT 'asul'`);
+    }
+    steps.push(`UPDATE ${tableName} SET club_id = 'asul' WHERE club_id IS NULL OR TRIM(club_id) = ''`);
+    steps.push(`CREATE INDEX IF NOT EXISTS idx_${tableName}_club_id ON ${tableName}(club_id)`);
+
+    const runStep = (index) => {
+      if (index >= steps.length) return callback();
+      db.run(steps[index], (stepErr) => {
+        if (stepErr) console.warn(`Migration ${tableName} (club_id) : ${stepErr.message}`);
+        runStep(index + 1);
+      });
+    };
+    runStep(0);
+  });
+}
+
 db.serialize(() => {
   // Users table
   db.run(`CREATE TABLE IF NOT EXISTS users (
@@ -118,6 +146,7 @@ db.serialize(() => {
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
     name TEXT NOT NULL,
+    club_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
@@ -133,6 +162,7 @@ db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
+    club_id TEXT NOT NULL DEFAULT 'asul',
     name TEXT NOT NULL,
     color TEXT DEFAULT '#1a73e8',
     parent_folder_id INTEGER,
@@ -145,6 +175,7 @@ db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
+    club_id TEXT NOT NULL DEFAULT 'asul',
     filename TEXT NOT NULL,
     original_name TEXT NOT NULL,
     display_name TEXT,
@@ -239,6 +270,7 @@ db.serialize(() => {
   // Live sessions (codage d'un match en direct, multi-appareils)
   db.run(`CREATE TABLE IF NOT EXISTS live_sessions (
     id TEXT PRIMARY KEY,
+    club_id TEXT NOT NULL DEFAULT 'asul',
     name TEXT NOT NULL,
     team1_name TEXT DEFAULT 'Domicile',
     team2_name TEXT DEFAULT 'Extérieur',
@@ -294,9 +326,10 @@ db.serialize(() => {
     FOREIGN KEY (session_id) REFERENCES live_sessions(id)
   )`);
 
-  // Équipes partagées (globales, accessibles à tous les appareils connectés).
+  // Équipes partagées (cloisonnées par club_id).
   db.run(`CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    club_id TEXT NOT NULL DEFAULT 'asul',
     name TEXT NOT NULL,
     libero INTEGER,
     libero_for INTEGER,
@@ -408,6 +441,7 @@ db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS trajectory_matches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
+    club_id TEXT NOT NULL DEFAULT 'asul',
     name TEXT NOT NULL,
     home_team_id INTEGER,
     away_team_id INTEGER,
@@ -495,6 +529,7 @@ db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS dv_playlists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
+    club_id TEXT NOT NULL DEFAULT 'asul',
     name TEXT NOT NULL,
     description TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -527,6 +562,7 @@ db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS practice_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
+    club_id TEXT NOT NULL DEFAULT 'asul',
     name TEXT NOT NULL,
     team_id INTEGER,
     team_name TEXT,
@@ -882,6 +918,32 @@ db.serialize(() => {
   addSyncColumns('volley_events', migrationDone);
   addSyncColumns('set_setups', migrationDone);
   addSyncColumns('live_sessions', migrationDone, 'id');
+
+  // Cloisonnement par équipe/club : colonne nullable sur users (choix à la
+  // première connexion) et colonne DEFAULT 'asul' sur chaque table racine.
+  pendingMigrations += 1;
+  db.all('PRAGMA table_info(users)', (err, columns) => {
+    if (err) return migrationDone();
+    const names = (columns || []).map((c) => c.name);
+    if (!names.length || names.includes('club_id')) return migrationDone();
+    db.run('ALTER TABLE users ADD COLUMN club_id TEXT', (stepErr) => {
+      if (stepErr) console.warn(`Migration users (club_id) : ${stepErr.message}`);
+      migrationDone();
+    });
+  });
+
+  for (const clubTable of [
+    'teams',
+    'videos',
+    'folders',
+    'trajectory_matches',
+    'live_sessions',
+    'dv_playlists',
+    'practice_sessions',
+  ]) {
+    pendingMigrations += 1;
+    addClubColumn(clubTable, migrationDone);
+  }
 });
 
 // Toutes les requêtes du bloc ci-dessus ont été soumises : dès qu'elles sont

@@ -93,7 +93,10 @@ function remapSavedLineup(parsed, numberMap) {
   return { value: clone, changed };
 }
 
-async function loadTeam(teamId) {
+async function loadTeam(teamId, clubId = null) {
+  if (clubId) {
+    return get('SELECT * FROM teams WHERE id = ? AND club_id = ?', [teamId, clubId]);
+  }
   return get('SELECT * FROM teams WHERE id = ?', [teamId]);
 }
 
@@ -103,23 +106,25 @@ async function loadPlayers(teamId) {
 
 // Supprime logiquement une équipe : toutes ses apparitions deviennent
 // « Équipe à définir », sans toucher aux actions ni aux trajectoires.
-async function markTeamReferencesUndefined(teamId) {
+async function markTeamReferencesUndefined(teamId, clubId = null) {
   const now = new Date().toISOString();
+  const clubClause = clubId ? ' AND club_id = ?' : '';
+  const params = (base) => (clubId ? [...base, clubId] : base);
   const v1 = await run(
-    'UPDATE videos SET team1_name = ?, dirty = 1, local_updated_at = ? WHERE home_team_id = ?',
-    [UNDEFINED_TEAM_NAME, now, teamId]
+    `UPDATE videos SET team1_name = ?, dirty = 1, local_updated_at = ? WHERE home_team_id = ?${clubClause}`,
+    params([UNDEFINED_TEAM_NAME, now, teamId])
   );
   const v2 = await run(
-    'UPDATE videos SET team2_name = ?, dirty = 1, local_updated_at = ? WHERE away_team_id = ?',
-    [UNDEFINED_TEAM_NAME, now, teamId]
+    `UPDATE videos SET team2_name = ?, dirty = 1, local_updated_at = ? WHERE away_team_id = ?${clubClause}`,
+    params([UNDEFINED_TEAM_NAME, now, teamId])
   );
   const t1 = await run(
-    'UPDATE trajectory_matches SET team1_name = ?, dirty = 1, local_updated_at = ? WHERE home_team_id = ?',
-    [UNDEFINED_TEAM_NAME, now, teamId]
+    `UPDATE trajectory_matches SET team1_name = ?, dirty = 1, local_updated_at = ? WHERE home_team_id = ?${clubClause}`,
+    params([UNDEFINED_TEAM_NAME, now, teamId])
   );
   const t2 = await run(
-    'UPDATE trajectory_matches SET team2_name = ?, dirty = 1, local_updated_at = ? WHERE away_team_id = ?',
-    [UNDEFINED_TEAM_NAME, now, teamId]
+    `UPDATE trajectory_matches SET team2_name = ?, dirty = 1, local_updated_at = ? WHERE away_team_id = ?${clubClause}`,
+    params([UNDEFINED_TEAM_NAME, now, teamId])
   );
 
   return {
@@ -128,18 +133,22 @@ async function markTeamReferencesUndefined(teamId) {
     liveSessions: 0,
   };
 }
-async function deletedTeamsWithUsage() {
+async function deletedTeamsWithUsage(clubId = null) {
+  const clubWhere = clubId ? ' AND t.club_id = ?' : '';
   const rows = await all(
     `SELECT t.id, t.name, t.created_at,
             (SELECT COUNT(*) FROM videos v
               WHERE COALESCE(v.deleted, 0) = 0
+                AND v.club_id = t.club_id
                 AND (v.home_team_id = t.id OR v.away_team_id = t.id)) AS video_count,
             (SELECT COUNT(*) FROM trajectory_matches m
               WHERE COALESCE(m.deleted, 0) = 0
+                AND m.club_id = t.club_id
                 AND (m.home_team_id = t.id OR m.away_team_id = t.id)) AS trajectory_count
        FROM teams t
-      WHERE COALESCE(t.deleted, 0) = 1
-      ORDER BY t.name COLLATE NOCASE ASC`
+      WHERE COALESCE(t.deleted, 0) = 1${clubWhere}
+      ORDER BY t.name COLLATE NOCASE ASC`,
+    clubId ? [clubId] : []
   );
   return rows.map((r) => ({
     ...r,
@@ -148,25 +157,27 @@ async function deletedTeamsWithUsage() {
   }));
 }
 
-async function affectedMatches(teamId) {
+async function affectedMatches(teamId, clubId = null) {
+  const clubClause = clubId ? ' AND club_id = ?' : '';
+  const params = clubId ? [teamId, teamId, teamId, clubId] : [teamId, teamId, teamId];
   const videos = await all(
     `SELECT id, display_name, original_name, team1_name, team2_name,
             home_team_id, away_team_id,
             CASE WHEN home_team_id = ? THEN 'home' ELSE 'away' END AS side
        FROM videos
       WHERE COALESCE(deleted, 0) = 0
-        AND (home_team_id = ? OR away_team_id = ?)
+        AND (home_team_id = ? OR away_team_id = ?)${clubClause}
       ORDER BY id ASC`,
-    [teamId, teamId, teamId]
+    params
   );
   const trajectories = await all(
     `SELECT id, name, team1_name, team2_name, home_team_id, away_team_id,
             CASE WHEN home_team_id = ? THEN 'home' ELSE 'away' END AS side
        FROM trajectory_matches
       WHERE COALESCE(deleted, 0) = 0
-        AND (home_team_id = ? OR away_team_id = ?)
+        AND (home_team_id = ? OR away_team_id = ?)${clubClause}
       ORDER BY id ASC`,
-    [teamId, teamId, teamId]
+    params
   );
   const liveSessions = [];
   return { videos, trajectories, liveSessions };
@@ -217,11 +228,11 @@ async function usageByNumber(matches) {
   return usage;
 }
 
-async function getReplacementPreview(teamId) {
-  const team = await loadTeam(teamId);
+async function getReplacementPreview(teamId, clubId = null) {
+  const team = await loadTeam(teamId, clubId);
   if (!team) return null;
   const players = await loadPlayers(teamId);
-  const matches = await affectedMatches(teamId);
+  const matches = await affectedMatches(teamId, clubId || team.club_id || null);
   const usage = await usageByNumber(matches);
   const byNumber = new Map(players.map((p) => [Number(p.number), p]));
   const numbers = [...usage.values()]
@@ -245,9 +256,9 @@ async function getReplacementPreview(teamId) {
 // Réaffecte toutes les références de l'équipe `oldTeamId` (supprimée) vers
 // `targetTeamId`, en appliquant la correspondance des numéros aux actions, aux
 // tirs de trajectoire, aux six de départ et aux remplacements.
-async function replaceTeamReferences(oldTeamId, targetTeamId, options = {}) {
-  const oldTeam = await loadTeam(oldTeamId);
-  const targetTeam = await loadTeam(targetTeamId);
+async function replaceTeamReferences(oldTeamId, targetTeamId, options = {}, clubId = null) {
+  const oldTeam = await loadTeam(oldTeamId, clubId);
+  const targetTeam = await loadTeam(targetTeamId, clubId);
   if (!oldTeam || Number(oldTeam.deleted) !== 1) {
     const err = new Error('Équipe supprimée introuvable.');
     err.status = 404;
@@ -255,6 +266,11 @@ async function replaceTeamReferences(oldTeamId, targetTeamId, options = {}) {
   }
   if (!targetTeam || Number(targetTeam.deleted) === 1) {
     const err = new Error('Équipe de remplacement introuvable.');
+    err.status = 404;
+    throw err;
+  }
+  if (oldTeam.club_id && targetTeam.club_id && oldTeam.club_id !== targetTeam.club_id) {
+    const err = new Error('Équipe de remplacement appartenant à un autre club.');
     err.status = 404;
     throw err;
   }
@@ -280,7 +296,7 @@ async function replaceTeamReferences(oldTeamId, targetTeamId, options = {}) {
     if (a && b) numberMap[String(a)] = String(b);
   });
 
-  const matches = await affectedMatches(oldTeamId);
+  const matches = await affectedMatches(oldTeamId, clubId || oldTeam.club_id || null);
   if (!matches.videos.length && !matches.trajectories.length && !matches.liveSessions.length) {
     const err = new Error('Aucun match ni fiche de trajectoire à réaffecter.');
     err.status = 400;

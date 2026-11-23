@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
+const { DEFAULT_CLUB_ID } = require('../clubs');
 const { getSetups, saveSetups } = require('../setups');
 const dvCode = require('../datavolleyCode');
 const syncHub = require('../syncHub');
@@ -19,14 +20,18 @@ function isValidCode(code) {
 
 function verifyVideo(req, res, callback) {
   const { videoId } = req.params;
-  db.get('SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0', [videoId], (err, video) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    if (!video) return res.status(404).json({ error: 'Video not found' });
-    callback(video);
-  });
+  db.get(
+    'SELECT * FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [videoId, req.clubId],
+    (err, video) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
+      callback(video);
+    }
+  );
 }
 
-function touchMatchForSync(videoId, callback) {
+function touchMatchForSync(videoId, clubId, callback) {
   const now = new Date().toISOString();
   const newUuid = crypto.randomUUID();
   db.run(
@@ -38,7 +43,9 @@ function touchMatchForSync(videoId, callback) {
        local_updated_at = excluded.local_updated_at`,
     [videoId, newUuid, now],
     (err) => {
-      syncHub.matches.syncNow({ reason: 'api' }).catch(() => {});
+      if (clubId === DEFAULT_CLUB_ID) {
+        syncHub.matches.syncNow({ reason: 'api' }).catch(() => {});
+      }
       emitCollectionChanged('matches');
       if (callback) callback(err);
     }
@@ -197,6 +204,7 @@ async function replaceActions({
   setNumber = null,
   actions,
   user,
+  clubId = DEFAULT_CLUB_ID,
   allowEmpty = false,
   reason = 'save',
 }) {
@@ -323,24 +331,27 @@ async function replaceActions({
   }
 
   const saved = planned.map(({ row, uuid }) => ({ ...row, sync_uuid: uuid }));
-  syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+  if (clubId === DEFAULT_CLUB_ID) {
+    syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+  }
   insertActionAudit(videoId, oldRows, saved, user);
   emitCollectionChanged('actions');
   return { actions: saved, count: saved.length };
 }
 
-// Liste des matchs terminés (partagée entre tous les utilisateurs et postes).
+// Liste des matchs terminés du club actif.
 router.get('/finished', authenticateToken, (req, res) => {
   db.all(
     `SELECT v.id, v.display_name, v.original_name, v.youtube_url, v.team1_name, v.team2_name,
             m.status AS match_status, m.finished_at
        FROM volley_matches m
        JOIN videos v ON v.id = m.video_id
-      WHERE m.status = 'finished'
+      WHERE v.club_id = ?
+        AND m.status = 'finished'
         AND COALESCE(v.deleted, 0) = 0
         AND COALESCE(m.deleted, 0) = 0
       ORDER BY m.finished_at DESC`,
-    [],
+    [req.clubId],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       res.json({ matches: rows || [] });
@@ -350,15 +361,17 @@ router.get('/finished', authenticateToken, (req, res) => {
 
 // Get all coded actions for a video
 router.get('/:videoId/actions', authenticateToken, (req, res) => {
-  const { videoId } = req.params;
-  db.all(
-    'SELECT * FROM volley_actions WHERE video_id = ? AND COALESCE(deleted, 0) = 0 ORDER BY action_index ASC',
-    [videoId],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      res.json({ actions: rows || [] });
-    }
-  );
+  verifyVideo(req, res, () => {
+    const { videoId } = req.params;
+    db.all(
+      'SELECT * FROM volley_actions WHERE video_id = ? AND COALESCE(deleted, 0) = 0 ORDER BY action_index ASC',
+      [videoId],
+      (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ actions: rows || [] });
+      }
+    );
+  });
 });
 
 router.get('/:videoId/audit', authenticateToken, (req, res) => {
@@ -403,6 +416,7 @@ router.post('/:videoId/actions', authenticateToken, (req, res) => {
         user: req.user,
         allowEmpty: req.body?.allowEmpty === true,
         reason: 'replace-all',
+        clubId: req.clubId,
       });
       return res.json({
         message: 'Actions saved successfully',
@@ -450,6 +464,7 @@ router.post('/:videoId/actions/set/:setNumber', authenticateToken, (req, res) =>
         user: req.user,
         allowEmpty: req.body?.allowEmpty === true,
         reason: `replace-set-${setNumber}`,
+        clubId: req.clubId,
       });
       return res.json({
         message: 'Actions du set enregistrées',
@@ -503,6 +518,7 @@ router.post('/:videoId/actions/restore/:backupId', authenticateToken, (req, res)
             user: req.user,
             allowEmpty: true,
             reason: `restore-${backup.id}`,
+            clubId: req.clubId,
           });
           return res.json({
             message: 'Sauvegarde restaurée',
@@ -535,7 +551,7 @@ router.delete('/:videoId/actions', authenticateToken, (req, res) => {
             function (err) {
               if (err) return res.status(500).json({ error: 'Failed to delete actions' });
               insertActionAudit(req.params.videoId, oldRows, [], req.user);
-              syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
+              if (req.clubId === DEFAULT_CLUB_ID) syncHub.actions.syncNow({ reason: 'api' }).catch(() => {});
               emitCollectionChanged('actions');
               res.json({ message: 'Actions deleted successfully' });
             }
@@ -559,28 +575,30 @@ function parseSetOffsets(raw) {
 
 // Get sync settings for a video (returns defaults if none yet)
 router.get('/:videoId/sync', authenticateToken, (req, res) => {
-  const { videoId } = req.params;
-  db.get('SELECT * FROM volley_sync WHERE video_id = ?', [videoId], (err, row) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    if (!row) {
-      return res.json({
+  verifyVideo(req, res, () => {
+    const { videoId } = req.params;
+    db.get('SELECT * FROM volley_sync WHERE video_id = ?', [videoId], (err, row) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!row) {
+        return res.json({
+          sync: {
+            video_id: Number(videoId),
+            sync_offset: 0,
+            set_offsets: {},
+            anchor_action_id: null,
+            anchor_timecode: null,
+            anchor_system_time: null,
+            lead_in: 4,
+            lead_out: 3,
+          },
+        });
+      }
+      res.json({
         sync: {
-          video_id: Number(videoId),
-          sync_offset: 0,
-          set_offsets: {},
-          anchor_action_id: null,
-          anchor_timecode: null,
-          anchor_system_time: null,
-          lead_in: 4,
-          lead_out: 3,
+          ...row,
+          set_offsets: parseSetOffsets(row.set_offsets),
         },
       });
-    }
-    res.json({
-      sync: {
-        ...row,
-        set_offsets: parseSetOffsets(row.set_offsets),
-      },
     });
   });
 });
@@ -608,7 +626,7 @@ router.put('/:videoId/sync', authenticateToken, (req, res) => {
       ],
       function (err) {
         if (err) return res.status(500).json({ error: 'Failed to save sync' });
-        touchMatchForSync(videoId);
+        touchMatchForSync(videoId, req.clubId);
         db.get('SELECT * FROM volley_sync WHERE video_id = ?', [videoId], (err2, row) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
           res.json({
@@ -626,13 +644,15 @@ router.put('/:videoId/sync', authenticateToken, (req, res) => {
 // --- État du match (en cours / terminé) -------------------------------------
 
 router.get('/:videoId/match', authenticateToken, (req, res) => {
-  const { videoId } = req.params;
-  db.get('SELECT * FROM volley_matches WHERE video_id = ?', [videoId], (err, row) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    if (!row) {
-      return res.json({ match: { video_id: Number(videoId), status: 'coding', finished_at: null } });
-    }
-    res.json({ match: row });
+  verifyVideo(req, res, () => {
+    const { videoId } = req.params;
+    db.get('SELECT * FROM volley_matches WHERE video_id = ?', [videoId], (err, row) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!row) {
+        return res.json({ match: { video_id: Number(videoId), status: 'coding', finished_at: null } });
+      }
+      res.json({ match: row });
+    });
   });
 });
 
@@ -655,7 +675,9 @@ router.post('/:videoId/finish', authenticateToken, (req, res) => {
       [videoId, newUuid, now, now],
       function (err) {
         if (err) return res.status(500).json({ error: 'Failed to finish match' });
-        syncHub.matches.syncNow({ reason: 'api' }).catch(() => {});
+        if (req.clubId === DEFAULT_CLUB_ID) {
+          syncHub.matches.syncNow({ reason: 'api' }).catch(() => {});
+        }
         emitCollectionChanged('matches');
         db.get('SELECT * FROM volley_matches WHERE video_id = ?', [videoId], (err2, row) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
@@ -685,7 +707,9 @@ router.post('/:videoId/reopen', authenticateToken, (req, res) => {
       [videoId, newUuid, now],
       function (err) {
         if (err) return res.status(500).json({ error: 'Failed to reopen match' });
-        syncHub.matches.syncNow({ reason: 'api' }).catch(() => {});
+        if (req.clubId === DEFAULT_CLUB_ID) {
+          syncHub.matches.syncNow({ reason: 'api' }).catch(() => {});
+        }
         emitCollectionChanged('matches');
         db.get('SELECT * FROM volley_matches WHERE video_id = ?', [videoId], (err2, row) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
@@ -699,18 +723,20 @@ router.post('/:videoId/reopen', authenticateToken, (req, res) => {
 // --- Équipes associées (domicile / extérieur) -------------------------------
 
 router.get('/:videoId/teams', authenticateToken, (req, res) => {
-  db.get(
-    `SELECT COALESCE(m.home_team_id, v.home_team_id) AS home_team_id,
-            COALESCE(m.away_team_id, v.away_team_id) AS away_team_id
-       FROM videos v
-       LEFT JOIN volley_matches m ON m.video_id = v.id
-      WHERE v.id = ?`,
-    [req.params.videoId],
-    (err, row) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      res.json({ home_team_id: row?.home_team_id ?? null, away_team_id: row?.away_team_id ?? null });
-    }
-  );
+  verifyVideo(req, res, () => {
+    db.get(
+      `SELECT COALESCE(m.home_team_id, v.home_team_id) AS home_team_id,
+              COALESCE(m.away_team_id, v.away_team_id) AS away_team_id
+         FROM videos v
+         LEFT JOIN volley_matches m ON m.video_id = v.id
+        WHERE v.id = ? AND v.club_id = ?`,
+      [req.params.videoId, req.clubId],
+      (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ home_team_id: row?.home_team_id ?? null, away_team_id: row?.away_team_id ?? null });
+      }
+    );
+  });
 });
 
 router.put('/:videoId/teams', authenticateToken, (req, res) => {
@@ -721,19 +747,21 @@ router.put('/:videoId/teams', authenticateToken, (req, res) => {
   verifyVideo(req, res, (video) => {
     const teamIds = [homeId, awayId].filter(Boolean);
     const resolveTeams = (cb) => {
-      if (!teamIds.length) return cb(null, null);
+      if (!teamIds.length) return cb(null, null, null, null);
       db.all(
-        `SELECT id, sync_uuid, name FROM teams WHERE id IN (${teamIds.map(() => '?').join(', ')})`,
-        teamIds,
+        `SELECT id, sync_uuid, name FROM teams WHERE id IN (${teamIds.map(() => '?').join(', ')}) AND club_id = ?`,
+        [...teamIds, req.clubId],
         (tErr, tRows) => {
-          if (tErr) return cb(null, null);
+          if (tErr) return cb(null, null, null, null);
           const map = new Map((tRows || []).map((r) => [Number(r.id), r]));
-          cb(homeId ? map.get(homeId) || null : null, awayId ? map.get(awayId) || null : null);
+          const validHome = homeId && map.has(homeId) ? map.get(homeId) : null;
+          const validAway = awayId && map.has(awayId) ? map.get(awayId) : null;
+          cb(validHome ? homeId : null, validAway ? awayId : null, validHome, validAway);
         }
       );
     };
 
-    resolveTeams((homeTeam, awayTeam) => {
+    resolveTeams((validHomeId, validAwayId, homeTeam, awayTeam) => {
       const now = new Date().toISOString();
       const newUuid = crypto.randomUUID();
       const homeUuid = homeTeam?.sync_uuid || null;
@@ -751,7 +779,7 @@ router.put('/:videoId/teams', authenticateToken, (req, res) => {
            away_team_uuid = excluded.away_team_uuid,
            dirty = 1,
            local_updated_at = excluded.local_updated_at`,
-        [video.id, newUuid, homeId, awayId, homeUuid, awayUuid, now],
+        [video.id, newUuid, validHomeId, validAwayId, homeUuid, awayUuid, now],
         function (err) {
           if (err) return res.status(500).json({ error: 'Failed to save teams' });
           db.run(
@@ -760,15 +788,17 @@ router.put('/:videoId/teams', authenticateToken, (req, res) => {
                     team1_name = COALESCE(?, team1_name), team2_name = COALESCE(?, team2_name),
                     dirty = 1, local_updated_at = ?
               WHERE id = ?`,
-            [homeId, awayId, homeUuid, awayUuid, homeTeam?.name || null, awayTeam?.name || null, now, video.id],
+            [validHomeId, validAwayId, homeUuid, awayUuid, homeTeam?.name || null, awayTeam?.name || null, now, video.id],
             () => {
-              syncHub.matches.syncNow({ reason: 'api' }).catch(() => {});
-              syncHub.videos.syncNow({ reason: 'api' }).catch(() => {});
+              if (req.clubId === DEFAULT_CLUB_ID) {
+                syncHub.matches.syncNow({ reason: 'api' }).catch(() => {});
+                syncHub.videos.syncNow({ reason: 'api' }).catch(() => {});
+              }
               emitCollectionChanged('matches');
               emitCollectionChanged('videos');
             }
           );
-          res.json({ home_team_id: homeId, away_team_id: awayId });
+          res.json({ home_team_id: validHomeId, away_team_id: validAwayId });
         }
       );
     });
@@ -778,9 +808,11 @@ router.put('/:videoId/teams', authenticateToken, (req, res) => {
 // --- Positions de départ par set -------------------------------------------
 
 router.get('/:videoId/setups', authenticateToken, (req, res) => {
-  getSetups(`video:${req.params.videoId}`, (err, setups) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    res.json({ setups });
+  verifyVideo(req, res, () => {
+    getSetups(`video:${req.params.videoId}`, (err, setups) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json({ setups });
+    });
   });
 });
 
@@ -789,7 +821,9 @@ router.put('/:videoId/setups', authenticateToken, (req, res) => {
   verifyVideo(req, res, () => {
     saveSetups(`video:${req.params.videoId}`, setups, (err) => {
       if (err) return res.status(500).json({ error: 'Failed to save setups' });
-      syncHub.setups.syncNow({ reason: 'api' }).catch(() => {});
+      if (req.clubId === DEFAULT_CLUB_ID) {
+        syncHub.setups.syncNow({ reason: 'api' }).catch(() => {});
+      }
       emitCollectionChanged('setups');
       res.json({ message: 'Setups saved' });
     });
@@ -816,16 +850,18 @@ function withPayload(row) {
 }
 
 router.get('/:videoId/events', authenticateToken, (req, res) => {
-  db.all(
-    `SELECT * FROM volley_events
-      WHERE video_id = ? AND COALESCE(deleted, 0) = 0
-      ORDER BY COALESCE(set_number, 1) ASC, COALESCE(point_number, 0) ASC, id ASC`,
-    [req.params.videoId],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      res.json({ events: (rows || []).map(withPayload) });
-    }
-  );
+  verifyVideo(req, res, () => {
+    db.all(
+      `SELECT * FROM volley_events
+        WHERE video_id = ? AND COALESCE(deleted, 0) = 0
+        ORDER BY COALESCE(set_number, 1) ASC, COALESCE(point_number, 0) ASC, id ASC`,
+      [req.params.videoId],
+      (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ events: (rows || []).map(withPayload) });
+      }
+    );
+  });
 });
 
 router.post('/:videoId/events', authenticateToken, (req, res) => {
@@ -895,7 +931,9 @@ router.post('/:videoId/events', authenticateToken, (req, res) => {
       [video.id, kind, setNumber, pointNumber, team || null, JSON.stringify(cleanPayload), eventUuid, now],
       function (err) {
         if (err) return res.status(500).json({ error: 'Failed to save event' });
-        syncHub.events.syncNow({ reason: 'api' }).catch(() => {});
+        if (req.clubId === DEFAULT_CLUB_ID) {
+          syncHub.events.syncNow({ reason: 'api' }).catch(() => {});
+        }
         emitCollectionChanged('events');
         db.get('SELECT * FROM volley_events WHERE id = ?', [this.lastID], (err2, row) => {
           if (err2 || !row) return res.status(500).json({ error: 'Database error' });
@@ -914,7 +952,9 @@ router.delete('/:videoId/events/:eventId', authenticateToken, (req, res) => {
       [now, req.params.eventId, video.id],
       function (err) {
         if (err) return res.status(500).json({ error: 'Failed to delete event' });
-        syncHub.events.syncNow({ reason: 'api' }).catch(() => {});
+        if (req.clubId === DEFAULT_CLUB_ID) {
+          syncHub.events.syncNow({ reason: 'api' }).catch(() => {});
+        }
         emitCollectionChanged('events');
         res.json({ message: 'Event deleted', deleted: this.changes });
       }
@@ -926,22 +966,26 @@ router.delete('/:videoId/events/:eventId', authenticateToken, (req, res) => {
 // Attribution de sets (codage collaboratif) — partagée via Supabase.
 // ---------------------------------------------------------------------------
 
-function getVideoSyncUuid(videoId, callback) {
-  db.get('SELECT id, sync_uuid FROM videos WHERE id = ?', [videoId], (err, row) => {
-    if (err) return callback(err);
-    if (!row) return callback(new Error('Vidéo introuvable'));
-    if (row.sync_uuid) return callback(null, row.sync_uuid);
-    const newUuid = crypto.randomUUID();
-    db.run('UPDATE videos SET sync_uuid = ? WHERE id = ?', [newUuid, row.id], (upErr) => {
-      if (upErr) return callback(upErr);
-      callback(null, newUuid);
-    });
-  });
+function getVideoSyncUuid(videoId, clubId, callback) {
+  db.get(
+    'SELECT id, sync_uuid FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [videoId, clubId],
+    (err, row) => {
+      if (err) return callback(err);
+      if (!row) return callback(new Error('Vidéo introuvable'));
+      if (row.sync_uuid) return callback(null, row.sync_uuid);
+      const newUuid = crypto.randomUUID();
+      db.run('UPDATE videos SET sync_uuid = ? WHERE id = ?', [newUuid, row.id], (upErr) => {
+        if (upErr) return callback(upErr);
+        callback(null, newUuid);
+      });
+    }
+  );
 }
 
 // Liste des sets revendiqués pour une vidéo.
 router.get('/:videoId/claims', authenticateToken, (req, res) => {
-  getVideoSyncUuid(req.params.videoId, (err, videoUuid) => {
+  getVideoSyncUuid(req.params.videoId, req.clubId, (err, videoUuid) => {
     if (err) return res.status(404).json({ error: err.message });
     db.all(
       'SELECT * FROM video_set_claims WHERE video_uuid = ? AND COALESCE(deleted, 0) = 0 ORDER BY set_number ASC',
@@ -960,7 +1004,7 @@ router.post('/:videoId/claims', authenticateToken, (req, res) => {
   if (!Number.isInteger(setNumber) || setNumber <= 0) {
     return res.status(400).json({ error: 'Numéro de set invalide' });
   }
-  getVideoSyncUuid(req.params.videoId, (err, videoUuid) => {
+  getVideoSyncUuid(req.params.videoId, req.clubId, (err, videoUuid) => {
     if (err) return res.status(404).json({ error: err.message });
     const now = new Date().toISOString();
     const email = req.user.email || `user-${req.user.id}`;
@@ -981,7 +1025,9 @@ router.post('/:videoId/claims', authenticateToken, (req, res) => {
           : [videoUuid, setNumber, email, req.user.name, email, now, now, claimUuid];
         db.run(sql, params, function (err3) {
           if (err3) return res.status(500).json({ error: 'Database error' });
-          syncHub.claims.syncNow({ reason: 'api' }).catch(() => {});
+          if (req.clubId === DEFAULT_CLUB_ID) {
+            syncHub.claims.syncNow({ reason: 'api' }).catch(() => {});
+          }
           emitCollectionChanged('claims');
           db.get('SELECT * FROM video_set_claims WHERE id = ?', [existing ? existing.id : this.lastID], (err4, claim) => {
             if (err4) return res.status(500).json({ error: 'Database error' });
@@ -996,14 +1042,16 @@ router.post('/:videoId/claims', authenticateToken, (req, res) => {
 // Libère un set (pierre tombale, propagée au cloud).
 router.delete('/:videoId/claims/:setNumber', authenticateToken, (req, res) => {
   const setNumber = Number(req.params.setNumber);
-  getVideoSyncUuid(req.params.videoId, (err, videoUuid) => {
+  getVideoSyncUuid(req.params.videoId, req.clubId, (err, videoUuid) => {
     if (err) return res.status(404).json({ error: err.message });
     db.run(
       'UPDATE video_set_claims SET deleted = 1, dirty = 1, local_updated_at = ? WHERE video_uuid = ? AND set_number = ? AND COALESCE(deleted, 0) = 0',
       [new Date().toISOString(), videoUuid, setNumber],
       function (err2) {
         if (err2) return res.status(500).json({ error: 'Database error' });
-        syncHub.claims.syncNow({ reason: 'api' }).catch(() => {});
+        if (req.clubId === DEFAULT_CLUB_ID) {
+          syncHub.claims.syncNow({ reason: 'api' }).catch(() => {});
+        }
         emitCollectionChanged('claims');
         res.json({ message: 'Set libéré', released: this.changes });
       }
@@ -1028,26 +1076,29 @@ router.post('/multi-match-data', authenticateToken, (req, res) => {
             COALESCE(m.away_team_id, v.away_team_id) AS resolved_away_team_id
        FROM videos v
        LEFT JOIN volley_matches m ON m.video_id = v.id
-      WHERE v.id IN (${placeholders}) AND COALESCE(v.deleted, 0) = 0
+      WHERE v.id IN (${placeholders}) AND v.club_id = ? AND COALESCE(v.deleted, 0) = 0
       ORDER BY v.created_at DESC, v.id DESC`,
-    videoIds,
+    [...videoIds, req.clubId],
     (err, videos) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!videos || videos.length === 0) return res.json({ matches: [] });
 
+      const matchedIds = videos.map((v) => Number(v.id));
+      const matchedPlaceholders = matchedIds.map(() => '?').join(',');
+
       db.all(
         `SELECT * FROM volley_actions
-          WHERE video_id IN (${placeholders}) AND COALESCE(deleted, 0) = 0
+          WHERE video_id IN (${matchedPlaceholders}) AND COALESCE(deleted, 0) = 0
           ORDER BY video_id ASC, action_index ASC`,
-        videoIds,
+        matchedIds,
         (err2, allActions) => {
           if (err2) return res.status(500).json({ error: 'Database error' });
 
           db.all(
             `SELECT * FROM volley_events
-              WHERE video_id IN (${placeholders}) AND COALESCE(deleted, 0) = 0
+              WHERE video_id IN (${matchedPlaceholders}) AND COALESCE(deleted, 0) = 0
               ORDER BY video_id ASC, COALESCE(set_number, 1) ASC, COALESCE(point_number, 0) ASC, id ASC`,
-            videoIds,
+            matchedIds,
             (err3, allEvents) => {
               if (err3) return res.status(500).json({ error: 'Database error' });
 

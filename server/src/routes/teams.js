@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
+const { DEFAULT_CLUB_ID } = require('../clubs');
 const { emitTeamsChanged, emitCollectionChanged } = require('../socket');
 const teamsSync = require('../teamsSync');
 const syncHub = require('../syncHub');
@@ -14,11 +15,9 @@ const {
 
 const router = express.Router();
 
-// Équipes partagées (globales) : accessibles à tous les appareils connectés,
-// quel que soit l'utilisateur. La création/modification est diffusée en temps
-// réel aux appareils connectés via Socket.IO et, si elle est configurée,
-// synchronisée avec le cloud (Supabase) pour être partagée à distance —
-// voir server/src/teamsSync.js.
+// Équipes partagées au sein d'un même club/espace cloisonné (`req.clubId`).
+// La création/modification est diffusée en temps réel via Socket.IO et
+// synchronisée avec le cloud (Supabase) uniquement pour l'espace principal.
 
 /** Marque une équipe comme modifiée localement (à envoyer au cloud). */
 function touchLocal(teamId) {
@@ -32,17 +31,19 @@ function touchLocal(teamId) {
 /**
  * Lance un cycle de synchronisation sans jamais faire attendre la réponse HTTP :
  * si le cloud est injoignable, l'écriture locale reste valable et sera envoyée
- * au cycle suivant.
+ * au cycle suivant. Uniquement pour l'espace principal (Supabase historique).
  */
-function triggerSync() {
+function triggerSync(clubId = DEFAULT_CLUB_ID) {
+  if (clubId !== DEFAULT_CLUB_ID) return;
   teamsSync.syncNow({ reason: 'api' }).catch((err) => {
     console.warn('Synchronisation des équipes :', err.message);
   });
 }
 
-function loadTeams(callback) {
+function loadTeams(clubId, callback) {
   db.all(
-    'SELECT * FROM teams WHERE COALESCE(deleted, 0) = 0 ORDER BY name COLLATE NOCASE ASC, id ASC',
+    'SELECT * FROM teams WHERE club_id = ? AND COALESCE(deleted, 0) = 0 ORDER BY name COLLATE NOCASE ASC, id ASC',
+    [clubId],
     (err, teams) => {
       if (err) return callback(err);
       if (!teams || teams.length === 0) return callback(null, []);
@@ -66,9 +67,9 @@ function loadTeams(callback) {
   );
 }
 
-// Récupère la liste complète des équipes (avec leurs joueurs).
+// Récupère la liste complète des équipes du club actif (avec leurs joueurs).
 router.get('/', authenticateToken, (req, res) => {
-  loadTeams((err, teams) => {
+  loadTeams(req.clubId, (err, teams) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     res.json({ teams });
   });
@@ -77,7 +78,7 @@ router.get('/', authenticateToken, (req, res) => {
 // Liste les équipes supprimées qui gardent des matchs / fiches à réaffecter.
 router.get('/deleted', authenticateToken, async (req, res) => {
   try {
-    const teams = await deletedTeamsWithUsage();
+    const teams = await deletedTeamsWithUsage(req.clubId);
     res.json({ teams });
   } catch (err) {
     console.error('Deleted teams:', err);
@@ -142,8 +143,8 @@ router.post('/', authenticateToken, (req, res) => {
   // Identifiant partagé posé dès la création : l'équipe pourra être reconnue
   // par les autres postes lors de la synchronisation cloud.
   db.run(
-    'INSERT INTO teams (name, sync_uuid, dirty, deleted, local_updated_at) VALUES (?, ?, 1, 0, ?)',
-    [teamName, crypto.randomUUID(), new Date().toISOString()],
+    'INSERT INTO teams (club_id, name, sync_uuid, dirty, deleted, local_updated_at) VALUES (?, ?, ?, 1, 0, ?)',
+    [req.clubId, teamName, crypto.randomUUID(), new Date().toISOString()],
     function (err) {
       if (err) return res.status(500).json({ error: 'Database error' });
       const teamId = this.lastID;
@@ -152,8 +153,8 @@ router.post('/', authenticateToken, (req, res) => {
         saveTeamSettings(teamId, libero, libero_for, (err3) => {
           if (err3) return res.status(500).json({ error: 'Failed to save team settings' });
           emitTeamsChanged();
-          triggerSync();
-          loadTeams((err4, teams) => {
+          triggerSync(req.clubId);
+          loadTeams(req.clubId, (err4, teams) => {
             if (err4) return res.status(500).json({ error: 'Database error' });
             res.status(201).json({ team: teams.find((t) => t.id === teamId), teams });
           });
@@ -169,7 +170,7 @@ router.patch('/:id', authenticateToken, (req, res) => {
   const { name, players, libero, libero_for } = req.body || {};
   const teamName = (name || '').trim();
 
-  db.get('SELECT * FROM teams WHERE id = ?', [teamId], (err, team) => {
+  db.get('SELECT * FROM teams WHERE id = ? AND club_id = ?', [teamId, req.clubId], (err, team) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (!team) return res.status(404).json({ error: 'Équipe introuvable' });
 
@@ -180,8 +181,8 @@ router.patch('/:id', authenticateToken, (req, res) => {
           if (err3) return res.status(500).json({ error: 'Failed to save team settings' });
           touchLocal(teamId);
           emitTeamsChanged();
-          triggerSync();
-          loadTeams((err4, teams) => {
+          triggerSync(req.clubId);
+          loadTeams(req.clubId, (err4, teams) => {
             if (err4) return res.status(500).json({ error: 'Database error' });
             res.json({ team: teams.find((t) => t.id === teamId), teams });
           });
@@ -190,7 +191,7 @@ router.patch('/:id', authenticateToken, (req, res) => {
     };
 
     if (teamName && teamName !== team.name) {
-      db.run('UPDATE teams SET name = ? WHERE id = ?', [teamName, teamId], (err4) => {
+      db.run('UPDATE teams SET name = ? WHERE id = ? AND club_id = ?', [teamName, teamId, req.clubId], (err4) => {
         if (err4) return res.status(500).json({ error: 'Database error' });
         apply();
       });
@@ -208,18 +209,18 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   const teamId = Number(req.params.id);
   try {
     const team = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM teams WHERE id = ?', [teamId], (err, row) => (err ? reject(err) : resolve(row)));
+      db.get('SELECT * FROM teams WHERE id = ? AND club_id = ?', [teamId, req.clubId], (err, row) => (err ? reject(err) : resolve(row)));
     });
     if (!team) return res.status(404).json({ error: 'Équipe introuvable' });
     if (Number(team.deleted) === 1) {
       return res.json({ message: 'Équipe déjà supprimée', affected: { videos: 0, trajectories: 0, liveSessions: 0 } });
     }
 
-    const affected = await markTeamReferencesUndefined(teamId);
+    const affected = await markTeamReferencesUndefined(teamId, req.clubId);
     await new Promise((resolve, reject) => {
       db.run(
-        'UPDATE teams SET deleted = 1, dirty = 1, local_updated_at = ? WHERE id = ?',
-        [new Date().toISOString(), teamId],
+        'UPDATE teams SET deleted = 1, dirty = 1, local_updated_at = ? WHERE id = ? AND club_id = ?',
+        [new Date().toISOString(), teamId, req.clubId],
         (err) => (err ? reject(err) : resolve())
       );
     });
@@ -227,9 +228,11 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     emitTeamsChanged();
     emitCollectionChanged('videos');
     emitCollectionChanged('trajectories');
-    syncHub.videos.syncNow({ reason: 'team-deleted' }).catch(() => {});
-    syncHub.trajectories.syncNow({ reason: 'team-deleted' }).catch(() => {});
-    triggerSync();
+    if (req.clubId === DEFAULT_CLUB_ID) {
+      syncHub.videos.syncNow({ reason: 'team-deleted' }).catch(() => {});
+      syncHub.trajectories.syncNow({ reason: 'team-deleted' }).catch(() => {});
+    }
+    triggerSync(req.clubId);
     res.json({ message: 'Équipe supprimée', affected });
   } catch (err) {
     console.error('Delete team:', err);
@@ -241,7 +244,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 router.get('/:id/replacement-preview', authenticateToken, async (req, res) => {
   const teamId = Number(req.params.id);
   try {
-    const preview = await getReplacementPreview(teamId);
+    const preview = await getReplacementPreview(teamId, req.clubId);
     if (!preview) return res.status(404).json({ error: 'Équipe introuvable' });
     res.json(preview);
   } catch (err) {
@@ -257,22 +260,29 @@ router.post('/:id/replace', authenticateToken, async (req, res) => {
   const targetTeamId = Number(req.body?.target_team_id);
   if (!targetTeamId) return res.status(400).json({ error: 'Équipe de remplacement requise.' });
   try {
-    const result = await replaceTeamReferences(teamId, targetTeamId, {
-      number_map: req.body?.number_map,
-      create_players: req.body?.create_players,
-    });
+    const result = await replaceTeamReferences(
+      teamId,
+      targetTeamId,
+      {
+        number_map: req.body?.number_map,
+        create_players: req.body?.create_players,
+      },
+      req.clubId
+    );
     emitTeamsChanged();
     emitCollectionChanged('videos');
     emitCollectionChanged('trajectories');
     emitCollectionChanged('actions');
     emitCollectionChanged('setups');
     emitCollectionChanged('events');
-    syncHub.videos.syncNow({ reason: 'team-replaced' }).catch(() => {});
-    syncHub.trajectories.syncNow({ reason: 'team-replaced' }).catch(() => {});
-    syncHub.actions.syncNow({ reason: 'team-replaced' }).catch(() => {});
-    syncHub.setups.syncNow({ reason: 'team-replaced' }).catch(() => {});
-    syncHub.events.syncNow({ reason: 'team-replaced' }).catch(() => {});
-    triggerSync();
+    if (req.clubId === DEFAULT_CLUB_ID) {
+      syncHub.videos.syncNow({ reason: 'team-replaced' }).catch(() => {});
+      syncHub.trajectories.syncNow({ reason: 'team-replaced' }).catch(() => {});
+      syncHub.actions.syncNow({ reason: 'team-replaced' }).catch(() => {});
+      syncHub.setups.syncNow({ reason: 'team-replaced' }).catch(() => {});
+      syncHub.events.syncNow({ reason: 'team-replaced' }).catch(() => {});
+    }
+    triggerSync(req.clubId);
     res.json({
       message: `Équipe réaffectée vers « ${result.targetTeam.name} ».`,
       result,
@@ -347,15 +357,16 @@ router.put('/sync/config', authenticateToken, async (req, res) => {
   }
 });
 
-// Annuaire global des joueurs tous clubs confondus (dédoublonné par licence ou nom).
+// Annuaire global des joueurs du club actif (dédoublonné par licence ou nom).
 router.get('/players/directory', authenticateToken, (req, res) => {
   db.all(
     `SELECT tp.*, t.name AS team_name
        FROM team_players tp
        JOIN teams t ON t.id = tp.team_id
-      WHERE COALESCE(t.deleted, 0) = 0
+      WHERE t.club_id = ?
+        AND COALESCE(t.deleted, 0) = 0
       ORDER BY tp.name COLLATE NOCASE ASC, tp.number ASC`,
-    [],
+    [req.clubId],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       res.json({ players: rows || [] });
@@ -370,7 +381,7 @@ router.post('/import-batch', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'Aucune équipe à importer' });
   }
 
-  loadTeams((err, existingTeams) => {
+  loadTeams(req.clubId, (err, existingTeams) => {
     if (err) return res.status(500).json({ error: 'Database error' });
 
     let idx = 0;
@@ -379,8 +390,8 @@ router.post('/import-batch', authenticateToken, (req, res) => {
     const processNext = () => {
       if (idx >= incomingTeams.length) {
         emitTeamsChanged();
-        triggerSync();
-        return loadTeams((errFinal, allTeams) => {
+        triggerSync(req.clubId);
+        return loadTeams(req.clubId, (errFinal, allTeams) => {
           if (errFinal) return res.status(500).json({ error: 'Database error' });
           res.json({
             importedIds,
@@ -437,8 +448,8 @@ router.post('/import-batch', authenticateToken, (req, res) => {
         });
       } else {
         db.run(
-          'INSERT INTO teams (name, sync_uuid, dirty, deleted, local_updated_at) VALUES (?, ?, 1, 0, ?)',
-          [tName, crypto.randomUUID(), new Date().toISOString()],
+          'INSERT INTO teams (club_id, name, sync_uuid, dirty, deleted, local_updated_at) VALUES (?, ?, ?, 1, 0, ?)',
+          [req.clubId, tName, crypto.randomUUID(), new Date().toISOString()],
           function (insErr) {
             if (insErr) return processNext();
             const newId = this.lastID;

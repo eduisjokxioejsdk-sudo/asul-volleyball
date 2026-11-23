@@ -152,7 +152,7 @@ export default function TrainingPage({ user, onLogout }) {
   }, []);
 
   const submitAnswer = (override) => {
-    if (!activeUnit || !activeQuestion || feedback) return;
+    if (!activeUnit || !activeQuestion || feedback?.ok) return;
     const value = typeof override === 'string' ? override : answer;
     if (!value.trim()) return;
     const ok = validateAcademyAnswer(value, activeQuestion.answer);
@@ -175,6 +175,13 @@ export default function TrainingPage({ user, onLogout }) {
   };
 
   const handleCodeKeyDown = (event) => {
+    if (feedback?.ok) {
+      if (matchesShortcut(event, shortcuts.validate)) {
+        event.preventDefault();
+        nextChallenge();
+      }
+      return;
+    }
     const remap = handleRemappedKeyDown(event, {
       value: answer,
       profile: keymapProfile,
@@ -323,7 +330,23 @@ export default function TrainingPage({ user, onLogout }) {
                   {activeUnit.kind === 'tutorial' && phase === 'tutorial' && (
                     <div className="academy-tutorial-step">
                       <div className="academy-tutorial-count">ÉTAPE {tutorialIndex + 1} / {activeUnit.steps.length}</div>
-                      <div className="academy-tutorial-visual">{activeUnit.tutorial?.path === '/teams' ? '👥' : activeUnit.tutorial?.path.includes('video') ? '🎬' : activeUnit.tutorial?.path.includes('trajectory') ? '🗺️' : activeUnit.tutorial?.path.includes('auto-codes') ? '⌨️' : '🏐'}</div>
+                      <div className="academy-tutorial-visual">
+                        {activeUnit.tutorial?.path === '/teams'
+                          ? '👥'
+                          : activeUnit.tutorial?.path.includes('video')
+                            ? '🎬'
+                            : activeUnit.tutorial?.path.includes('trajectory')
+                              ? '🗺️'
+                              : activeUnit.tutorial?.path.includes('auto-codes')
+                                ? '⌨️'
+                                : activeUnit.tutorial?.path.includes('direct')
+                                  ? '📡'
+                                  : activeUnit.tutorial?.path.includes('multi')
+                                    ? '📊'
+                                    : activeUnit.tutorial?.path.includes('distribution')
+                                      ? '🎯'
+                                      : '🏐'}
+                      </div>
                       <p>{activeUnit.steps[tutorialIndex]}</p>
                       <div className="academy-tutorial-actions">
                         <button className="academy-ghost" onClick={() => window.open(activeUnit.path, '_blank', 'noopener,noreferrer')}>Ouvrir l’écran concerné ↗</button>
@@ -344,7 +367,7 @@ export default function TrainingPage({ user, onLogout }) {
                       <div className="academy-prompt">{activeQuestion.prompt}</div>
                       <div className="academy-answer-row"><input autoFocus value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={handleCodeKeyDown} placeholder="Tape ta réponse…" disabled={feedback?.ok} /><button className="academy-primary" onClick={() => submitAnswer()} disabled={feedback?.ok}><Check size={16} /> Vérifier</button></div>
                       <p className="academy-key-hint">Raccourcis AZERTY Scout actifs · <kbd>{formatKeyLabel(shortcuts.validate)}</kbd> pour valider.</p>
-                      {feedback && <div className={`academy-feedback ${feedback.ok ? 'good' : 'retry'}`} role="status">{feedback.ok ? <><Check size={17} /> Exact ! Continue, tu ne perds rien en essayant.</> : <><X size={17} /> Pas encore. Regarde l’exemple puis réessaie. <code>{feedback.expected}</code></>}</div>}
+                      {feedback && <div className={`academy-feedback ${feedback.ok ? 'good' : 'retry'}`} role="status">{feedback.ok ? <><Check size={17} /> Exact ! Continue, tu ne perds rien en essayant.</> : <><X size={17} /> Pas encore. Modifie ta réponse puis valide à nouveau. <code>{feedback.expected}</code></>}</div>}
                       {feedback?.ok && <button className="academy-primary academy-wide" onClick={nextChallenge}>{questionIndex + 1 >= activeUnit.questions.length ? 'Terminer le niveau' : 'Défi suivant'} <ChevronRight size={16} /></button>}
                     </div>
                   )}

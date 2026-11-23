@@ -76,11 +76,15 @@ router.get('/share/:token/stream', (req, res) => {
 
 function verifyVideoOwnership(req, res, callback) {
   const videoId = req.params.videoId || req.body.videoId;
-  db.get('SELECT * FROM videos WHERE id = ? AND COALESCE(deleted, 0) = 0', [videoId], (err, video) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    if (!video) return res.status(404).json({ error: 'Video not found' });
-    callback(video);
-  });
+  db.get(
+    'SELECT * FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [videoId, req.clubId],
+    (err, video) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!video) return res.status(404).json({ error: 'Video not found' });
+      callback(video);
+    }
+  );
 }
 
 // 1. Lister tous les montages d'une vidéo
@@ -103,29 +107,33 @@ router.get('/:videoId/montages', authenticateToken, (req, res) => {
 // 2. Récupérer un montage spécifique (pour le polling de progression)
 router.get('/:videoId/montages/:montageId', authenticateToken, (req, res) => {
   const { videoId, montageId } = req.params;
-  db.get(
-    'SELECT * FROM video_montages WHERE id = ? AND video_id = ?',
-    [montageId, videoId],
-    (err, row) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      if (!row) return res.status(404).json({ error: 'Montage not found' });
-      res.json({ montage: row });
-    }
-  );
+  verifyVideoOwnership(req, res, () => {
+    db.get(
+      'SELECT * FROM video_montages WHERE id = ? AND video_id = ?',
+      [montageId, videoId],
+      (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row) return res.status(404).json({ error: 'Montage not found' });
+        res.json({ montage: row });
+      }
+    );
+  });
 });
 
 router.delete('/:videoId/montages/:montageId/share', authenticateToken, (req, res) => {
   const { videoId, montageId } = req.params;
-  db.run(
-    'UPDATE video_montages SET share_token = NULL WHERE id = ? AND video_id = ? AND user_id = ?',
-    [montageId, videoId, req.user.id],
-    function (err) {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      if (!this.changes) return res.status(404).json({ error: 'Montage introuvable.' });
-      emitCollectionChanged('montages');
-      res.json({ message: 'Lien de partage révoqué.' });
-    }
-  );
+  verifyVideoOwnership(req, res, () => {
+    db.run(
+      'UPDATE video_montages SET share_token = NULL WHERE id = ? AND video_id = ? AND user_id = ?',
+      [montageId, videoId, req.user.id],
+      function (err) {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!this.changes) return res.status(404).json({ error: 'Montage introuvable.' });
+        emitCollectionChanged('montages');
+        res.json({ message: 'Lien de partage révoqué.' });
+      }
+    );
+  });
 });
 
 // 3. Lancer la création d'un nouveau montage
@@ -214,21 +222,23 @@ router.post('/:videoId/montages', authenticateToken, (req, res) => {
 // 4. Télécharger le fichier MP4 du montage
 router.get('/:videoId/montages/:montageId/download', authenticateToken, (req, res) => {
   const { videoId, montageId } = req.params;
-  db.get(
-    'SELECT * FROM video_montages WHERE id = ? AND video_id = ?',
-    [montageId, videoId],
-    (err, row) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      if (!row || !row.output_filepath) return res.status(404).json({ error: 'Montage non trouvé ou non terminé' });
+  verifyVideoOwnership(req, res, () => {
+    db.get(
+      'SELECT * FROM video_montages WHERE id = ? AND video_id = ?',
+      [montageId, videoId],
+      (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.output_filepath) return res.status(404).json({ error: 'Montage non trouvé ou non terminé' });
 
-      if (!fs.existsSync(row.output_filepath)) {
-        return res.status(404).json({ error: 'Le fichier vidéo n’existe plus sur le disque' });
+        if (!fs.existsSync(row.output_filepath)) {
+          return res.status(404).json({ error: 'Le fichier vidéo n’existe plus sur le disque' });
+        }
+
+        const downloadName = `${(row.title || 'montage').replace(/[^a-zA-Z0-9_\-]/g, '_')}.mp4`;
+        res.download(row.output_filepath, downloadName);
       }
-
-      const downloadName = `${(row.title || 'montage').replace(/[^a-zA-Z0-9_\-]/g, '_')}.mp4`;
-      res.download(row.output_filepath, downloadName);
-    }
-  );
+    );
+  });
 });
 
 // 5. Visionner le montage (Stream HTTP avec support des partial content / ranges)
@@ -276,31 +286,35 @@ router.get('/:videoId/montages/:montageId/stream', (req, res) => {
 // 6. Supprimer un montage
 router.delete('/:videoId/montages/:montageId', authenticateToken, (req, res) => {
   const { videoId, montageId } = req.params;
-  db.get(
-    'SELECT * FROM video_montages WHERE id = ? AND video_id = ?',
-    [montageId, videoId],
-    (err, row) => {
-      if (err) return res.status(500).json({ error: 'Database error' });
-      if (!row) return res.status(404).json({ error: 'Montage non trouvé' });
+  verifyVideoOwnership(req, res, () => {
+    db.get(
+      'SELECT * FROM video_montages WHERE id = ? AND video_id = ?',
+      [montageId, videoId],
+      (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row) return res.status(404).json({ error: 'Montage non trouvé' });
 
-      if (row.output_filepath) {
-        fs.remove(row.output_filepath).catch(() => {});
+        if (row.output_filepath) {
+          fs.remove(row.output_filepath).catch(() => {});
+        }
+
+        db.run('DELETE FROM video_montages WHERE id = ?', [montageId], (delErr) => {
+          if (delErr) return res.status(500).json({ error: 'Erreur suppression base' });
+          emitCollectionChanged('montages');
+          res.json({ message: 'Montage supprimé avec succès' });
+        });
       }
-
-      db.run('DELETE FROM video_montages WHERE id = ?', [montageId], (delErr) => {
-        if (delErr) return res.status(500).json({ error: 'Erreur suppression base' });
-        emitCollectionChanged('montages');
-        res.json({ message: 'Montage supprimé avec succès' });
-      });
-    }
-  );
+    );
+  });
 });
 
 // 7. Annuler un montage en cours
 router.post('/:videoId/montages/:montageId/cancel', authenticateToken, (req, res) => {
   const { montageId } = req.params;
-  const ok = montageEngine.cancelMontage(montageId);
-  res.json({ success: ok, message: ok ? 'Montage annulé' : 'Montage non trouvé ou déjà terminé' });
+  verifyVideoOwnership(req, res, () => {
+    const ok = montageEngine.cancelMontage(montageId);
+    res.json({ success: ok, message: ok ? 'Montage annulé' : 'Montage non trouvé ou déjà terminé' });
+  });
 });
 
 module.exports = router;

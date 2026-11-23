@@ -1,14 +1,17 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { BackgroundTasksProvider } from './contexts/BackgroundTasksContext';
+import { ClubProvider } from './contexts/ClubContext';
+import { authAPI } from './services/api';
 import BackgroundTasksBar from './components/BackgroundTasksBar';
 import UpdateBanner from './components/UpdateBanner';
 import UpdateDialog from './components/UpdateDialog';
 import useAppUpdate from './hooks/useAppUpdate';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import SelectClubPage from './pages/SelectClubPage';
 import Dashboard from './pages/Dashboard';
 
 // Route-level Code Splitting (Point 30)
@@ -27,10 +30,10 @@ const VideoCenterPage = lazy(() => import('./pages/VideoCenterPage'));
 const VideoMultiMatchPage = lazy(() => import('./pages/VideoMultiMatchPage'));
 const SharedClipPage = lazy(() => import('./pages/SharedClipPage'));
 const LiveDashboard = lazy(() => import('./pages/LiveDashboard'));
-const FastDirectHomePage = lazy(() => import('./pages/FastDirectHomePage'));
+const DirectHubPage = lazy(() => import('./pages/DirectHubPage'));
+const StatsFastDirectPage = lazy(() => import('./pages/StatsFastDirectPage'));
 const FastDirectPage = lazy(() => import('./pages/FastDirectPage'));
 const FastDirectJoinPage = lazy(() => import('./pages/FastDirectJoinPage'));
-const StatsFastDirectPage = lazy(() => import('./pages/StatsFastDirectPage'));
 const TeamsPage = lazy(() => import('./pages/TeamsPage'));
 const TrainingPage = lazy(() => import('./pages/TrainingPage'));
 
@@ -97,31 +100,87 @@ function AnimatedPage({ children }) {
 
 function App() {
   const [user, setUser] = useState(null);
+  const [clubs, setClubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const location = useLocation();
   // Mise à jour de l'interface (bandeau + « Quoi de neuf »).
   const update = useAppUpdate();
 
   useEffect(() => {
+    let alive = true;
     const storedUser = localStorage.getItem('user');
     const storedToken = localStorage.getItem('token');
+
+    const loadClubsPublic = authAPI.getClubs()
+      .then((res) => {
+        if (alive) setClubs(res.data?.clubs || []);
+      })
+      .catch(() => {});
+
     if (storedUser && storedToken) {
-      setUser(JSON.parse(storedUser));
+      let parsedUser = null;
+      try {
+        parsedUser = JSON.parse(storedUser);
+      } catch {
+        parsedUser = null;
+      }
+
+      authAPI.me()
+        .then((res) => {
+          if (!alive) return;
+          const freshUser = res.data?.user;
+          if (freshUser) {
+            localStorage.setItem('user', JSON.stringify(freshUser));
+            setUser(freshUser);
+          } else if (parsedUser) {
+            setUser(parsedUser);
+          }
+          if (Array.isArray(res.data?.clubs)) {
+            setClubs(res.data.clubs);
+          }
+        })
+        .catch(() => {
+          if (!alive) return;
+          // L'intercepteur API redirige en cas de 401/403 ; en cas d'erreur réseau
+          // transitoire, on conserve l'utilisateur local s'il existe.
+          if (parsedUser && localStorage.getItem('token')) {
+            setUser(parsedUser);
+          }
+        })
+        .finally(() => {
+          if (alive) setLoading(false);
+        });
+    } else {
+      loadClubsPublic.finally(() => {
+        if (alive) setLoading(false);
+      });
     }
-    setLoading(false);
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const handleLogin = (userData, token) => {
+  const handleLogin = useCallback((userData, token) => {
     localStorage.setItem('user', JSON.stringify(userData));
-    localStorage.setItem('token', token);
+    if (token) localStorage.setItem('token', token);
     setUser(userData);
-  };
+    authAPI.getClubs()
+      .then((res) => setClubs(res.data?.clubs || []))
+      .catch(() => {});
+  }, []);
 
-  const handleLogout = () => {
+  const handleUserUpdated = useCallback((userData, token) => {
+    localStorage.setItem('user', JSON.stringify(userData));
+    if (token) localStorage.setItem('token', token);
+    setUser(userData);
+  }, []);
+
+  const handleLogout = useCallback(() => {
     localStorage.removeItem('user');
     localStorage.removeItem('token');
     setUser(null);
-  };
+  }, []);
 
   if (loading) {
     return (
@@ -138,219 +197,160 @@ function App() {
       ? requestedNext
       : '/dashboard';
 
+  const requireClub = (element) => {
+    if (!user) return <Navigate to="/login" />;
+    if (!user.club_id) return <SelectClubPage user={user} onLogout={handleLogout} />;
+    return element;
+  };
+
   return (
     <ThemeProvider>
       <BackgroundTasksProvider>
-        <div className="app">
-          <UpdateBanner update={update} />
-          <AnimatePresence mode="wait">
-            <Routes location={location} key={location.pathname}>
-              <Route
-                path="/login"
-                element={
-                  <AnimatedPage>
-                    {user ? <Navigate to={loginNext} /> : <Login onLogin={handleLogin} />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/register"
-                element={
-                  <AnimatedPage>
-                    {user ? <Navigate to={loginNext} /> : <Register onLogin={handleLogin} />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/dashboard"
-                element={
-                  <AnimatedPage>
-                    {user ? <Dashboard user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/datavolley"
-                element={
-                  <AnimatedPage>
-                    {user ? <DataVolleyMatchesPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/datavolley/multi"
-                element={
-                  <AnimatedPage>
-                    {user ? <MultiMatchAnalysisPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/distribution"
-                element={
-                  <AnimatedPage>
-                    {user ? <DistributionModePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/datavolley/distribution"
-                element={
-                  <AnimatedPage>
-                    {user ? <DistributionModePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/datavolley/auto-codes"
-                element={
-                  <AnimatedPage>
-                    {user ? <CodeAutomationPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/datavolley/:id"
-                element={
-                  <AnimatedPage>
-                    {user ? <DataVolleyDashboard user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/practice"
-                element={
-                  <AnimatedPage>
-                    {user ? <PracticeModePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/video-popout"
-                element={
-                  <AnimatedPage>
-                    <DetachedVideoPage />
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/trajectories"
-                element={
-                  <AnimatedPage>
-                    {user ? <TrajectoryHubPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/trajectories/:id"
-                element={
-                  <AnimatedPage>
-                    {user ? <TrajectoryDashboard user={user} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/trajectories/team/:teamId"
-                element={
-                  <AnimatedPage>
-                    {user ? <TrajectoryTeamReport user={user} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/trajectories/:id/consult"
-                element={
-                  <AnimatedPage>
-                    {user ? <TrajectoryView user={user} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/video-center/multi"
-                element={
-                  <AnimatedPage>
-                    {user ? <VideoMultiMatchPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/video-center"
-                element={
-                  <AnimatedPage>
-                    {user ? <VideoCenterPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/shared-clip/:token"
-                element={
-                  <AnimatedPage>
-                    <SharedClipPage />
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/fast-direct/join/:joinCode"
-                element={
-                  <AnimatedPage>
-                    <FastDirectJoinPage user={user} />
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/fast-direct"
-                element={
-                  <AnimatedPage>
-                    {user ? <FastDirectHomePage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/fast-direct/:sessionId"
-                element={
-                  <AnimatedPage>
-                    {user ? <FastDirectPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/live/:sessionId"
-                element={
-                  <AnimatedPage>
-                    {user ? <LiveDashboard user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/stats-fast-direct"
-                element={
-                  <AnimatedPage>
-                    {user ? <StatsFastDirectPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/teams"
-                element={
-                  <AnimatedPage>
-                    {user ? <TeamsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route
-                path="/training"
-                element={
-                  <AnimatedPage>
-                    {user ? <TrainingPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" />}
-                  </AnimatedPage>
-                }
-              />
-              <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} />} />
-            </Routes>
-          </AnimatePresence>
-          <BackgroundTasksBar />
-          <UpdateDialog update={update} />
-        </div>
+        <ClubProvider
+          user={user}
+          clubs={clubs}
+          onClubsLoaded={setClubs}
+          onUserUpdated={handleUserUpdated}
+        >
+          <div className="app">
+            <UpdateBanner update={update} />
+            <AnimatePresence mode="wait">
+              <Routes location={location} key={`${location.pathname}::${user?.club_id || 'none'}`}>
+                <Route
+                  path="/login"
+                  element={
+                    <AnimatedPage>
+                      {user ? (user.club_id ? <Navigate to={loginNext} /> : <SelectClubPage user={user} onLogout={handleLogout} />) : <Login onLogin={handleLogin} />}
+                    </AnimatedPage>
+                  }
+                />
+                <Route
+                  path="/register"
+                  element={
+                    <AnimatedPage>
+                      {user ? (user.club_id ? <Navigate to={loginNext} /> : <SelectClubPage user={user} onLogout={handleLogout} />) : <Register onLogin={handleLogin} />}
+                    </AnimatedPage>
+                  }
+                />
+                <Route
+                  path="/dashboard"
+                  element={<AnimatedPage>{requireClub(<Dashboard user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/datavolley"
+                  element={<AnimatedPage>{requireClub(<DataVolleyMatchesPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/datavolley/multi"
+                  element={<AnimatedPage>{requireClub(<MultiMatchAnalysisPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/distribution"
+                  element={<AnimatedPage>{requireClub(<DistributionModePage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/datavolley/distribution"
+                  element={<AnimatedPage>{requireClub(<DistributionModePage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/datavolley/auto-codes"
+                  element={<AnimatedPage>{requireClub(<CodeAutomationPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/datavolley/:id"
+                  element={<AnimatedPage>{requireClub(<DataVolleyDashboard user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/practice"
+                  element={<AnimatedPage>{requireClub(<PracticeModePage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/video-popout"
+                  element={
+                    <AnimatedPage>
+                      <DetachedVideoPage />
+                    </AnimatedPage>
+                  }
+                />
+                <Route
+                  path="/trajectories"
+                  element={<AnimatedPage>{requireClub(<TrajectoryHubPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/trajectories/:id"
+                  element={<AnimatedPage>{requireClub(<TrajectoryDashboard user={user} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/trajectories/team/:teamId"
+                  element={<AnimatedPage>{requireClub(<TrajectoryTeamReport user={user} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/trajectories/:id/consult"
+                  element={<AnimatedPage>{requireClub(<TrajectoryView user={user} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/video-center/multi"
+                  element={<AnimatedPage>{requireClub(<VideoMultiMatchPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/video-center"
+                  element={<AnimatedPage>{requireClub(<VideoCenterPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/shared-clip/:token"
+                  element={
+                    <AnimatedPage>
+                      <SharedClipPage />
+                    </AnimatedPage>
+                  }
+                />
+                <Route
+                  path="/fast-direct/join/:joinCode"
+                  element={
+                    <AnimatedPage>
+                      {user && !user.club_id ? (
+                        <SelectClubPage user={user} onLogout={handleLogout} />
+                      ) : (
+                        <FastDirectJoinPage user={user} />
+                      )}
+                    </AnimatedPage>
+                  }
+                />
+                <Route
+                  path="/direct"
+                  element={<AnimatedPage>{requireClub(<DirectHubPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/fast-direct"
+                  element={<AnimatedPage>{requireClub(<Navigate to="/direct" replace />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/stats-fast-direct"
+                  element={<AnimatedPage>{requireClub(<StatsFastDirectPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/fast-direct/:sessionId"
+                  element={<AnimatedPage>{requireClub(<FastDirectPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/live/:sessionId"
+                  element={<AnimatedPage>{requireClub(<LiveDashboard user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/teams"
+                  element={<AnimatedPage>{requireClub(<TeamsPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route
+                  path="/training"
+                  element={<AnimatedPage>{requireClub(<TrainingPage user={user} onLogout={handleLogout} />)}</AnimatedPage>}
+                />
+                <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} />} />
+              </Routes>
+            </AnimatePresence>
+            <BackgroundTasksBar />
+            <UpdateDialog update={update} />
+          </div>
+        </ClubProvider>
       </BackgroundTasksProvider>
     </ThemeProvider>
   );

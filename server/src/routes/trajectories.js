@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 const db = require('../database');
+const { DEFAULT_CLUB_ID } = require('../clubs');
 const syncHub = require('../syncHub');
 const { emitCollectionChanged } = require('../socket');
 const { mountSyncRoutes } = require('./sync');
@@ -18,7 +19,8 @@ function touchLocal(matchId) {
 }
 
 /** Lance un cycle de synchronisation sans jamais bloquer la réponse HTTP. */
-function triggerSync() {
+function triggerSync(clubId = DEFAULT_CLUB_ID) {
+  if (clubId !== DEFAULT_CLUB_ID) return;
   syncHub.trajectories.syncNow({ reason: 'api' }).catch((err) => {
     console.warn('Synchronisation des trajectoires :', err.message);
   });
@@ -45,14 +47,14 @@ const SHOT_KINDS = ['serve', 'attack'];
 // « contree » = balle contrée par le contre adverse (attaque uniquement).
 const SHOT_RESULTS = ['point', 'feinte_point', 'feinte_continuite', 'continuite', 'faute', 'contree', 'out'];
 
-/** Équipes demandées (avec leurs joueurs), indexées par id. */
-function loadTeamsByIds(ids, callback) {
+/** Équipes demandées (avec leurs joueurs), indexées par id dans le club actif. */
+function loadTeamsByIds(ids, clubId, callback) {
   const wanted = [...new Set(ids.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v > 0))];
   if (wanted.length === 0) return callback(null, new Map());
   const placeholders = wanted.map(() => '?').join(', ');
   db.all(
-    `SELECT * FROM teams WHERE id IN (${placeholders}) AND COALESCE(deleted, 0) = 0`,
-    wanted,
+    `SELECT * FROM teams WHERE id IN (${placeholders}) AND club_id = ? AND COALESCE(deleted, 0) = 0`,
+    [...wanted, clubId],
     (err, rows) => {
       if (err) return callback(err);
       const teams = rows || [];
@@ -98,7 +100,7 @@ function decorateMatch(match, teamsMap) {
   return { ...match, home_team: publicTeam(home), away_team: publicTeam(away) };
 }
 
-// Liste des fiches (partagée) avec le nombre de flèches marquées.
+// Liste des fiches du club actif avec le nombre de flèches marquées.
 router.get('/', authenticateToken, (req, res) => {
   db.all(
     `SELECT m.*,
@@ -110,9 +112,10 @@ router.get('/', authenticateToken, (req, res) => {
             v.filename AS video_filename,
             v.youtube_url AS video_youtube_url
        FROM trajectory_matches m
-       LEFT JOIN videos v ON v.id = m.video_id AND COALESCE(v.deleted, 0) = 0
-      WHERE COALESCE(m.deleted, 0) = 0
+       LEFT JOIN videos v ON v.id = m.video_id AND v.club_id = m.club_id AND COALESCE(v.deleted, 0) = 0
+      WHERE m.club_id = ? AND COALESCE(m.deleted, 0) = 0
       ORDER BY m.created_at DESC, m.id DESC`,
+    [req.clubId],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       res.json({ matches: rows || [] });
@@ -120,7 +123,7 @@ router.get('/', authenticateToken, (req, res) => {
   );
 });
 
-// Crée une fiche : nom + 1 ou 2 équipes de la liste partagée.
+// Crée une fiche : nom + 1 ou 2 équipes du club actif.
 router.post('/', authenticateToken, (req, res) => {
   const { name, home_team_id, away_team_id, video_id } = req.body || {};
   const homeId = Number(home_team_id) || null;
@@ -132,7 +135,7 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'Choisissez deux équipes différentes' });
   }
 
-  loadTeamsByIds([homeId, awayId], (err, teamsMap) => {
+  loadTeamsByIds([homeId, awayId], req.clubId, (err, teamsMap) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (homeId && !teamsMap.has(homeId)) return res.status(404).json({ error: 'Équipe 1 introuvable' });
     if (awayId && !teamsMap.has(awayId)) return res.status(404).json({ error: 'Équipe 2 introuvable' });
@@ -147,12 +150,13 @@ router.post('/', authenticateToken, (req, res) => {
       const now = new Date().toISOString();
       db.run(
         `INSERT INTO trajectory_matches
-          (sync_uuid, user_id, name, home_team_id, away_team_id, home_team_uuid, away_team_uuid,
+          (sync_uuid, user_id, club_id, name, home_team_id, away_team_id, home_team_uuid, away_team_uuid,
            video_id, video_uuid, team1_name, team2_name, created_by, dirty, local_updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
         [
           syncUuid,
           req.user.id,
+          req.clubId,
           finalName,
           homeId,
           awayId,
@@ -171,7 +175,7 @@ router.post('/', authenticateToken, (req, res) => {
           db.get('SELECT * FROM trajectory_matches WHERE id = ?', [insertedId], (err3, row) => {
             if (err3) return res.status(500).json({ error: 'Database error' });
             emitChanged();
-            triggerSync();
+            triggerSync(req.clubId);
             res.status(201).json({ match: decorateMatch(row, teamsMap) });
           });
         }
@@ -179,9 +183,15 @@ router.post('/', authenticateToken, (req, res) => {
     };
 
     if (videoId) {
-      db.get('SELECT sync_uuid FROM videos WHERE id = ?', [videoId], (errV, vRow) => {
-        insertWithVideoUuid(vRow?.sync_uuid || null);
-      });
+      db.get(
+        'SELECT sync_uuid FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+        [videoId, req.clubId],
+        (errV, vRow) => {
+          if (errV) return res.status(500).json({ error: 'Database error' });
+          if (!vRow) return res.status(404).json({ error: 'Vidéo introuvable' });
+          insertWithVideoUuid(vRow.sync_uuid || null);
+        }
+      );
     } else {
       insertWithVideoUuid(null);
     }
@@ -211,7 +221,7 @@ router.get('/team/:teamId', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'Équipe invalide' });
   }
 
-  loadTeamsByIds([teamId], (err, teamsMap) => {
+  loadTeamsByIds([teamId], req.clubId, (err, teamsMap) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     const team = teamsMap.get(teamId);
     if (!team) return res.status(404).json({ error: 'Équipe introuvable' });
@@ -223,10 +233,11 @@ router.get('/team/:teamId', authenticateToken, (req, res) => {
                 WHERE s.match_id = m.id
                   AND s.team_side = CASE WHEN m.home_team_id = ? THEN 'home' ELSE 'away' END) AS shot_count
          FROM trajectory_matches m
-        WHERE (m.home_team_id = ? OR m.away_team_id = ?)
+        WHERE m.club_id = ?
+          AND (m.home_team_id = ? OR m.away_team_id = ?)
           AND COALESCE(m.deleted, 0) = 0
         ORDER BY m.created_at ASC, m.id ASC`,
-      [teamId, teamId, teamId, teamId],
+      [teamId, teamId, req.clubId, teamId, teamId],
       (err2, matches) => {
         if (err2) return res.status(500).json({ error: 'Database error' });
         const rows = matches || [];
@@ -263,22 +274,26 @@ router.get('/team/:teamId', authenticateToken, (req, res) => {
 // Détail d'une fiche : match (avec équipes + joueurs) et flèches marquées.
 router.get('/:id', authenticateToken, (req, res) => {
   const matchId = Number(req.params.id);
-  db.get('SELECT * FROM trajectory_matches WHERE id = ? AND COALESCE(deleted, 0) = 0', [matchId], (err, match) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    if (!match) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
+  db.get(
+    'SELECT * FROM trajectory_matches WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [matchId, req.clubId],
+    (err, match) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!match) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
 
-    loadTeamsByIds([match.home_team_id, match.away_team_id], (err2, teamsMap) => {
-      if (err2) return res.status(500).json({ error: 'Database error' });
-      db.all(
-        'SELECT * FROM trajectory_shots WHERE match_id = ? ORDER BY id ASC',
-        [matchId],
-        (err3, shots) => {
-          if (err3) return res.status(500).json({ error: 'Database error' });
-          res.json({ match: decorateMatch(match, teamsMap), shots: shots || [] });
-        }
-      );
-    });
-  });
+      loadTeamsByIds([match.home_team_id, match.away_team_id], req.clubId, (err2, teamsMap) => {
+        if (err2) return res.status(500).json({ error: 'Database error' });
+        db.all(
+          'SELECT * FROM trajectory_shots WHERE match_id = ? ORDER BY id ASC',
+          [matchId],
+          (err3, shots) => {
+            if (err3) return res.status(500).json({ error: 'Database error' });
+            res.json({ match: decorateMatch(match, teamsMap), shots: shots || [] });
+          }
+        );
+      });
+    }
+  );
 });
 
 // Renomme une fiche (tout le monde peut corriger le libellé, comme pour les
@@ -290,40 +305,43 @@ router.patch('/:id', authenticateToken, (req, res) => {
   if (!newName) return res.status(400).json({ error: 'Le nom de la fiche est requis' });
 
   db.run(
-    'UPDATE trajectory_matches SET name = ?, dirty = 1, local_updated_at = ? WHERE id = ?',
-    [newName, new Date().toISOString(), matchId],
+    'UPDATE trajectory_matches SET name = ?, dirty = 1, local_updated_at = ? WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [newName, new Date().toISOString(), matchId, req.clubId],
     function (err) {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (this.changes === 0) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
       db.get('SELECT * FROM trajectory_matches WHERE id = ?', [matchId], (err2, row) => {
         if (err2) return res.status(500).json({ error: 'Database error' });
         emitChanged();
-        triggerSync();
+        triggerSync(req.clubId);
         res.json({ match: row });
       });
     }
   );
 });
 
-// Supprime une fiche (et ses flèches) — ouvert à tous les comptes : les fiches
-// de trajectoire sont partagées, comme les équipes et les vidéos.
+// Supprime une fiche (et ses flèches) — ouvert aux comptes du club actif.
 router.delete('/:id', authenticateToken, (req, res) => {
   const matchId = Number(req.params.id);
-  db.get('SELECT * FROM trajectory_matches WHERE id = ?', [matchId], (err, match) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    if (!match) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
-    // Pierre tombale (et non effacement) : la suppression est propagée au cloud.
-    db.run(
-      'UPDATE trajectory_matches SET deleted = 1, dirty = 1, local_updated_at = ? WHERE id = ?',
-      [new Date().toISOString(), matchId],
-      function (err2) {
-        if (err2) return res.status(500).json({ error: 'Database error' });
-        emitChanged();
-        triggerSync();
-        res.json({ message: 'Fiche de trajectoire supprimée' });
-      }
-    );
-  });
+  db.get(
+    'SELECT * FROM trajectory_matches WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [matchId, req.clubId],
+    (err, match) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!match) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
+      // Pierre tombale (et non effacement) : la suppression est propagée au cloud.
+      db.run(
+        'UPDATE trajectory_matches SET deleted = 1, dirty = 1, local_updated_at = ? WHERE id = ? AND club_id = ?',
+        [new Date().toISOString(), matchId, req.clubId],
+        function (err2) {
+          if (err2) return res.status(500).json({ error: 'Database error' });
+          emitChanged();
+          triggerSync(req.clubId);
+          res.json({ message: 'Fiche de trajectoire supprimée' });
+        }
+      );
+    }
+  );
 });
 
 // Remplace toutes les flèches d'une fiche (enregistrement automatique client).
@@ -337,66 +355,70 @@ router.post('/:id/shots', authenticateToken, (req, res) => {
     if (problem) return res.status(400).json({ error: problem });
   }
 
-  db.get('SELECT * FROM trajectory_matches WHERE id = ?', [matchId], (err, match) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
-    if (!match) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
+  db.get(
+    'SELECT * FROM trajectory_matches WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [matchId, req.clubId],
+    (err, match) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!match) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
 
-    db.run('BEGIN TRANSACTION', (err2) => {
-      if (err2) return res.status(500).json({ error: 'Failed to start transaction' });
+      db.run('BEGIN TRANSACTION', (err2) => {
+        if (err2) return res.status(500).json({ error: 'Failed to start transaction' });
 
-      db.run('DELETE FROM trajectory_shots WHERE match_id = ?', [matchId], (err3) => {
-        if (err3) {
-          db.run('ROLLBACK');
-          return res.status(500).json({ error: 'Failed to clear old shots' });
-        }
-
-        if (shots.length === 0) {
-          return db.run('COMMIT', (err4) => {
-            if (err4) return res.status(500).json({ error: 'Failed to commit transaction' });
-            touchLocal(matchId);
-            emitChanged();
-            triggerSync();
-            res.json({ message: 'Flèches effacées', count: 0 });
-          });
-        }
-
-        const stmt = db.prepare(
-          `INSERT INTO trajectory_shots
-            (match_id, team_side, player_number, kind, start_x, start_y, end_x, end_y, result, set_number)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        );
-
-        shots.forEach((shot) => {
-          stmt.run(
-            matchId,
-            shot.team_side,
-            Number(shot.player_number),
-            shot.kind,
-            Number(shot.start.x),
-            Number(shot.start.y),
-            Number(shot.end.x),
-            Number(shot.end.y),
-            shot.result,
-            shot.set_number == null ? null : Number(shot.set_number)
-          );
-        });
-
-        stmt.finalize((err4) => {
-          if (err4) {
+        db.run('DELETE FROM trajectory_shots WHERE match_id = ?', [matchId], (err3) => {
+          if (err3) {
             db.run('ROLLBACK');
-            return res.status(500).json({ error: 'Failed to save shots' });
+            return res.status(500).json({ error: 'Failed to clear old shots' });
           }
-          db.run('COMMIT', (err5) => {
-            if (err5) return res.status(500).json({ error: 'Failed to commit transaction' });
-            touchLocal(matchId);
-            emitChanged();
-            triggerSync();
-            res.json({ message: 'Flèches enregistrées', count: shots.length });
+
+          if (shots.length === 0) {
+            return db.run('COMMIT', (err4) => {
+              if (err4) return res.status(500).json({ error: 'Failed to commit transaction' });
+              touchLocal(matchId);
+              emitChanged();
+              triggerSync(req.clubId);
+              res.json({ message: 'Flèches effacées', count: 0 });
+            });
+          }
+
+          const stmt = db.prepare(
+            `INSERT INTO trajectory_shots
+              (match_id, team_side, player_number, kind, start_x, start_y, end_x, end_y, result, set_number)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+
+          shots.forEach((shot) => {
+            stmt.run(
+              matchId,
+              shot.team_side,
+              Number(shot.player_number),
+              shot.kind,
+              Number(shot.start.x),
+              Number(shot.start.y),
+              Number(shot.end.x),
+              Number(shot.end.y),
+              shot.result,
+              shot.set_number == null ? null : Number(shot.set_number)
+            );
+          });
+
+          stmt.finalize((err4) => {
+            if (err4) {
+              db.run('ROLLBACK');
+              return res.status(500).json({ error: 'Failed to save shots' });
+            }
+            db.run('COMMIT', (err5) => {
+              if (err5) return res.status(500).json({ error: 'Failed to commit transaction' });
+              touchLocal(matchId);
+              emitChanged();
+              triggerSync(req.clubId);
+              res.json({ message: 'Flèches enregistrées', count: shots.length });
+            });
           });
         });
       });
-    });
-  });
+    }
+  );
 });
 
 // Associe ou dissocie une vidéo DataVolley à une fiche de trajectoire
@@ -404,26 +426,41 @@ router.put('/:id/link-video', authenticateToken, (req, res) => {
   const matchId = req.params.id;
   const videoId = req.body.video_id ? Number(req.body.video_id) : null;
 
-  const applyLink = (videoUuid) => {
-    db.run(
-      'UPDATE trajectory_matches SET video_id = ?, video_uuid = ?, dirty = 1, local_updated_at = ? WHERE id = ?',
-      [videoId, videoUuid || null, new Date().toISOString(), matchId],
-      function (err) {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        emitChanged();
-        triggerSync();
-        res.json({ ok: true, video_id: videoId, video_uuid: videoUuid || null });
-      }
-    );
-  };
+  db.get(
+    'SELECT id FROM trajectory_matches WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+    [matchId, req.clubId],
+    (mErr, matchRow) => {
+      if (mErr) return res.status(500).json({ error: 'Database error' });
+      if (!matchRow) return res.status(404).json({ error: 'Fiche de trajectoire introuvable' });
 
-  if (videoId) {
-    db.get('SELECT sync_uuid FROM videos WHERE id = ?', [videoId], (err, row) => {
-      applyLink(row?.sync_uuid || null);
-    });
-  } else {
-    applyLink(null);
-  }
+      const applyLink = (videoUuid) => {
+        db.run(
+          'UPDATE trajectory_matches SET video_id = ?, video_uuid = ?, dirty = 1, local_updated_at = ? WHERE id = ? AND club_id = ?',
+          [videoId, videoUuid || null, new Date().toISOString(), matchId, req.clubId],
+          function (err) {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            emitChanged();
+            triggerSync(req.clubId);
+            res.json({ ok: true, video_id: videoId, video_uuid: videoUuid || null });
+          }
+        );
+      };
+
+      if (videoId) {
+        db.get(
+          'SELECT sync_uuid FROM videos WHERE id = ? AND club_id = ? AND COALESCE(deleted, 0) = 0',
+          [videoId, req.clubId],
+          (err, row) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            if (!row) return res.status(404).json({ error: 'Vidéo introuvable' });
+            applyLink(row.sync_uuid || null);
+          }
+        );
+      } else {
+        applyLink(null);
+      }
+    }
+  );
 });
 
 module.exports = router;

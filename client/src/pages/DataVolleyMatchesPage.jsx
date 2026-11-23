@@ -444,7 +444,7 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
           <div className="pk-mode-header-left">
             <PancakeLogo size={60} />
             <div>
-              <h1 className="pk-mode-header-title">Data Volley · Matchs & Codage Vidéo</h1>
+              <h1 className="pk-mode-header-title">Stats · Matchs & Codage Vidéo</h1>
               <p className="pk-mode-header-sub">
                 Partagez vos matchs via un lien YouTube (public ou non répertorié), puis codez et consultez les stats sur tous les comptes et tous les postes.
               </p>
@@ -452,6 +452,9 @@ export default function DataVolleyMatchesPage({ user, onLogout }) {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => navigate('/practice')}>
+              Nouvelles stats d'entraînements
+            </button>
             <button type="button" className="btn btn-secondary" onClick={() => navigate('/distribution')}>
               Rapport Distribution Passeur
             </button>

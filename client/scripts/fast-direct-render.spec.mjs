@@ -314,8 +314,10 @@ try {
     )
   );
   check(
-    'app Stats Fast Direct rendue dans Pancake',
-    statsHtml.includes('Stats Fast Direct') && statsHtml.includes('stats-fast-direct/index.html')
+    'app Stats facile rendue en plein écran dans Pancake',
+    statsHtml.includes('Stats facile') &&
+      statsHtml.includes('stats-fast-direct/index.html?theme=dark') &&
+      !statsHtml.includes('Ouvrir en plein écran')
   );
 } catch (err) {
   failures += 1;
